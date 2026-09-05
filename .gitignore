@@ -1,0 +1,98 @@
+# ---------------------------------------------------------------------------
+# Build output
+# ---------------------------------------------------------------------------
+/build/
+/out/
+cmake-build-*/
+plugins/*/build/
+
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+install_manifest.txt
+compile_commands.json
+
+# CMakePresets.json is shared and SHOULD be tracked.
+# CMakeUserPresets.json holds your machine's paths and should not be.
+CMakeUserPresets.json
+
+build.ninja
+rules.ninja
+.ninja_deps
+.ninja_log
+
+# ---------------------------------------------------------------------------
+# Compiled artifacts. Ship built DLLs through GitHub Releases, not the tree.
+# ---------------------------------------------------------------------------
+*.dll
+*.exe
+*.lib
+*.exp
+*.pdb
+*.ilk
+*.obj
+*.o
+*.a
+*.res
+
+# The vendored PluginSDK may legitimately carry an import lib or a redist.
+!/third_party/**/*.lib
+!/third_party/**/*.dll
+
+# ---------------------------------------------------------------------------
+# MSVC and Visual Studio
+# ---------------------------------------------------------------------------
+.vs/
+*.user
+*.suo
+*.sdf
+*.opensdf
+*.aps
+*.VC.db
+*.VC.opendb
+*.tlog
+/x64/
+[Dd]ebug/
+[Rr]elease/
+
+# ---------------------------------------------------------------------------
+# Editors
+# ---------------------------------------------------------------------------
+# Drop this line if you want to share tasks.json / launch.json with others.
+.vscode/
+.idea/
+*.swp
+*~
+
+# ---------------------------------------------------------------------------
+# Reverse engineering artifacts.
+# Never commit these. The dumps are Blizzard's binary and an IDA database
+# embeds it, so publishing either is redistribution of the game.
+# ---------------------------------------------------------------------------
+*.i64
+*.idb
+*.id0
+*.id1
+*.id2
+*.nam
+*.til
+*.dmp
+*.map
+/dumps/
+/re/
+
+# ---------------------------------------------------------------------------
+# Local only
+# ---------------------------------------------------------------------------
+*.log
+*.local
+*.local.toml
+.env
+.env.*
+
+# ---------------------------------------------------------------------------
+# OS noise
+# ---------------------------------------------------------------------------
+Thumbs.db
+desktop.ini
+.DS_Store

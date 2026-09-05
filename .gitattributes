@@ -1,0 +1,37 @@
+* text=auto
+
+# JSON is left completely alone. D2RLoader patch files and mod data files are
+# checked byte for byte in your workflow, and CRLF is significant to those
+# integrity checks, so git must not normalise them.
+*.json  -text
+
+# Source and build files
+*.cpp   text
+*.hpp   text
+*.h     text
+*.cmake text
+*.txt   text
+*.md    text
+*.toml  text
+*.asm   text
+
+# .rc files are frequently saved as UTF-16LE by the VS resource editor.
+# If yours is, change this line to "*.rc binary" or git will mangle it.
+*.rc    text
+
+# Windows scripts need CRLF to run
+*.bat   text eol=crlf
+*.cmd   text eol=crlf
+*.ps1   text eol=crlf
+*.sh    text eol=lf
+
+# Binary assets
+*.sprite binary
+*.png    binary
+*.dds    binary
+*.ico    binary
+*.dll    binary
+*.exe    binary
+*.i64    binary
+*.zip    binary
+*.7z     binary
