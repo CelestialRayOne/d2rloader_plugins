@@ -1,5 +1,5 @@
 //
-// d2rl-esr-extended-states - raises the D2R states.txt limit.
+// d2rl-celestialrayone-extended-states - raises the D2R states.txt limit.
 //
 // 2.3.0  SIDE ALLOCATION, with an OWNER TAG
 //
@@ -890,7 +890,7 @@ static auto SendStateChanges(void* hUnit, void* client) noexcept -> std::int64_t
 
         auto* records = *reinterpret_cast<std::uint8_t**>(table + StatesRecordsPtr);
         const std::uint8_t  unitType = UnitTypeOf(hUnit);
-        const std::uint32_t unitId   = UnitIdOf(hUnit, "esr.extended-states", 0);
+        const std::uint32_t unitId   = UnitIdOf(hUnit, "celestialrayone.extended-states", 0);
 
         std::uint32_t stats[2 * StatPairsPerState] {};
 
@@ -1111,8 +1111,8 @@ static auto Resolve(const D2RL::PluginContext* context) noexcept -> void {
 static constexpr D2RL::PluginInfo StatesInfo {
         .infoSize    = D2RL::PluginInfoSize,
         .apiVersion  = D2RL_PLUGIN_API_VERSION,
-        .id          = "esr.extended-states",
-        .name        = "ESR Extended States",
+        .id          = "celestialrayone.extended-states",
+        .name        = "Extended States",
         .version     = "2.4.0",
         .author      = "Bogdan Bulai",
         .description = "Moves the unit state bitmap into plugin memory and raises the states.txt limit.",
@@ -1175,11 +1175,11 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
         Context = context;
         Resolve(context);
 
-        D2RL::LogInfoF(context, "esr.extended-states 2.4.0: %u states, %u byte bitmaps in plugin memory, game pool untouched.",
+        D2RL::LogInfoF(context, "celestialrayone.extended-states 2.4.0: %u states, %u byte bitmaps in plugin memory, game pool untouched.",
                        NumStates, BitmapBytes);
 
-        if (!context->RegisterConsoleCommand("esr-states", StatesCommand, "Show the ESR state limit and bitmap storage.")) {
-                context->LogWarn("esr-states console command was not registered.");
+        if (!context->RegisterConsoleCommand("extended-states", StatesCommand, "Show the state limit and bitmap storage.")) {
+                context->LogWarn("extended-states console command was not registered.");
         }
 
         // Verify every prologue and every patch target before touching anything.

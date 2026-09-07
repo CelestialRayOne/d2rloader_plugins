@@ -1,7 +1,7 @@
 # Third-Party Notices
 
-This file records third-party software and prior work used by the ESR plugin
-suite. It does not replace or broaden any upstream license or permission. The
+This file records third-party software and prior work used by the plugins in
+this repository. It does not replace or broaden any upstream license or permission. The
 repository `LICENSE` applies only to code authored here.
 
 ## D2RLoader PluginSDK
