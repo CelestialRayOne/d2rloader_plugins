@@ -13,14 +13,23 @@
 // byte. On any build the plugin does not recognise it installs nothing, logs
 // loudly and stays loaded so the console command can explain why. An
 // unrecognised build is therefore a no-op, never a mis-patch.
+//
+// Configuration: every guard has an on/off switch in
+// <scope>\d2rloader\config\celestialrayone.engine-stability.toml, all true by
+// default. The file is created with documented defaults on first run. The
+// config is read once at load, so edits need a game restart. A guard that the
+// config turned off and a guard the build refused are reported differently by
+// the console command -- they are not the same thing and must never look it.
 // ---------------------------------------------------------------------------
 
 #include <D2RLPlugin/api.h>
 
+#include <array>
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 
 namespace {
 
@@ -134,8 +143,6 @@ UnitHashLookupFn OriginalUnitHashLookup = nullptr;
 // counter is only written on the rare guarded path.
 std::atomic<std::uint64_t> SuppressedTombstoneLookups { 0 };
 
-std::atomic<bool> DeadUnitGuardInstalled { false };
-
 auto __fastcall HookUnitHashLookup(
 	void*        bucketArray,
 	std::int32_t bucketIndex,
@@ -148,6 +155,244 @@ auto __fastcall HookUnitHashLookup(
 
 	const UnitHashLookupFn original = OriginalUnitHashLookup;
 	return original != nullptr ? original(bucketArray, bucketIndex, unitId, unitType) : nullptr;
+}
+
+// ---------------------------------------------------------------------------
+// Configuration
+// ---------------------------------------------------------------------------
+//
+// The loader hands the plugin the raw text of its own TOML file; there is no
+// parser in the SDK. Rather than pull one in for two booleans, this is a small
+// line scanner that understands exactly what this file needs: [section]
+// headers, `key = true` / `key = false`, `#` comments (whole line or trailing),
+// and both LF and CRLF. Anything it does not understand it ignores, which is
+// the right failure mode for a config file a player edits by hand.
+//
+// The defaults are the safe direction: if the file is missing, unreadable or
+// truncated, every guard stays ON and the plugin says so in the log. Losing a
+// crash guard because a config file could not be read would be the worse of
+// the two outcomes.
+
+// Kept identical to the shipped celestialrayone.engine-stability.toml. This is
+// what EnsureConfig writes when the file does not exist yet.
+constexpr const char* DefaultConfigToml =
+R"toml(# Engine Stability - crash guards for Diablo II: Resurrected
+#
+# Nothing in this plugin changes gameplay, balance or presentation. Every
+# switch below turns one guard on or off, and a guard is only ever the
+# difference between a hard crash and a normal frame. Turning a guard off
+# restores stock (crashing) behaviour.
+#
+# Safety: the plugin verifies the original bytes at every hook site before it
+# installs anything. On a game build it does not recognise it installs nothing
+# no matter what this file says, logs loudly, and stays loaded so the
+# `engine-stability` console command can tell you why.
+#
+# This file lives at <scope>\d2rloader\config\celestialrayone.engine-stability.toml
+# and is created with these defaults on first run. Delete it to get them back.
+# Changes are read at plugin load, so restart the game after editing.
+#
+# Type `engine-stability` in the console to see which guards are actually live.
+
+
+[engine-stability]
+
+# Master switch for the whole plugin.
+#   true  - guards are installed as configured in [guards] below.
+#   false - the DLL stays loaded and the console command still answers, but no
+#           hook is installed at all. Use this to rule the plugin out while
+#           chasing a crash without having to move the DLL out of the folder.
+# Default: true
+enabled = true
+
+
+[guards]
+
+# Client unit-by-id hash lookup, tombstoned unit id.
+# Site: RVA 0009F270, the shared bottom of the client's unit-by-id lookup.
+#
+# What goes wrong without it: freeing a unit stamps a tombstone on the block
+# (unit id -1) and returns it to the pool, so every later resolution of that
+# owner arrives at the lookup with id -1. That masks to bucket 0x7F and the
+# walk follows whatever that slot happens to hold, which is where the dangling
+# chain node is. Reliable repro: a summon dies while the missiles from its own
+# on-death proc are still in flight.
+#
+# What the guard does: an id of -1 is never a live unit, so it answers "not
+# found" without walking the chain. Returning null is this function's own
+# not-found result, so every call site already handles it.
+#
+# Cost when on: one compare against -1 per lookup. The hot path (any live unit
+# id) touches nothing else.
+# Default: true
+client_unit_lookup_tombstone = true
+)toml";
+
+struct Slice {
+	const char* begin;
+	const char* end;
+};
+
+constexpr auto IsBlank(char value) noexcept -> bool {
+	return value == ' ' || value == '\t' || value == '\r';
+}
+
+constexpr auto Trim(Slice slice) noexcept -> Slice {
+	while (slice.begin < slice.end && IsBlank(*slice.begin)) {
+		++slice.begin;
+	}
+	while (slice.end > slice.begin && IsBlank(slice.end[-1])) {
+		--slice.end;
+	}
+	return slice;
+}
+
+auto SliceEquals(Slice slice, const char* literal) noexcept -> bool {
+	const char* text = literal;
+	const char* cursor = slice.begin;
+	while (cursor < slice.end && *text != '\0') {
+		if (*cursor != *text) {
+			return false;
+		}
+		++cursor;
+		++text;
+	}
+	return cursor == slice.end && *text == '\0';
+}
+
+// Reads section.key as a boolean. Returns true only when the key was present
+// and spelled true or false; `value` is left untouched otherwise.
+auto ReadConfigBool(const char* toml, const char* section, const char* key, bool& value) noexcept -> bool {
+	if (toml == nullptr) {
+		return false;
+	}
+
+	std::array<char, 64> currentSection {};
+	bool                 found = false;
+
+	for (const char* line = toml; *line != '\0';) {
+		const char* lineEnd = line;
+		while (*lineEnd != '\0' && *lineEnd != '\n') {
+			++lineEnd;
+		}
+
+		const Slice trimmed = Trim({ line, lineEnd });
+
+		if (trimmed.begin < trimmed.end && *trimmed.begin != '#') {
+			if (*trimmed.begin == '[') {
+				const char* close = trimmed.begin;
+				while (close < trimmed.end && *close != ']') {
+					++close;
+				}
+
+				const Slice  name = Trim({ trimmed.begin + 1, close });
+				std::size_t  used = 0;
+				for (const char* cursor = name.begin; cursor < name.end && used + 1 < currentSection.size(); ++cursor) {
+					currentSection[used++] = *cursor;
+				}
+				currentSection[used] = '\0';
+			} else {
+				const char* equals = trimmed.begin;
+				while (equals < trimmed.end && *equals != '=') {
+					++equals;
+				}
+
+				if (equals < trimmed.end) {
+					const Slice name = Trim({ trimmed.begin, equals });
+					Slice       raw  = Trim({ equals + 1, trimmed.end });
+
+					for (const char* cursor = raw.begin; cursor < raw.end; ++cursor) {
+						if (*cursor == '#') {
+							raw.end = cursor;
+							break;
+						}
+					}
+					raw = Trim(raw);
+
+					if (std::strcmp(currentSection.data(), section) == 0 && SliceEquals(name, key)) {
+						if (SliceEquals(raw, "true")) {
+							value = true;
+							found = true;
+						} else if (SliceEquals(raw, "false")) {
+							value = false;
+							found = true;
+						}
+					}
+				}
+			}
+		}
+
+		line = (*lineEnd == '\0') ? lineEnd : lineEnd + 1;
+	}
+
+	return found;
+}
+
+struct StabilityConfig {
+	bool pluginEnabled              { true };
+	bool clientUnitLookupTombstone  { true };
+};
+
+StabilityConfig Config {};
+
+// Why a guard is not running. "You turned it off" and "this build is not
+// supported" must never be reported as the same thing.
+enum class GuardState : std::uint8_t {
+	NotAttempted,
+	Installed,
+	DisabledByConfig,
+	UnsupportedBuild,
+	InstallFailed,
+};
+
+std::atomic<GuardState> DeadUnitGuardState { GuardState::NotAttempted };
+
+// Only meaningful for the log line; the console command reads the states above.
+bool ConfigFileWasRead = false;
+
+void LoadConfiguration(const D2RL::PluginContext* context) noexcept {
+	if (context == nullptr) {
+		return;
+	}
+
+	if (!context->EnsureConfig(DefaultConfigToml)) {
+		context->LogWarn(
+			"Could not create or open celestialrayone.engine-stability.toml. "
+			"Running with defaults: every guard ON.");
+		return;
+	}
+
+	std::array<char, 8192> buffer {};
+	std::uint32_t          requiredSize = 0;
+
+	if (!context->ReadConfig(buffer.data(), static_cast<std::uint32_t>(buffer.size() - 1), &requiredSize)) {
+		context->LogWarn(
+			"Could not read celestialrayone.engine-stability.toml. "
+			"Running with defaults: every guard ON.");
+		return;
+	}
+
+	if (requiredSize >= buffer.size()) {
+		D2RL::LogWarnF(
+			context,
+			"celestialrayone.engine-stability.toml is %u bytes, larger than the %zu byte read buffer. "
+			"Running with defaults: every guard ON.",
+			requiredSize,
+			buffer.size());
+		return;
+	}
+
+	buffer[buffer.size() - 1] = '\0';
+	ConfigFileWasRead         = true;
+
+	(void)ReadConfigBool(buffer.data(), "engine-stability", "enabled", Config.pluginEnabled);
+	(void)ReadConfigBool(buffer.data(), "guards", "client_unit_lookup_tombstone", Config.clientUnitLookupTombstone);
+
+	D2RL::LogInfoF(
+		context,
+		"config: enabled=%s, client_unit_lookup_tombstone=%s.",
+		Config.pluginEnabled ? "true" : "false",
+		Config.clientUnitLookupTombstone ? "true" : "false");
 }
 
 // ---------------------------------------------------------------------------
@@ -164,7 +409,14 @@ auto InstallDeadUnitLookupGuard(const D2RL::PluginContext* context) noexcept -> 
 		return false;
 	}
 
+	if (!Config.pluginEnabled || !Config.clientUnitLookupTombstone) {
+		DeadUnitGuardState.store(GuardState::DisabledByConfig, std::memory_order_release);
+		context->LogInfo("Dead-unit lookup guard not installed: turned off in the config file.");
+		return false;
+	}
+
 	if (!context->CheckExpectedBytes(UnitHashLookupRva, UnitHashLookupBody, ByteCount(UnitHashLookupBody))) {
+		DeadUnitGuardState.store(GuardState::UnsupportedBuild, std::memory_order_release);
 		context->LogError(
 			"Dead-unit lookup guard NOT installed: the client unit hash lookup at RVA 0009F270 "
 			"does not match the verified 3.3.93847 body. This build is not supported; nothing was patched.");
@@ -177,16 +429,18 @@ auto InstallDeadUnitLookupGuard(const D2RL::PluginContext* context) noexcept -> 
 			ByteCount(UnitHashLookupPrologue),
 			HookUnitHashLookup,
 			&OriginalUnitHashLookup)) {
+		DeadUnitGuardState.store(GuardState::InstallFailed, std::memory_order_release);
 		context->LogError("Dead-unit lookup guard NOT installed: InstallInlineHook failed at RVA 0009F270.");
 		return false;
 	}
 
 	if (OriginalUnitHashLookup == nullptr) {
+		DeadUnitGuardState.store(GuardState::InstallFailed, std::memory_order_release);
 		context->LogError("Dead-unit lookup guard NOT installed: the loader returned no trampoline.");
 		return false;
 	}
 
-	DeadUnitGuardInstalled.store(true, std::memory_order_release);
+	DeadUnitGuardState.store(GuardState::Installed, std::memory_order_release);
 	context->LogInfo("Dead-unit lookup guard installed at RVA 0009F270.");
 	return true;
 }
@@ -204,17 +458,46 @@ auto EngineStabilityCommand(
 
 	const D2RL::PluginContext* context = command->plugin;
 
-	if (DeadUnitGuardInstalled.load(std::memory_order_acquire)) {
-		char message[160] {};
+	char header[160] {};
+	std::snprintf(
+		header,
+		sizeof(header),
+		"engine-stability: config %s, plugin %s.",
+		ConfigFileWasRead ? "loaded" : "NOT READ (defaults in use)",
+		Config.pluginEnabled ? "enabled" : "DISABLED in config");
+	context->WriteConsoleMessage(header);
+
+	char message[224] {};
+	switch (DeadUnitGuardState.load(std::memory_order_acquire)) {
+	case GuardState::Installed:
 		std::snprintf(
 			message,
 			sizeof(message),
 			"dead-unit lookup guard: active. tombstoned lookups suppressed so far: %llu",
 			static_cast<unsigned long long>(SuppressedTombstoneLookups.load(std::memory_order_relaxed)));
 		context->WriteConsoleMessage(message);
-	} else {
+		break;
+
+	case GuardState::DisabledByConfig:
+		context->WriteConsoleWarning(
+			"dead-unit lookup guard: OFF because the config file turns it off. The game build is fine.");
+		break;
+
+	case GuardState::UnsupportedBuild:
 		context->WriteConsoleError(
 			"dead-unit lookup guard: NOT ACTIVE. This game build is not recognised and nothing was patched.");
+		break;
+
+	case GuardState::InstallFailed:
+		context->WriteConsoleError(
+			"dead-unit lookup guard: NOT ACTIVE. The bytes matched but the hook could not be installed. "
+			"See the plugin log.");
+		break;
+
+	case GuardState::NotAttempted:
+	default:
+		context->WriteConsoleError("dead-unit lookup guard: NOT ACTIVE. Installation was never attempted.");
+		break;
 	}
 
 	return D2RL::ConsoleCommandResult::Handled;
@@ -225,7 +508,7 @@ constexpr D2RL::PluginInfo EngineStabilityInfo {
 	.apiVersion  = D2RL_PLUGIN_API_VERSION,
 	.id          = "celestialrayone.engine-stability",
 	.name        = "Engine Stability",
-	.version     = "0.1.0",
+	.version     = "0.2.0",
 	.author      = "CelestialRayOne",
 	.description = "Crash guards for Diablo II: Resurrected. No gameplay changes.",
 	.flags       = D2RL::PluginFlags::Client | D2RL::PluginFlags::NativeHooks,
@@ -260,6 +543,14 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
 
 	if (const char* build = D2RL::GetBuildVersion(context); build != nullptr) {
 		D2RL::LogInfoF(context, "engine-stability loading against build %s.", build);
+	}
+
+	LoadConfiguration(context);
+
+	if (!Config.pluginEnabled) {
+		DeadUnitGuardState.store(GuardState::DisabledByConfig, std::memory_order_release);
+		context->LogWarn("engine-stability is disabled in its config file. No guards were installed.");
+		return true;
 	}
 
 	if (!InstallDeadUnitLookupGuard(context)) {
