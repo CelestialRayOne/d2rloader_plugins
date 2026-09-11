@@ -1,0 +1,1000 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Attack rating curve</title>
+<style>
+  :root {
+    --stone: #1e1914;
+    --slab: #29221b;
+    --seam: #4a3d2f;
+    --etch: #3a3027;
+    --bone: #e3d9c7;
+    --ash: #a39580;
+    --unique: #c7b377;
+    --magic: #8a8aff;
+    --rare: #e6dc6a;
+    --serif: "Palatino Linotype", "Book Antiqua", Palatino, "URW Palladio L", P052, Georgia, serif;
+    --sans: Candara, "Gill Sans", "Gill Sans MT", Calibri, "Segoe UI", sans-serif;
+    --mono: Consolas, "Cascadia Mono", "DejaVu Sans Mono", monospace;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+
+  html { background: var(--stone); }
+
+  body {
+    margin: 0;
+    padding: clamp(18px, 3.5vw, 44px);
+    color: var(--bone);
+    font: 16px/1.5 var(--sans);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .page { max-width: 1260px; margin: 0 auto; }
+
+  header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 18px 36px;
+    margin-bottom: 28px;
+  }
+
+  h1 {
+    margin: 0 0 6px;
+    font: 400 clamp(2.1rem, 4.4vw, 3.2rem)/1.05 var(--serif);
+    letter-spacing: 0.005em;
+  }
+
+  .lede { margin: 0; max-width: 62ch; color: var(--ash); }
+
+  h2 {
+    margin: 0 0 14px;
+    font: 400 1.22rem/1.25 var(--serif);
+  }
+
+  button {
+    font: inherit;
+    font-size: 0.95rem;
+    color: var(--bone);
+    background: transparent;
+    border: 1px solid var(--seam);
+    border-radius: 3px;
+    padding: 6px 13px;
+    cursor: pointer;
+  }
+
+  button:hover { border-color: var(--ash); }
+
+  button[aria-pressed="true"] {
+    color: var(--stone);
+    background: var(--unique);
+    border-color: var(--unique);
+  }
+
+  :focus-visible { outline: 2px solid var(--rare); outline-offset: 2px; }
+
+  .button-row { display: flex; flex-wrap: wrap; gap: 8px; }
+
+  .layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 340px;
+    gap: 22px;
+    align-items: start;
+  }
+
+  .panel {
+    background: var(--slab);
+    border: 1px solid var(--seam);
+    border-radius: 4px;
+    padding: 18px 20px 20px;
+  }
+
+  .chart-panel { grid-column: 1; grid-row: 1; }
+  .controls { grid-column: 2; grid-row: 1 / span 2; }
+  .lower {
+    grid-column: 1;
+    grid-row: 2;
+    display: grid;
+    grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+    gap: 22px;
+  }
+  .output { grid-column: 1 / -1; }
+
+  .chart-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px 20px;
+  }
+
+  .chart-head h2 { margin-bottom: 6px; }
+
+  .readout { margin: 0 0 10px; min-height: 1.5em; color: var(--ash); }
+  .readout strong { color: var(--unique); font-weight: 600; }
+  .readout em { color: var(--magic); font-style: normal; font-weight: 600; }
+
+  .canvas-wrap { position: relative; height: clamp(300px, 54vh, 500px); }
+  canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 24px;
+    margin-top: 12px;
+    color: var(--ash);
+    font-size: 0.95rem;
+  }
+
+  .legend label, .legend span { display: inline-flex; align-items: center; gap: 8px; }
+  .swatch { display: inline-block; width: 22px; height: 0; border-top: 3px solid; }
+  .swatch.gold { border-color: var(--unique); }
+  .swatch.blue { border-color: var(--magic); border-top-width: 2px; }
+  .swatch.limit { border-color: var(--rare); border-top-style: dashed; border-top-width: 2px; }
+
+  .group + .group { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--etch); }
+
+  .control + .control { margin-top: 14px; }
+
+  .control-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .control label { font-weight: 600; }
+
+  input[type="number"] {
+    width: 92px;
+    font: inherit;
+    color: var(--bone);
+    background: var(--stone);
+    border: 1px solid var(--seam);
+    border-radius: 3px;
+    padding: 3px 7px;
+    text-align: right;
+  }
+
+  input[type="range"] { width: 100%; margin: 6px 0 2px; accent-color: var(--unique); }
+  input[type="checkbox"] { accent-color: var(--unique); width: 16px; height: 16px; }
+
+  .help { margin: 2px 0 0; color: var(--ash); font-size: 0.9rem; line-height: 1.4; }
+  .key-name { color: #867a68; }
+  .adjusted { margin: 4px 0 0; color: var(--rare); font-size: 0.9rem; }
+
+  .toggle { display: flex; align-items: center; gap: 10px; margin-top: 16px; font-weight: 600; }
+
+  .levels { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; margin-top: 12px; }
+  .levels label { display: grid; gap: 4px; font-weight: 400; color: var(--ash); font-size: 0.92rem; }
+  .levels input { width: 100%; }
+
+  .calc-inputs { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .calc-inputs label { display: grid; gap: 4px; color: var(--ash); font-size: 0.95rem; }
+  .calc-inputs input { width: 100%; font-size: 1.05rem; }
+
+  .result { margin: 18px 0 2px; font: 400 1.1rem/1 var(--serif); color: var(--ash); }
+  .result span {
+    display: inline-block;
+    margin-right: 10px;
+    font: 400 4rem/1 var(--serif);
+    color: var(--unique);
+  }
+  .result-note { margin: 8px 0 0; color: var(--ash); }
+
+  .tables { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .tables h2 { grid-column: 1 / -1; margin-bottom: 0; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 0.95rem; }
+  caption { text-align: left; color: var(--ash); padding-bottom: 6px; }
+  th, td { padding: 4px 6px; text-align: right; border-bottom: 1px solid var(--etch); }
+  th:first-child, td:first-child { text-align: left; }
+  thead th { font-weight: 600; color: var(--ash); }
+  td.gold { color: var(--unique); }
+  td.blue { color: var(--magic); }
+
+  .output-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px 20px;
+  }
+
+  pre {
+    margin: 12px 0 0;
+    padding: 14px 16px;
+    overflow-x: auto;
+    background: var(--stone);
+    border: 1px solid var(--etch);
+    border-radius: 3px;
+    font: 0.95rem/1.55 var(--mono);
+    color: var(--bone);
+  }
+
+  .status { min-height: 1.4em; margin: 8px 0 0; color: var(--unique); }
+
+  @media (max-width: 960px) {
+    .layout { grid-template-columns: minmax(0, 1fr); }
+    .chart-panel, .controls, .lower, .output { grid-column: 1; grid-row: auto; }
+    .lower { grid-template-columns: minmax(0, 1fr); }
+  }
+
+  @media (max-width: 520px) {
+    .tables { grid-template-columns: minmax(0, 1fr); }
+    .result span { font-size: 3.2rem; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <header>
+    <div>
+      <h1>Attack rating curve</h1>
+      <p class="lede">Shape the hit chance formula used by the Attack Rating plugin, check it against
+        vanilla, then copy the settings into the plugin's config file.</p>
+    </div>
+    <div class="button-row" role="group" aria-label="Start from a preset">
+      <button type="button" data-preset="default">Plugin default</button>
+      <button type="button" data-preset="uncapped">Uncapped</button>
+      <button type="button" data-preset="vanilla">Vanilla D2R</button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="panel chart-panel" aria-labelledby="chart-title">
+      <div class="chart-head">
+        <h2 id="chart-title">Hit chance by attack rating against defense</h2>
+        <div class="button-row" role="group" aria-label="Ratio range">
+          <button type="button" data-range="r10">Up to 10</button>
+          <button type="button" data-range="r40">Up to 40</button>
+          <button type="button" data-range="r120">Up to 120</button>
+          <button type="button" data-range="log">Log scale</button>
+        </div>
+      </div>
+      <p class="readout" id="readout">Point at the chart to read the chance at any ratio.</p>
+      <div class="canvas-wrap"><canvas id="chart" role="img"></canvas></div>
+      <div class="legend">
+        <span><i class="swatch gold"></i>These settings</span>
+        <label><input type="checkbox" id="show-vanilla" checked><i class="swatch blue"></i>Vanilla D2R</label>
+        <span><i class="swatch limit"></i>Minimum and maximum chance</span>
+      </div>
+    </section>
+
+    <aside class="panel controls" aria-label="Curve settings">
+      <section class="group" aria-labelledby="below-title">
+        <h2 id="below-title">Below the pivot</h2>
+        <div id="group-below"></div>
+      </section>
+      <section class="group" aria-labelledby="above-title">
+        <h2 id="above-title">Above the pivot</h2>
+        <div id="group-above"></div>
+      </section>
+      <section class="group" aria-labelledby="limits-title">
+        <h2 id="limits-title">Limits and levels</h2>
+        <div id="group-limits"></div>
+        <label class="toggle"><input type="checkbox" id="level-scaling">Level scaling, as in vanilla</label>
+        <p class="help">chance = 2 &times; chance &times; attacker level / (attacker level + defender level),
+          before the limits. <span class="key-name">level_scaling</span></p>
+        <div class="levels">
+          <label>Attacker level<input type="number" id="attacker-level" min="1" max="999" step="1" value="90"></label>
+          <label>Defender level<input type="number" id="defender-level" min="1" max="999" step="1" value="90"></label>
+        </div>
+        <p class="help">Levels feed level scaling and the vanilla comparison. They are not saved to the config.</p>
+      </section>
+    </aside>
+
+    <div class="lower">
+      <section class="panel" aria-labelledby="calc-title">
+        <h2 id="calc-title">Try an attack</h2>
+        <div class="calc-inputs">
+          <label>Attack rating<input type="number" id="calc-ar" step="1" value="12000"></label>
+          <label>Defense<input type="number" id="calc-def" step="1" value="3000"></label>
+        </div>
+        <p class="result"><span id="calc-chance">0%</span>chance to hit</p>
+        <p class="result-note" id="calc-note"></p>
+      </section>
+
+      <section class="panel tables" aria-labelledby="tables-title">
+        <h2 id="tables-title">At a glance</h2>
+        <table>
+          <caption>Chance at a ratio</caption>
+          <thead><tr><th scope="col">Ratio</th><th scope="col">These</th><th scope="col">Vanilla</th></tr></thead>
+          <tbody id="chance-table"></tbody>
+        </table>
+        <table>
+          <caption>Lowest ratio that reaches a chance</caption>
+          <thead><tr><th scope="col">Chance</th><th scope="col">These</th><th scope="col">Vanilla</th></tr></thead>
+          <tbody id="needed-table"></tbody>
+        </table>
+      </section>
+    </div>
+
+    <section class="panel output" aria-labelledby="output-title">
+      <div class="output-head">
+        <h2 id="output-title">Settings for the config file</h2>
+        <button type="button" id="copy">Copy settings</button>
+      </div>
+      <p class="help">Replace the [curve] and [chance] sections of the plugin's config file with these lines.
+        Values outside the allowed ranges are already limited the way the plugin limits them.</p>
+      <pre id="toml"></pre>
+      <p class="status" id="copy-status" role="status"></p>
+    </section>
+  </main>
+</div>
+
+<script>
+(() => {
+  'use strict';
+
+  // The formula. plugin.cpp carries a line-for-line copy between the same
+  // markers; change both together.
+
+  // BEGIN FORMULA
+  const DEFAULT_SETTINGS = Object.freeze({
+    pivotRatio: 5.0,
+    steepness: 5.0,
+    tail: 3.0,
+    lateTail: 1.0,
+    blendStartRatio: 30.0,
+    blendEndRatio: 100.0,
+    snapTo100At: 99.5,
+    minChance: 5,
+    maxChance: 95,
+    levelScaling: false,
+  });
+
+  function clampSetting(value, low, high, fallback) {
+    if (!Number.isFinite(value)) return fallback;
+    return Math.min(Math.max(value, low), high);
+  }
+
+  function sanitizeCurveSettings(s) {
+    const defaults = DEFAULT_SETTINGS;
+    s.pivotRatio = clampSetting(s.pivotRatio, 0.01, 1000.0, defaults.pivotRatio);
+    s.steepness = clampSetting(s.steepness, 0.1, 50.0, defaults.steepness);
+    s.tail = clampSetting(s.tail, 0.01, 1000.0, defaults.tail);
+    s.lateTail = clampSetting(s.lateTail, 0.0, 1000.0, defaults.lateTail);
+    s.blendStartRatio = clampSetting(s.blendStartRatio, 0.0, 100000.0, defaults.blendStartRatio);
+    s.blendEndRatio = clampSetting(s.blendEndRatio, 0.0, 100000.0, defaults.blendEndRatio);
+    s.snapTo100At = clampSetting(s.snapTo100At, 50.0, 100.0, defaults.snapTo100At);
+    s.minChance = Math.min(Math.max(s.minChance, 0), 100);
+    s.maxChance = Math.min(Math.max(s.maxChance, 0), 100);
+    if (s.minChance > s.maxChance) [s.minChance, s.maxChance] = [s.maxChance, s.minChance];
+  }
+
+  // Whole percent from the curve alone. Inputs are already non-negative.
+  function curvePercent(attackRating, defense, s) {
+    if (defense <= 0.0) return 100;
+    if (attackRating <= 0.0) return 0;
+    const ratio = attackRating / defense;
+    let value = 0.0;
+    if (ratio < s.pivotRatio) {
+      value = 100.0 / (1.0 + Math.pow(s.pivotRatio / ratio, s.steepness));
+    } else {
+      const above = ratio - s.pivotRatio;
+      const early = 50.0 + 50.0 * above / (above + s.tail);
+      value = early;
+      if (s.lateTail > 0.0) {
+        let weight = 0.0;
+        if (s.blendEndRatio > s.blendStartRatio) {
+          const t = Math.min(Math.max(
+            (ratio - s.blendStartRatio) / (s.blendEndRatio - s.blendStartRatio),
+            0.0), 1.0);
+          weight = t * t * (3.0 - 2.0 * t);
+        } else if (ratio >= s.blendStartRatio) {
+          weight = 1.0;
+        }
+        if (weight > 0.0) {
+          const late = 50.0 + 50.0 * above / (above + s.lateTail);
+          value = early + weight * (late - early);
+        }
+      }
+    }
+    if (value >= s.snapTo100At) return 100;
+    return Math.min(Math.max(Math.floor(value + 1e-11), 0.0), 100.0);
+  }
+
+  // The game's own handling of negative inputs: a negative defense is added to
+  // the attack rating, a negative attack rating to the defense, then both are
+  // floored at 0.
+  function normalizeInputs(attackRating, defense) {
+    if (defense < 0.0) {
+      attackRating -= defense;
+      defense = 0.0;
+    }
+    if (attackRating < 0.0) {
+      defense -= attackRating;
+      attackRating = 0.0;
+    }
+    if (defense < 0.0) defense = 0.0;
+    return [attackRating, defense];
+  }
+
+  function finalChance(attackRating, defense, attackerLevel, defenderLevel, s) {
+    [attackRating, defense] = normalizeInputs(attackRating, defense);
+    let chance = curvePercent(attackRating, defense, s);
+    if (s.levelScaling) {
+      const levels = attackerLevel + defenderLevel;
+      if (levels > 0) chance = Math.trunc(2 * chance * attackerLevel / levels);
+    }
+    return Math.min(Math.max(chance, s.minChance), s.maxChance);
+  }
+  // END FORMULA
+
+  const PRESETS = {
+    default: { ...DEFAULT_SETTINGS },
+    uncapped: { ...DEFAULT_SETTINGS, minChance: 0, maxChance: 100 },
+    vanilla: {
+      pivotRatio: 1.0, steepness: 1.0, tail: 2.0, lateTail: 0.0,
+      blendStartRatio: 30.0, blendEndRatio: 100.0, snapTo100At: 100.0,
+      minChance: 5, maxChance: 95, levelScaling: true,
+    },
+  };
+
+  const CONTROLS = [
+    { key: 'pivotRatio', toml: 'pivot_ratio', group: 'below', label: 'Pivot ratio',
+      help: 'The ratio where the chance is exactly 50%.', min: 0.25, max: 20, step: 0.05,
+      inputMin: 0.01, inputMax: 1000 },
+    { key: 'steepness', toml: 'steepness', group: 'below', label: 'Steepness',
+      help: 'How hard the chance falls away below the pivot. Vanilla is 1.', min: 0.5, max: 12,
+      step: 0.05, inputMin: 0.1, inputMax: 50 },
+    { key: 'tail', toml: 'tail', group: 'above', label: 'Tail',
+      help: 'How slowly the chance climbs above the pivot. Smaller climbs faster. Vanilla is 2.',
+      min: 0.1, max: 20, step: 0.05, inputMin: 0.01, inputMax: 1000 },
+    { key: 'lateTail', toml: 'late_tail', group: 'above', label: 'Late tail',
+      help: 'A second tail for high ratios, blended in between the two ratios below. 0 turns it off.',
+      min: 0, max: 10, step: 0.05, inputMin: 0, inputMax: 1000 },
+    { key: 'blendStartRatio', toml: 'blend_start_ratio', group: 'above', label: 'Blend starts at',
+      help: 'Ratio where the late tail starts to take over.', min: 0, max: 300, step: 1,
+      inputMin: 0, inputMax: 100000 },
+    { key: 'blendEndRatio', toml: 'blend_end_ratio', group: 'above', label: 'Blend ends at',
+      help: 'Ratio where only the late tail is left. Equal to the start switches at once.',
+      min: 0, max: 300, step: 1, inputMin: 0, inputMax: 100000 },
+    { key: 'snapTo100At', toml: 'snap_to_100_at', group: 'above', label: 'Snap to 100% at',
+      help: 'Chances at or above this percent become 100%. 100 turns it off.', min: 90, max: 100,
+      step: 0.1, inputMin: 50, inputMax: 100 },
+    { key: 'minChance', toml: 'min_chance', group: 'limits', label: 'Minimum chance',
+      help: 'Whole percent. Vanilla is 5.', min: 0, max: 100, step: 1, integer: true,
+      inputMin: 0, inputMax: 100 },
+    { key: 'maxChance', toml: 'max_chance', group: 'limits', label: 'Maximum chance',
+      help: 'Whole percent. Vanilla is 95.', min: 0, max: 100, step: 1, integer: true,
+      inputMin: 0, inputMax: 100 },
+  ];
+
+  const RANGES = {
+    r10: { log: false, max: 10 },
+    r40: { log: false, max: 40 },
+    r120: { log: false, max: 120 },
+    log: { log: true, min: 0.1, max: 1000 },
+  };
+
+  const CHANCE_TABLE_RATIOS = [0.5, 1, 2, 3, 4, 5, 6, 8, 10, 20, 30, 50, 100];
+  const NEEDED_TARGETS = [25, 50, 75, 90, 95, 99, 100];
+
+  const entered = { ...DEFAULT_SETTINGS };
+  let settings = { ...DEFAULT_SETTINGS };
+  let vanilla = { ...PRESETS.vanilla };
+  let levels = { attacker: 90, defender: 90 };
+  let rangeKey = 'r40';
+  let showVanilla = true;
+  let hoverX = null;
+  let geometry = null;
+
+  const $ = (id) => document.getElementById(id);
+  const canvas = $('chart');
+  const inputs = new Map();
+
+  function roundEntered(value, integer) {
+    if (!Number.isFinite(value)) return NaN;
+    return integer ? Math.round(value) : Math.round(value * 10000) / 10000;
+  }
+
+  function formatDecimal(value) {
+    let text = String(value);
+    if (!text.includes('.') && !text.includes('e')) text += '.0';
+    return text;
+  }
+
+  function formatRatio(ratio) {
+    if (ratio < 10) return ratio.toFixed(2);
+    if (ratio < 100) return ratio.toFixed(1);
+    return ratio.toFixed(0);
+  }
+
+  function chanceAtRatio(ratio, s) {
+    return finalChance(ratio, 1, levels.attacker, levels.defender, s);
+  }
+
+  function ratioNeeded(target, s) {
+    if (chanceAtRatio(0, s) >= target) return 0;
+    const low = 0.001;
+    const high = 100000;
+    const samples = 6000;
+    let previous = 0;
+    for (let i = 0; i <= samples; i++) {
+      const ratio = low * Math.pow(high / low, i / samples);
+      if (chanceAtRatio(ratio, s) >= target) {
+        let a = previous;
+        let b = ratio;
+        for (let k = 0; k < 64; k++) {
+          const middle = (a + b) / 2;
+          if (chanceAtRatio(middle, s) >= target) b = middle; else a = middle;
+        }
+        return b;
+      }
+      previous = ratio;
+    }
+    return Infinity;
+  }
+
+  function describeNeeded(ratio) {
+    if (ratio === 0) return 'any';
+    if (!Number.isFinite(ratio)) return 'never';
+    return formatRatio(Math.ceil(ratio * 100) / 100);
+  }
+
+  // ---- Controls ----
+
+  function buildControls() {
+    for (const control of CONTROLS) {
+      const wrap = document.createElement('div');
+      wrap.className = 'control';
+      const id = 'in-' + control.key;
+      wrap.innerHTML =
+        '<div class="control-top">' +
+          '<label for="' + id + '"></label>' +
+          '<input type="number" id="' + id + '">' +
+        '</div>' +
+        '<input type="range">' +
+        '<p class="help"></p>' +
+        '<p class="adjusted" hidden></p>';
+      const label = wrap.querySelector('label');
+      const number = wrap.querySelector('input[type="number"]');
+      const slider = wrap.querySelector('input[type="range"]');
+      const help = wrap.querySelector('.help');
+      label.textContent = control.label;
+      number.min = control.inputMin;
+      number.max = control.inputMax;
+      number.step = control.step;
+      slider.min = control.min;
+      slider.max = control.max;
+      slider.step = control.step;
+      slider.setAttribute('aria-label', control.label);
+      help.textContent = control.help + ' ';
+      const keyName = document.createElement('span');
+      keyName.className = 'key-name';
+      keyName.textContent = control.toml;
+      help.appendChild(keyName);
+
+      const commit = (raw) => {
+        const value = roundEntered(parseFloat(raw), control.integer);
+        if (!Number.isFinite(value)) return;
+        entered[control.key] = value;
+        update();
+      };
+      number.addEventListener('change', () => commit(number.value));
+      number.addEventListener('input', () => {
+        if (number.value !== '' && Number.isFinite(parseFloat(number.value))) commit(number.value);
+      });
+      slider.addEventListener('input', () => commit(slider.value));
+
+      inputs.set(control.key, { number, slider, adjusted: wrap.querySelector('.adjusted'), control });
+      $('group-' + control.group).appendChild(wrap);
+    }
+
+    $('level-scaling').addEventListener('change', (event) => {
+      entered.levelScaling = event.target.checked;
+      update();
+    });
+
+    for (const [id, key] of [['attacker-level', 'attacker'], ['defender-level', 'defender']]) {
+      $(id).addEventListener('input', (event) => {
+        const value = Math.round(parseFloat(event.target.value));
+        if (Number.isFinite(value)) {
+          levels = { ...levels, [key]: Math.min(Math.max(value, 1), 999) };
+          update();
+        }
+      });
+    }
+
+    for (const button of document.querySelectorAll('[data-preset]')) {
+      button.addEventListener('click', () => {
+        Object.assign(entered, PRESETS[button.dataset.preset]);
+        update();
+      });
+    }
+
+    for (const button of document.querySelectorAll('[data-range]')) {
+      button.addEventListener('click', () => {
+        rangeKey = button.dataset.range;
+        update();
+      });
+    }
+
+    $('show-vanilla').addEventListener('change', (event) => {
+      showVanilla = event.target.checked;
+      renderChart();
+    });
+
+    $('calc-ar').addEventListener('input', renderCalculator);
+    $('calc-def').addEventListener('input', renderCalculator);
+    $('copy').addEventListener('click', copySettings);
+  }
+
+  function syncControls() {
+    for (const [key, parts] of inputs) {
+      const value = entered[key];
+      if (document.activeElement !== parts.number) parts.number.value = String(value);
+      parts.slider.value = String(Math.min(Math.max(value, parts.control.min), parts.control.max));
+      const used = settings[key];
+      if (used !== value) {
+        parts.adjusted.hidden = false;
+        parts.adjusted.textContent = key === 'minChance' || key === 'maxChance'
+          ? 'The plugin swaps the limits and uses ' + used + '.'
+          : 'The plugin uses ' + (parts.control.integer ? used : formatDecimal(used)) + '.';
+      } else {
+        parts.adjusted.hidden = true;
+      }
+    }
+    $('level-scaling').checked = entered.levelScaling;
+    for (const button of document.querySelectorAll('[data-preset]')) {
+      const preset = { ...PRESETS[button.dataset.preset] };
+      sanitizeCurveSettings(preset);
+      const same = Object.keys(preset).every((key) => preset[key] === settings[key]);
+      button.setAttribute('aria-pressed', same ? 'true' : 'false');
+    }
+    for (const button of document.querySelectorAll('[data-range]')) {
+      button.setAttribute('aria-pressed', button.dataset.range === rangeKey ? 'true' : 'false');
+    }
+  }
+
+  // ---- Chart ----
+
+  function chartGeometry(width, height) {
+    const plot = { left: 58, right: width - 18, top: 16, bottom: height - 46 };
+    const view = RANGES[rangeKey];
+    const span = plot.right - plot.left;
+    let xOf;
+    let ratioOf;
+    if (view.log) {
+      const a = Math.log10(view.min);
+      const b = Math.log10(view.max);
+      xOf = (ratio) => plot.left + (Math.log10(Math.max(ratio, view.min)) - a) / (b - a) * span;
+      ratioOf = (x) => Math.pow(10, a + (x - plot.left) / span * (b - a));
+    } else {
+      xOf = (ratio) => plot.left + ratio / view.max * span;
+      ratioOf = (x) => (x - plot.left) / span * view.max;
+    }
+    const yOf = (chance) => plot.bottom - chance / 100 * (plot.bottom - plot.top);
+    return { plot, view, xOf, ratioOf, yOf };
+  }
+
+  function strokeSteps(context, g, s, color, width) {
+    const step = 1 / (window.devicePixelRatio || 1);
+    let previousChance = null;
+    let previousY = 0;
+    context.beginPath();
+    for (let x = g.plot.left; x <= g.plot.right; x += step) {
+      const chance = chanceAtRatio(g.ratioOf(x), s);
+      const y = g.yOf(chance);
+      if (previousChance === null) {
+        context.moveTo(x, y);
+      } else if (chance !== previousChance) {
+        context.lineTo(x, previousY);
+        context.lineTo(x, y);
+      }
+      previousChance = chance;
+      previousY = y;
+    }
+    context.lineTo(g.plot.right, previousY);
+    context.strokeStyle = color;
+    context.lineWidth = width;
+    context.lineJoin = 'miter';
+    context.stroke();
+  }
+
+  function renderChart() {
+    const css = getComputedStyle(document.documentElement);
+    const color = (name) => css.getPropertyValue(name).trim();
+    const width = canvas.clientWidth;
+    const height = canvas.clientHeight;
+    const scale = window.devicePixelRatio || 1;
+    if (canvas.width !== Math.round(width * scale) || canvas.height !== Math.round(height * scale)) {
+      canvas.width = Math.round(width * scale);
+      canvas.height = Math.round(height * scale);
+    }
+    const context = canvas.getContext('2d');
+    context.setTransform(scale, 0, 0, scale, 0, 0);
+    context.clearRect(0, 0, width, height);
+
+    const g = chartGeometry(width, height);
+    geometry = g;
+    const { plot, view } = g;
+    const sans = '13px Candara, "Gill Sans", Calibri, "Segoe UI", sans-serif';
+    context.font = sans;
+
+    // Horizontal grid and chance labels.
+    context.lineWidth = 1;
+    context.textAlign = 'right';
+    context.textBaseline = 'middle';
+    for (let chance = 0; chance <= 100; chance += 10) {
+      const y = Math.round(g.yOf(chance)) + 0.5;
+      context.strokeStyle = color('--etch');
+      context.beginPath();
+      context.moveTo(plot.left, y);
+      context.lineTo(plot.right, y);
+      context.stroke();
+      context.fillStyle = color('--ash');
+      context.fillText(chance + '%', plot.left - 10, y);
+    }
+
+    // Vertical grid and ratio labels.
+    context.textAlign = 'center';
+    context.textBaseline = 'top';
+    const ticks = [];
+    if (view.log) {
+      for (let power = -1; power <= 3; power++) {
+        for (let m = 1; m <= 9; m++) {
+          const ratio = m * Math.pow(10, power);
+          if (ratio > view.max * 1.0001) break;
+          ticks.push({ ratio, major: m === 1 });
+        }
+      }
+    } else {
+      const step = [0.5, 1, 2, 5, 10, 20, 25, 50, 100].find((candidate) => view.max / candidate <= 10);
+      for (let ratio = 0; ratio <= view.max + 1e-9; ratio += step) ticks.push({ ratio, major: true });
+    }
+    for (const tick of ticks) {
+      const x = Math.round(g.xOf(tick.ratio)) + 0.5;
+      context.strokeStyle = color('--etch');
+      context.globalAlpha = tick.major ? 1 : 0.45;
+      context.beginPath();
+      context.moveTo(x, plot.top);
+      context.lineTo(x, plot.bottom);
+      context.stroke();
+      context.globalAlpha = 1;
+      if (tick.major) {
+        context.fillStyle = color('--ash');
+        context.fillText(String(tick.ratio), x, plot.bottom + 8);
+      }
+    }
+
+    context.fillStyle = color('--ash');
+    context.fillText('Attack rating / defense', (plot.left + plot.right) / 2, plot.bottom + 26);
+    context.save();
+    context.translate(14, (plot.top + plot.bottom) / 2);
+    context.rotate(-Math.PI / 2);
+    context.textBaseline = 'middle';
+    context.fillText('Hit chance', 0, 0);
+    context.restore();
+
+    context.save();
+    context.beginPath();
+    context.rect(plot.left, plot.top - 2, plot.right - plot.left, plot.bottom - plot.top + 4);
+    context.clip();
+
+    // Late tail blend band.
+    const viewMin = view.log ? view.min : 0;
+    if (settings.lateTail > 0) {
+      context.textAlign = 'left';
+      context.textBaseline = 'top';
+      context.fillStyle = color('--ash');
+      if (settings.blendEndRatio > settings.blendStartRatio) {
+        const x0 = g.xOf(Math.max(settings.blendStartRatio, viewMin));
+        const x1 = g.xOf(Math.min(settings.blendEndRatio, view.max));
+        if (x1 > x0) {
+          context.fillStyle = 'rgba(199, 179, 119, 0.07)';
+          context.fillRect(x0, plot.top, x1 - x0, plot.bottom - plot.top);
+          context.fillStyle = color('--ash');
+          if (x1 - x0 > 90) context.fillText('late tail blend', x0 + 8, plot.top + 6);
+        }
+      } else if (settings.blendStartRatio <= view.max) {
+        const x = Math.round(g.xOf(settings.blendStartRatio)) + 0.5;
+        context.strokeStyle = color('--ash');
+        context.setLineDash([2, 4]);
+        context.beginPath();
+        context.moveTo(x, plot.top);
+        context.lineTo(x, plot.bottom);
+        context.stroke();
+        context.setLineDash([]);
+        context.fillText('late tail from here', x + 8, plot.top + 6);
+      }
+    }
+
+    // Pivot.
+    if (settings.pivotRatio <= view.max && settings.pivotRatio >= viewMin) {
+      const x = Math.round(g.xOf(settings.pivotRatio)) + 0.5;
+      context.strokeStyle = color('--ash');
+      context.setLineDash([1, 3]);
+      context.beginPath();
+      context.moveTo(x, plot.top);
+      context.lineTo(x, plot.bottom);
+      context.stroke();
+      context.setLineDash([]);
+      context.fillStyle = color('--ash');
+      context.textAlign = 'left';
+      context.textBaseline = 'bottom';
+      context.fillText('50% at ' + formatDecimal(settings.pivotRatio).replace(/\.0$/, ''), x + 6, plot.bottom - 6);
+    }
+
+    // Limits.
+    context.setLineDash([6, 5]);
+    context.strokeStyle = color('--rare');
+    context.fillStyle = color('--rare');
+    context.lineWidth = 1.5;
+    context.textAlign = 'right';
+    for (const [limit, show, below] of [
+      [settings.minChance, settings.minChance > 0, false],
+      [settings.maxChance, settings.maxChance < 100, true],
+    ]) {
+      if (!show) continue;
+      const y = Math.round(g.yOf(limit)) + 0.5;
+      context.beginPath();
+      context.moveTo(plot.left, y);
+      context.lineTo(plot.right, y);
+      context.stroke();
+      context.textBaseline = below ? 'top' : 'bottom';
+      context.fillText((below ? 'maximum ' : 'minimum ') + limit + '%', plot.right - 6, below ? y + 4 : y - 4);
+    }
+    context.setLineDash([]);
+
+    if (showVanilla) strokeSteps(context, g, vanilla, color('--magic'), 1.75);
+    strokeSteps(context, g, settings, color('--unique'), 2.75);
+
+    // Hover.
+    if (hoverX !== null) {
+      const ratio = g.ratioOf(hoverX);
+      const chance = chanceAtRatio(ratio, settings);
+      context.strokeStyle = color('--bone');
+      context.globalAlpha = 0.35;
+      context.lineWidth = 1;
+      context.beginPath();
+      context.moveTo(Math.round(hoverX) + 0.5, plot.top);
+      context.lineTo(Math.round(hoverX) + 0.5, plot.bottom);
+      context.stroke();
+      context.globalAlpha = 1;
+      if (showVanilla) {
+        context.fillStyle = color('--magic');
+        context.beginPath();
+        context.arc(hoverX, g.yOf(chanceAtRatio(ratio, vanilla)), 3.5, 0, Math.PI * 2);
+        context.fill();
+      }
+      context.fillStyle = color('--unique');
+      context.beginPath();
+      context.arc(hoverX, g.yOf(chance), 4.5, 0, Math.PI * 2);
+      context.fill();
+    }
+    context.restore();
+
+    canvas.setAttribute('aria-label',
+      'Hit chance curve: 50% at a ratio of ' + settings.pivotRatio +
+      ', limited to ' + settings.minChance + '% to ' + settings.maxChance + '%.');
+    renderReadout();
+  }
+
+  function renderReadout() {
+    const readout = $('readout');
+    if (hoverX === null || !geometry) {
+      readout.textContent = 'Point at the chart to read the chance at any ratio.';
+      return;
+    }
+    const ratio = geometry.ratioOf(hoverX);
+    readout.innerHTML = '';
+    readout.append('At a ratio of ' + formatRatio(ratio) + ': ');
+    const mine = document.createElement('strong');
+    mine.textContent = chanceAtRatio(ratio, settings) + '%';
+    readout.append(mine, ' with these settings');
+    if (showVanilla) {
+      const theirs = document.createElement('em');
+      theirs.textContent = chanceAtRatio(ratio, vanilla) + '%';
+      readout.append(', ', theirs, ' in vanilla');
+    }
+    readout.append('.');
+  }
+
+  function pointerMoved(event) {
+    if (!geometry) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    hoverX = x >= geometry.plot.left && x <= geometry.plot.right ? x : null;
+    renderChart();
+  }
+
+  // ---- Calculator, tables and output ----
+
+  function renderCalculator() {
+    const attackRating = Math.round(parseFloat($('calc-ar').value));
+    const defense = Math.round(parseFloat($('calc-def').value));
+    if (!Number.isFinite(attackRating) || !Number.isFinite(defense)) {
+      $('calc-chance').textContent = '';
+      $('calc-note').textContent = 'Enter a whole attack rating and defense.';
+      return;
+    }
+    const chance = finalChance(attackRating, defense, levels.attacker, levels.defender, settings);
+    const plain = finalChance(attackRating, defense, levels.attacker, levels.defender, vanilla);
+    $('calc-chance').textContent = chance + '%';
+    const ratioText = defense > 0 ? 'Ratio ' + formatRatio(attackRating / defense) + '. ' : '';
+    $('calc-note').textContent = ratioText + 'Vanilla D2R gives ' + plain + '%.';
+  }
+
+  function renderTables() {
+    const chanceRows = CHANCE_TABLE_RATIOS.map((ratio) =>
+      '<tr><td>' + ratio + '</td><td class="gold">' + chanceAtRatio(ratio, settings) +
+      '%</td><td class="blue">' + chanceAtRatio(ratio, vanilla) + '%</td></tr>');
+    $('chance-table').innerHTML = chanceRows.join('');
+    const neededRows = NEEDED_TARGETS.map((target) =>
+      '<tr><td>' + target + '%</td><td class="gold">' + describeNeeded(ratioNeeded(target, settings)) +
+      '</td><td class="blue">' + describeNeeded(ratioNeeded(target, vanilla)) + '</td></tr>');
+    $('needed-table').innerHTML = neededRows.join('');
+  }
+
+  function tomlText() {
+    return [
+      '[curve]',
+      'pivot_ratio = ' + formatDecimal(settings.pivotRatio),
+      'steepness = ' + formatDecimal(settings.steepness),
+      'tail = ' + formatDecimal(settings.tail),
+      'late_tail = ' + formatDecimal(settings.lateTail),
+      'blend_start_ratio = ' + formatDecimal(settings.blendStartRatio),
+      'blend_end_ratio = ' + formatDecimal(settings.blendEndRatio),
+      'snap_to_100_at = ' + formatDecimal(settings.snapTo100At),
+      '',
+      '[chance]',
+      'min_chance = ' + settings.minChance,
+      'max_chance = ' + settings.maxChance,
+      'level_scaling = ' + (settings.levelScaling ? 'true' : 'false'),
+      '',
+    ].join('\n');
+  }
+
+  async function copySettings() {
+    const text = tomlText();
+    const status = $('copy-status');
+    try {
+      await navigator.clipboard.writeText(text);
+      status.textContent = 'Settings copied.';
+    } catch (error) {
+      const selection = window.getSelection();
+      const range = document.createRange();
+      range.selectNodeContents($('toml'));
+      selection.removeAllRanges();
+      selection.addRange(range);
+      const copied = document.execCommand && document.execCommand('copy');
+      status.textContent = copied
+        ? 'Settings copied.'
+        : 'Copying is blocked here. The settings are selected, press Ctrl+C.';
+    }
+  }
+
+  function update() {
+    settings = { ...entered };
+    sanitizeCurveSettings(settings);
+    vanilla = { ...PRESETS.vanilla };
+    sanitizeCurveSettings(vanilla);
+    syncControls();
+    renderChart();
+    renderCalculator();
+    renderTables();
+    $('toml').textContent = tomlText();
+    $('copy-status').textContent = '';
+  }
+
+  buildControls();
+  canvas.addEventListener('pointermove', pointerMoved);
+  canvas.addEventListener('pointerdown', pointerMoved);
+  canvas.addEventListener('pointerleave', () => {
+    hoverX = null;
+    renderChart();
+  });
+  window.addEventListener('resize', renderChart);
+  update();
+})();
+</script>
+</body>
+</html>
