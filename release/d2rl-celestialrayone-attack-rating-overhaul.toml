@@ -8,9 +8,6 @@
 # The Character Screen runs the same formula as the hit roll, so it shows
 # the chance the roll really uses.
 #
-# The [missiles] section fixes a vanilla bug that strips a skill's attack
-# rating bonus from player missiles.
-#
 # Open attack-rating-curve.html in a browser to see the curve, try values
 # and copy them back into this file.
 #
@@ -103,15 +100,3 @@ live_monster_attack_rating = true
 # and Hell: monster defense times 10/12 and monster attack rating times
 # 10/15. The hit roll does not make them.
 skip_client_fudge = true
-
-[missiles]
-
-# Vanilla bug fix. A skill's ToHit, LevToHit and ToHitCalc give players an
-# attack rating percent, but a missile only receives it when the game creates
-# it through CreateSkillMissile. Missiles that skill functions create
-# themselves, such as Multiple Shot's (srvdofunc 8), roll to hit with no
-# skill bonus, even though the Character Screen includes it.
-# When on, every player missile gets its skill's ToHit as it is created,
-# the same value CreateSkillMissile would give it. Missiles that never roll
-# to hit are unaffected. Monsters and hirelings keep the vanilla behaviour.
-skill_attack_rating_on_missiles = true

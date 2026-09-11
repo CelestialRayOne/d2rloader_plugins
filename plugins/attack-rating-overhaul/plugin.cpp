@@ -110,32 +110,6 @@
 //   final AR. The screen uses them while its monster class matches.
 //
 // ---------------------------------------------------------------------------
-// Skill attack rating on missiles (vanilla bug, port of the 2.4 fix at 315B5D)
-// ---------------------------------------------------------------------------
-//   The missile resolver 4639A0 passes the MISSILE's own stat 19 as the skill
-//   AR% bonus (463C4B..463C5F). Missile creation sub_1405371A0 (game, params)
-//   writes that stat only when the creator set params flag 0x1000:
-//
-//     537B23  mov eax,[r14]             <- hook: r14 = params, r15 = missile
-//     537B26  bt eax,0Ch / jae 537B42   flag 0x1000 clear: no stat 19
-//     537B2C  mov r8d,[r14+58h]         params attack rating
-//     537B3A  call 2F7D10               set unit stat (missile, 19, AR, 0)
-//     537B3F  mov eax,[r14]
-//     537B42  bt eax,11h                <- rejoin, expects eax = flags
-//
-//   CreateSkillMissile 4333F0 sets the flag for players from 339040 (unit,
-//   skill, level), the skills.txt ToHit/LevToHit/ToHitCalc evaluator
-//   (4336B5..4336DF). Missiles that skill functions build themselves, such as
-//   Multiple Shot (srvdofunc 8), never get it. The hook keeps the flagged
-//   path exactly and, for player owners only, evaluates 339040 from params
-//   +3Ch skill and +40h level when the flag is clear. Params +8 is the owner.
-//   Skill ids are bounds-checked against the skills table count (tables
-//   +11B8h, as 097790 does) so the evaluator's assert path is never reached.
-//   The params struct is never modified, so a builder that reuses it for its
-//   next missile cannot pick up a stale value. No branch from outside the
-//   hook lands in 537B24..537B41, and the function has no indirect jumps.
-//
-// ---------------------------------------------------------------------------
 // Hook shape
 // ---------------------------------------------------------------------------
 //   Each hook is an in-place rewrite that loads the arguments, calls a near
@@ -283,8 +257,6 @@ constexpr std::uint64_t GetMonStatsRecordRva      = 0x0976E0;  // 44BB9E, 15147C
 constexpr std::uint64_t GetLayeredStatsRva        = 0x2F84B0;  // 44BBC6
 constexpr std::uint64_t MonTypeMatchesRva         = 0x449FB0;  // 44BBF5
 constexpr std::uint64_t GetDataTablesRva          = 0x300A90;  // 15148CD, 0977A2
-constexpr std::uint64_t SetUnitStatRva            = 0x2F7D10;  // 537B3A
-constexpr std::uint64_t SkillToHitRva             = 0x339040;  // 4336BE
 
 constexpr std::size_t   UnitTypeOffset        = 0x000;
 constexpr std::size_t   UnitClassOffset       = 0x004;
@@ -298,17 +270,8 @@ constexpr std::size_t CharStatsRecordsOffset     = 0x1240;
 constexpr std::size_t CharStatsCountOffset       = 0x1248;
 constexpr std::size_t CharStatsRecordBytes       = 0xD0;
 constexpr std::size_t CharStatsToHitFactorOffset = 0x38;
-constexpr std::size_t SkillsCountOffset          = 0x11B8;
-
-constexpr std::size_t   MissileParamsFlagsOffset        = 0x00;
-constexpr std::size_t   MissileParamsOwnerOffset        = 0x08;
-constexpr std::size_t   MissileParamsSkillOffset        = 0x3C;
-constexpr std::size_t   MissileParamsSkillLevelOffset   = 0x40;
-constexpr std::size_t   MissileParamsAttackRatingOffset = 0x58;
-constexpr std::uint32_t MissileParamsAttackRatingFlag   = 0x1000;
 
 constexpr std::int32_t  StatLevel                 = 12;
-constexpr std::int32_t  StatToHit                 = 19;
 constexpr std::uint32_t StatAttackRatingVsMonType = 179;
 constexpr std::uint32_t LayeredStatCapacity       = 128;
 constexpr std::size_t   LayeredStatEntryBytes     = 8;
@@ -322,9 +285,6 @@ using GetLayeredStatsFn =
     std::int32_t (*)(void* unit, std::uint32_t statId, void* entries, std::uint32_t capacity);
 using MonTypeMatchesFn = std::uint32_t (*)(std::uint8_t context, std::int32_t layer, std::int32_t monType);
 using GetDataTablesFn = void* (*)(std::uint8_t context);
-using SetUnitStatFn =
-    void (*)(void* unit, std::int32_t statId, std::int32_t value, std::int32_t layer);
-using SkillToHitFn = std::int32_t (*)(void* unit, std::int32_t skillId, std::int32_t skillLevel);
 
 // ---------------------------------------------------------------------------
 // Verified bytes (generated from the D2R 3.3 image)
@@ -567,56 +527,6 @@ constexpr std::uint8_t FallbackStub[22]{
     0x7E, 0x07, 0x6B, 0xC1, 0x64, 0x99, 0x41, 0xF7, 0xF8, 0xC3,
 };
 
-// RVA 0x537B23, 58 bytes. Missile creation: the params flag 0x1000 stat 19 stamp and its rejoin.
-constexpr std::uint8_t CreationStampWindow[58]{
-    0x41, 0x8B, 0x06, 0x0F, 0xBA, 0xE0, 0x0C, 0x73, 0x16, 0x45, 0x8B, 0x46,
-    0x58, 0x45, 0x33, 0xC9, 0x49, 0x8B, 0xCF, 0x41, 0x8D, 0x51, 0x13, 0xE8,
-    0xD1, 0x01, 0xDC, 0xFF, 0x41, 0x8B, 0x06, 0x0F, 0xBA, 0xE0, 0x11, 0x73,
-    0x15, 0x49, 0x8B, 0xCF, 0xE8, 0x30, 0x35, 0xE8, 0xFF, 0x83, 0xC8, 0x02,
-    0x49, 0x8B, 0xCF, 0x8B, 0xD0, 0xE8, 0x73, 0x58, 0xE8, 0xFF,
-};
-
-// RVA 0x4336A2, 62 bytes. CreateSkillMissile: skill ToHit evaluation and the call into missile creation.
-constexpr std::uint8_t SkillToHitCallWindow[62]{
-    0x44, 0x0F, 0xB6, 0xC3, 0x48, 0x8B, 0xD7, 0x48, 0x8B, 0xCE, 0xE8, 0x6F,
-    0x5C, 0x00, 0x00, 0x85, 0xC0, 0x7E, 0x2C, 0x45, 0x8B, 0xC6, 0x41, 0x8B,
-    0xD7, 0x48, 0x8B, 0xCF, 0xE8, 0x7D, 0x59, 0xF0, 0xFF, 0x85, 0xC0, 0x74,
-    0x0B, 0x81, 0x4C, 0x24, 0x40, 0x00, 0x10, 0x00, 0x00, 0x89, 0x45, 0xA7,
-    0x48, 0x8D, 0x54, 0x24, 0x40, 0x48, 0x8B, 0xCE, 0xE8, 0xC1, 0x3A, 0x10,
-    0x00, 0xEB,
-};
-
-// RVA 0x97790, 80 bytes. Skills table record getter: data tables call and the count at +11B8h.
-constexpr std::uint8_t SkillRecordWindow[80]{
-    0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x74, 0x24, 0x20, 0x57, 0x48,
-    0x83, 0xEC, 0x30, 0x48, 0x63, 0xF2, 0xE8, 0xE9, 0x92, 0x26, 0x00, 0x48,
-    0x8B, 0xF8, 0x48, 0x8B, 0xDE, 0x85, 0xF6, 0x78, 0x09, 0x48, 0x3B, 0x98,
-    0xB8, 0x11, 0x00, 0x00, 0x72, 0x18, 0x48, 0x8D, 0x4C, 0x24, 0x48, 0xC6,
-    0x44, 0x24, 0x48, 0x00, 0xE8, 0x57, 0xEC, 0xFE, 0xFF, 0x84, 0xC0, 0x74,
-    0x01, 0xCC, 0x85, 0xF6, 0x78, 0x55, 0x48, 0x3B, 0x9F, 0xB8, 0x11, 0x00,
-    0x00, 0x73, 0x4C, 0x48, 0x81, 0xC7, 0xB0, 0x11,
-};
-
-// Written at 537B23. rel32 filled at runtime.
-constexpr std::uint8_t MissileHookCode[16]{
-    0x4C, 0x89, 0xF1, 0x4C, 0x89, 0xFA, 0xE8, 0x00, 0x00, 0x00, 0x00, 0x41,
-    0x8B, 0x06, 0xEB, 0x0F,
-};
-
-constexpr std::uint32_t MissileHookRel32Offset = 7;
-
-static_assert(sizeof(MissileHookCode) == 16 && MissileHookRel32Offset + 4 <= sizeof(MissileHookCode));
-
-// If params flag 0x1000: set unit stat (missile, 19, params AR, 0), else return. Target filled at runtime.
-constexpr std::uint8_t MissileFallbackStub[38]{
-    0xF7, 0x01, 0x00, 0x10, 0x00, 0x00, 0x75, 0x01, 0xC3, 0x44, 0x8B, 0x41,
-    0x58, 0x45, 0x31, 0xC9, 0x48, 0x89, 0xD1, 0xBA, 0x13, 0x00, 0x00, 0x00,
-    0xFF, 0x25, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00,
-};
-
-constexpr std::size_t MissileFallbackTargetOffset = 30;
-
 struct Skip {
     std::uint32_t offset;
     std::uint32_t size;
@@ -637,14 +547,14 @@ constexpr Skip CombatSiteSkips[]{ { 0x37, 4 }, { 0x49, 4 } };
 constexpr Skip ChanceToHitFormatSkips[]{ { 0x1A, 1 }, { 0x68, 1 }, { 0x6C, 4 }, { 0x73, 4 } };
 constexpr Skip ChanceToBeHitFormatSkips[]{ { 0x1F, 1 }, { 0x23, 4 }, { 0x2A, 4 } };
 
-enum class Part : std::uint8_t { Combat, CharacterScreen, Missiles };
+enum class Part : std::uint8_t { Combat, CharacterScreen };
 
 struct Witness {
     Part   part;
     Window window;
 };
 
-constexpr std::array<Witness, 10> Witnesses{{
+constexpr std::array<Witness, 7> Witnesses{{
     { Part::Combat, { "combat hit roll", 0x44BD0E, CombatSiteWindow,
         sizeof(CombatSiteWindow), CombatSiteSkips, 2 } },
     { Part::CharacterScreen, { "attack rating helper calls", 0x44BB13, CombatHelpersWindow,
@@ -660,12 +570,6 @@ constexpr std::array<Witness, 10> Witnesses{{
     { Part::CharacterScreen, { "chance to be hit formatter", 0x1514CA0,
         ChanceToBeHitFormatWindow, sizeof(ChanceToBeHitFormatWindow),
         ChanceToBeHitFormatSkips, 3 } },
-    { Part::Missiles, { "missile creation attack rating stamp", 0x537B23, CreationStampWindow,
-        sizeof(CreationStampWindow), nullptr, 0 } },
-    { Part::Missiles, { "CreateSkillMissile skill ToHit call", 0x4336A2, SkillToHitCallWindow,
-        sizeof(SkillToHitCallWindow), nullptr, 0 } },
-    { Part::Missiles, { "skills table record getter", 0x97790, SkillRecordWindow,
-        sizeof(SkillRecordWindow), nullptr, 0 } },
 }};
 
 struct Hook {
@@ -677,7 +581,7 @@ struct Hook {
     std::uint32_t       rel32Offset;
 };
 
-constexpr std::size_t HookCount        = 4;
+constexpr std::size_t HookCount        = 3;
 constexpr std::size_t MaximumHookBytes = 96;
 
 constexpr std::array<Hook, HookCount> Hooks{{
@@ -687,8 +591,6 @@ constexpr std::array<Hook, HookCount> Hooks{{
         sizeof(ChanceToHitHookCode), ChanceToHitHookRel32Offset },
     { "average chance to hit you", Part::CharacterScreen, 0x1514C1F, ChanceToBeHitHookCode,
         sizeof(ChanceToBeHitHookCode), ChanceToBeHitHookRel32Offset },
-    { "missile skill attack rating", Part::Missiles, 0x537B23, MissileHookCode,
-        sizeof(MissileHookCode), MissileHookRel32Offset },
 }};
 
 enum class FieldKind : std::uint8_t { ShowZeroJump, MinimumImm8, MinimumImm32, MaximumImm32 };
@@ -715,14 +617,12 @@ constexpr std::array<Field, FieldCount> Fields{{
 constexpr std::uint8_t JneOpcode = 0x75;
 constexpr std::uint8_t JmpShortOpcode = 0xEB;
 
-// Relay page: one 14-byte absolute jump per hook, then the two fallback stubs.
+// Relay page: one 14-byte absolute jump per hook, then the fallback stub.
 constexpr std::size_t RelayPageBytes   = 4'096;
 constexpr std::size_t RelaySlotBytes   = 16;
 constexpr std::size_t JumpTargetOffset = 6;     // FF 25 00 00 00 00 <abs64>
 constexpr std::size_t FallbackOffset   = RelaySlotBytes * HookCount;
-constexpr std::size_t MissileFallbackOffset = FallbackOffset + 32;
-static_assert(sizeof(FallbackStub) <= 32);
-static_assert(MissileFallbackOffset + sizeof(MissileFallbackStub) <= RelayPageBytes);
+static_assert(FallbackOffset + sizeof(FallbackStub) <= RelayPageBytes);
 
 constexpr std::size_t MaximumConfigBytes = 32'768;
 
@@ -739,7 +639,6 @@ struct Config {
     bool          liveMonsterDefense         = true;
     bool          liveMonsterAttackRating    = true;
     bool          skipClientFudge            = true;
-    bool          missileSkillAttackRating   = true;
 };
 
 constexpr char DefaultConfigToml[] =
@@ -752,9 +651,6 @@ constexpr char DefaultConfigToml[] =
     "#   Average chance to hit you   that monster type against you\n"
     "# The Character Screen runs the same formula as the hit roll, so it shows\n"
     "# the chance the roll really uses.\n"
-    "#\n"
-    "# The [missiles] section fixes a vanilla bug that strips a skill's attack\n"
-    "# rating bonus from player missiles.\n"
     "#\n"
     "# Open attack-rating-curve.html in a browser to see the curve, try values\n"
     "# and copy them back into this file.\n"
@@ -847,19 +743,7 @@ constexpr char DefaultConfigToml[] =
     "# Skip two reductions the Character Screen makes on its own in Nightmare\n"
     "# and Hell: monster defense times 10/12 and monster attack rating times\n"
     "# 10/15. The hit roll does not make them.\n"
-    "skip_client_fudge = true\n"
-    "\n"
-    "[missiles]\n"
-    "\n"
-    "# Vanilla bug fix. A skill's ToHit, LevToHit and ToHitCalc give players an\n"
-    "# attack rating percent, but a missile only receives it when the game creates\n"
-    "# it through CreateSkillMissile. Missiles that skill functions create\n"
-    "# themselves, such as Multiple Shot's (srvdofunc 8), roll to hit with no\n"
-    "# skill bonus, even though the Character Screen includes it.\n"
-    "# When on, every player missile gets its skill's ToHit as it is created,\n"
-    "# the same value CreateSkillMissile would give it. Missiles that never roll\n"
-    "# to hit are unaffected. Monsters and hirelings keep the vanilla behaviour.\n"
-    "skill_attack_rating_on_missiles = true\n";
+    "skip_client_fudge = true\n";
 
 // ---------------------------------------------------------------------------
 // State
@@ -884,7 +768,6 @@ std::array<std::array<std::uint8_t, 4>, FieldCount> FieldWritten{};
 std::atomic<std::uint64_t> CombatRolls{};
 std::atomic<std::uint64_t> ChanceToHitRuns{};
 std::atomic<std::uint64_t> ChanceToBeHitRuns{};
-std::atomic<std::uint64_t> MissilesStamped{};
 
 // (monster class + 1) << 32 | value. Zero means nothing recorded yet.
 std::atomic<std::uint64_t> LiveDefense{};
@@ -897,8 +780,6 @@ GetMonStatsRecordFn      GetMonStatsRecord{};
 GetLayeredStatsFn        GetLayeredStats{};
 MonTypeMatchesFn         MonTypeMatches{};
 GetDataTablesFn          GetDataTables{};
-SetUnitStatFn            SetUnitStat{};
-SkillToHitFn             SkillToHit{};
 
 template <typename T>
 auto ReadAt(const void* base, std::size_t offset) noexcept -> T {
@@ -1040,7 +921,6 @@ void ApplyConfigLine(std::string_view key, std::string_view value) noexcept {
     else if (key == "live_monster_defense") ParseBool(value, Settings.liveMonsterDefense);
     else if (key == "live_monster_attack_rating") ParseBool(value, Settings.liveMonsterAttackRating);
     else if (key == "skip_client_fudge") ParseBool(value, Settings.skipClientFudge);
-    else if (key == "skill_attack_rating_on_missiles") ParseBool(value, Settings.missileSkillAttackRating);
 }
 
 void ParseConfig(std::string_view text) noexcept {
@@ -1213,41 +1093,14 @@ std::int32_t ChanceToBeHit(std::int32_t reducedAttackRating, std::int32_t player
     return FinalChance(attackRating, playerDefense, monsterLevel, playerLevel, Settings.curve);
 }
 
-// 537B23: rcx = missile creation params, rdx = the new missile. Replaces the
-// params flag 0x1000 stamp of stat 19.
-void StampMissileAttackRating(void* params, void* missile) noexcept {
-    const auto flags = ReadAt<std::uint32_t>(params, MissileParamsFlagsOffset);
-    if ((flags & MissileParamsAttackRatingFlag) != 0) {
-        SetUnitStat(missile, StatToHit,
-            ReadAt<std::int32_t>(params, MissileParamsAttackRatingOffset), 0);
-        return;
-    }
-    const void* owner = ReadAt<void*>(params, MissileParamsOwnerOffset);
-    if (!owner || ReadAt<std::uint32_t>(owner, UnitTypeOffset) != UnitPlayer) return;
-
-    const auto skill = ReadAt<std::int32_t>(params, MissileParamsSkillOffset);
-    const auto skillLevel = ReadAt<std::int32_t>(params, MissileParamsSkillLevelOffset);
-    if (skill < 0 || skillLevel <= 0) return;
-    const void* tables = GetDataTables(ReadAt<std::uint8_t>(owner, UnitDataContextOffset));
-    if (!tables || static_cast<std::uint64_t>(skill) >= ReadAt<std::uint64_t>(tables, SkillsCountOffset)) {
-        return;
-    }
-
-    const std::int32_t toHit = SkillToHit(const_cast<void*>(owner), skill, skillLevel);
-    if (toHit == 0) return;
-    SetUnitStat(missile, StatToHit, toHit, 0);
-    MissilesStamped.fetch_add(1, std::memory_order_relaxed);
-}
-
 // ---------------------------------------------------------------------------
 // Verification
 // ---------------------------------------------------------------------------
 
 auto PartEnabled(Part part) noexcept -> bool {
     switch (part) {
-    case Part::Combat:          return Settings.combat;
-    case Part::CharacterScreen: return Settings.characterScreen;
-    default:                    return Settings.missileSkillAttackRating;
+    case Part::Combat: return Settings.combat;
+    default:           return Settings.characterScreen;
     }
 }
 
@@ -1320,8 +1173,7 @@ auto HookTarget(std::size_t hookIndex) noexcept -> std::uint64_t {
     switch (hookIndex) {
     case 0:  return reinterpret_cast<std::uint64_t>(&CombatChance);
     case 1:  return reinterpret_cast<std::uint64_t>(&ChanceToHit);
-    case 2:  return reinterpret_cast<std::uint64_t>(&ChanceToBeHit);
-    default: return reinterpret_cast<std::uint64_t>(&StampMissileAttackRating);
+    default: return reinterpret_cast<std::uint64_t>(&ChanceToBeHit);
     }
 }
 
@@ -1344,8 +1196,7 @@ auto RetargetRelaysToFallback() noexcept -> bool {
     DWORD previous = 0;
     if (!VirtualProtect(page, RelayPageBytes, PAGE_EXECUTE_READWRITE, &previous)) return false;
     for (std::size_t i = 0; i < HookCount; ++i) {
-        const std::uint64_t fallback = reinterpret_cast<std::uint64_t>(page)
-            + (Hooks[i].part == Part::Missiles ? MissileFallbackOffset : FallbackOffset);
+        const std::uint64_t fallback = reinterpret_cast<std::uint64_t>(page) + FallbackOffset;
         std::memcpy(page + RelaySlotBytes * i + JumpTargetOffset, &fallback, sizeof(fallback));
     }
     DWORD ignored = 0;
@@ -1468,10 +1319,6 @@ auto InstallHooks() noexcept -> bool {
         WriteJumpStub(page + RelaySlotBytes * i, HookTarget(i));
     }
     std::memcpy(page + FallbackOffset, FallbackStub, sizeof(FallbackStub));
-    std::memcpy(page + MissileFallbackOffset, MissileFallbackStub, sizeof(MissileFallbackStub));
-    const std::uint64_t setUnitStat = Context->exeBase + SetUnitStatRva;
-    std::memcpy(page + MissileFallbackOffset + MissileFallbackTargetOffset, &setUnitStat,
-        sizeof(setUnitStat));
 
     DWORD previousProtection = 0;
     if (!VirtualProtect(page, RelayPageBytes, PAGE_EXECUTE_READ, &previousProtection)) {
@@ -1504,8 +1351,6 @@ void ResolveNatives() noexcept {
     GetLayeredStats        = reinterpret_cast<GetLayeredStatsFn>(at(GetLayeredStatsRva));
     MonTypeMatches         = reinterpret_cast<MonTypeMatchesFn>(at(MonTypeMatchesRva));
     GetDataTables          = reinterpret_cast<GetDataTablesFn>(at(GetDataTablesRva));
-    SetUnitStat            = reinterpret_cast<SetUnitStatFn>(at(SetUnitStatRva));
-    SkillToHit             = reinterpret_cast<SkillToHitFn>(at(SkillToHitRva));
 }
 
 // ---------------------------------------------------------------------------
@@ -1578,19 +1423,17 @@ auto __cdecl ArChanceCommand(D2R::Game::Client*, const D2RL::ConsoleCommandConte
         DescribeLive(defense, sizeof(defense), "live defense", LiveDefense);
         DescribeLive(attack, sizeof(attack), "live attack rating", LiveAttackRating);
         std::snprintf(message, sizeof(message),
-            "Attack Rating: %s | combat %s, character screen %s, missile skill attack rating %s | "
+            "Attack Rating: %s | combat %s, character screen %s | "
             "pivot %.2f, steepness %.2f, tail %.2f, late tail %.2f from %.1f to %.1f, "
-            "snap at %.1f | chance %d%% to %d%%, level scaling %s | rolls %llu, screen %llu/%llu, "
-            "missiles given skill attack rating %llu | %s | %s",
+            "snap at %.1f | chance %d%% to %d%%, level scaling %s | rolls %llu, screen %llu/%llu | "
+            "%s | %s",
             StateName(), Settings.combat ? "on" : "off", Settings.characterScreen ? "on" : "off",
-            Settings.missileSkillAttackRating ? "on" : "off",
             curve.pivotRatio, curve.steepness, curve.tail, curve.lateTail,
             curve.blendStartRatio, curve.blendEndRatio, curve.snapTo100At,
             curve.minChance, curve.maxChance, curve.levelScaling ? "on" : "off",
             static_cast<unsigned long long>(CombatRolls.load(std::memory_order_relaxed)),
             static_cast<unsigned long long>(ChanceToHitRuns.load(std::memory_order_relaxed)),
             static_cast<unsigned long long>(ChanceToBeHitRuns.load(std::memory_order_relaxed)),
-            static_cast<unsigned long long>(MissilesStamped.load(std::memory_order_relaxed)),
             defense, attack);
     } else {
         std::snprintf(message, sizeof(message),
@@ -1613,12 +1456,11 @@ constexpr D2RL::PluginInfo Info{
     .apiVersion = D2RL_PLUGIN_API_VERSION,
     .id = "celestialrayone.attack-rating",
     .name = "Attack Rating",
-    .version = "1.0.0",
+    .version = "1.1.0",
     .author = "CelestialRayOne",
     .description =
         "Configurable attack rating hit-chance curve and hit chance limits, applied to the "
-        "hit roll and both Character Screen hit-chance lines, plus skill attack rating on "
-        "player missiles.",
+        "hit roll and both Character Screen hit-chance lines.",
     .flags = D2RL::PluginFlags::Shared | D2RL::PluginFlags::NativeHooks,
 };
 
@@ -1635,12 +1477,11 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
     ResolveNatives();
     ReadConfiguration();
 
-    if (!Settings.enabled
-            || (!Settings.combat && !Settings.characterScreen && !Settings.missileSkillAttackRating)) {
+    if (!Settings.enabled || (!Settings.combat && !Settings.characterScreen)) {
         State = InstallState::DisabledByConfig;
         Context->LogInfo(Settings.enabled
-            ? "AttackRating: apply_to_combat, apply_to_character_screen and "
-              "skill_attack_rating_on_missiles are all off; no hooks installed."
+            ? "AttackRating: apply_to_combat and apply_to_character_screen are both off; "
+              "no hooks installed."
             : "AttackRating: disabled by configuration.");
         RegisterStatusCommand();
         return true;
@@ -1652,12 +1493,11 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
     const auto& curve = Settings.curve;
     char message[400];
     std::snprintf(message, sizeof(message),
-        "AttackRating: %s. combat %s, character screen %s, missile skill attack rating %s. "
+        "AttackRating: %s. combat %s, character screen %s. "
         "pivot %.2f, steepness %.2f, "
         "tail %.2f, late tail %.2f (%.1f to %.1f), snap %.1f, chance %d%% to %d%%, "
         "level scaling %s.",
         StateName(), Settings.combat ? "on" : "off", Settings.characterScreen ? "on" : "off",
-        Settings.missileSkillAttackRating ? "on" : "off",
         curve.pivotRatio, curve.steepness, curve.tail, curve.lateTail, curve.blendStartRatio,
         curve.blendEndRatio, curve.snapTo100At, curve.minChance, curve.maxChance,
         curve.levelScaling ? "on" : "off");
