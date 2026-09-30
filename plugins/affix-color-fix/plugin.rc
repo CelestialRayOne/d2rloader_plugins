@@ -1,0 +1,27 @@
+#include <D2RLPlugin/resource.h>
+#include <D2RLPlugin/version.h>
+
+D2RL_PLUGIN_MANIFEST_RESOURCE_ID RCDATA { D2RL_PLUGIN_RESOURCE_DWORD(D2RL_PLUGIN_ABI_VERSION) }
+
+1 VERSIONINFO
+FILEVERSION 1,1,0,0
+PRODUCTVERSION 1,1,0,0
+BEGIN
+  BLOCK "StringFileInfo"
+  BEGIN
+    BLOCK "040904B0"
+    BEGIN
+      VALUE "CompanyName", "CelestialRayOne"
+      VALUE "FileDescription", "A color code in one item stat no longer recolors the other stat lines of the tooltip."
+      VALUE "FileVersion", "1.1.0"
+      VALUE "InternalName", "celestialrayone.tooltip-color-scope"
+      VALUE "OriginalFilename", "d2rl-celestialrayone-tooltip-color-scope.dll"
+      VALUE "ProductName", "Tooltip Color Scope"
+      VALUE "ProductVersion", "1.1.0"
+    END
+  END
+  BLOCK "VarFileInfo"
+  BEGIN
+    VALUE "Translation", 0x0409, 1200
+  END
+END
