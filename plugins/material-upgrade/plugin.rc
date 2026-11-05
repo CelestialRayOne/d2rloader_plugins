@@ -10,8 +10,8 @@ MATERIAL_UPGRADE_STRINGS_ID        RCDATA "strings.json"
 MATERIAL_UPGRADE_DEFAULT_CONFIG_ID RCDATA "celestialrayone.material-upgrade.toml"
 
 1 VERSIONINFO
-FILEVERSION 1,2,2,0
-PRODUCTVERSION 1,2,2,0
+FILEVERSION 1,3,2,0
+PRODUCTVERSION 1,3,2,0
 BEGIN
   BLOCK "StringFileInfo"
   BEGIN
@@ -19,11 +19,11 @@ BEGIN
     BEGIN
       VALUE "CompanyName", "CelestialRayOne"
       VALUE "FileDescription", "Material Upgrade: Shift + click upgrades and Alt + click downgrades stack-tab materials in place."
-      VALUE "FileVersion", "1.2.2"
+      VALUE "FileVersion", "1.3.2"
       VALUE "InternalName", "celestialrayone.material-upgrade"
       VALUE "OriginalFilename", "d2rl-celestialrayone-material-upgrade.dll"
       VALUE "ProductName", "Material Upgrade"
-      VALUE "ProductVersion", "1.2.2"
+      VALUE "ProductVersion", "1.3.2"
     END
   END
   BLOCK "VarFileInfo"

@@ -60,43 +60,34 @@
 //   PlayerInventoryPanel's update, slot 2 of the table at 1CE36D0 (its only
 //   reference). It refreshes gold_amount and gold_button, switches the gold
 //   button to deposit while UI state 18h is open, and ends in the base widget
-//   update. The hook places the button, then runs it.
+//   update. The hook finds the button by name and shows it only while the
+//   stash is open, then runs the original.
 //     856220 (widget, name)       direct child by name: children at +58h,
 //                                 count at +60h, name at child +8h
 //     8562A0 (widget, rectOut)    rect at +70h {x, y, width, height} in parent
-//                                 space; +52h means fill the parent
-//     856FB0 (widget, point)      writes x and y at +70h / +74h
+//                                 space (read for the console)
 //     widget vtable +48h / +50h   set enabled / visible: for ButtonWidget
 //                                 837D0 writes +50h, F02A0 writes +51h
 //     widget vtable +58h          the widget's type; a type's parent at +10h
-//     86F0B0 / 2C5B80             ButtonWidget / InventoryGridWidget types
-//   The widget parent is at +30h (8562A0 follows it for fill-parent rects).
-//   Grid width: the grid's own rect width, or else cellCount.x * cellSize.x,
-//   the layout fields the game loads the grid with: InventoryGridWidget
-//   cellCount at +628h (field table 236C1B0), InventoryItemWidget cellSize at
-//   +5B8h (field table 236A530).
+//     86F0B0                      ButtonWidget type
+//   The widget parent is at +30h.
 //
 // ---------------------------------------------------------------------------
-// 5. The button
+// 5. The buttons
 // ---------------------------------------------------------------------------
-//   Two ButtonWidgets added to the stock PlayerInventory panel through the
-//   SDK, one for the keyboard/mouse layouts and one for the controller
-//   layouts. Their sprites are embedded in the DLL and handed to D2RCore as
-//   plugin resources: frame 0 normal, 1 pressed, 2 disabled, 3 hovered.
-//     keyboard/mouse  368x58 per frame (184x29 px at 1080p), small panel font,
-//                     right edge 54 units (27 px) inside the grid's right edge
-//     controller      404x82 per frame (202x41 px at 1080p), one font size up,
-//                     right edge on the grid frame's outer edge (10 units
-//                     outside the cells), A prompt "Transfer to Stash"
-//   The game draws the labels with its own font. ButtonWidget takes its size
-//   from its sprite frame (870310 copies the image's size into the button
-//   rect), so a button stays hidden until its sprite is loaded and that size
-//   is known. Each sits under the grid, centred on the gold row. On a
-//   controller it is reached from gold_button (the mod's layout points
-//   gold_button's "right" at it). The click message is consumed by the
-//   plugin's UI message listener, which queues the transfer on the UI thread.
-//   The plugin moves only its own button; the gold widgets are only read, for
-//   the row the button sits on.
+//   The buttons are part of the mod's own inventory layouts, so their place,
+//   size, font and d-pad links are set there:
+//     transfer_to_stash_button             keyboard/mouse inventory
+//     transfer_to_stash_controller_button  controller inventory
+//   The plugin hands D2RCore their art as plugin resources (frame 0 normal,
+//   1 pressed, 2 disabled, 3 hovered) and the keyboard/mouse tooltip string,
+//   and its UI message listener consumes their click messages and queues the
+//   transfer on the UI thread.
+//     keyboard/mouse  368x58 per frame (184x29 px at 1080p)
+//     controller      404x82 per frame (202x41 px at 1080p)
+//   Up to 1.5.2 the plugin added both buttons itself as SDK child layouts;
+//   D2RCore never built the controller one (1.5.2's console listed the
+//   controller inventory's children: no Transfer to Stash button among them).
 //
 // ---------------------------------------------------------------------------
 // 6. The Controls key
@@ -195,7 +186,7 @@
 namespace {
 
 constexpr char PluginIdText[]  = "celestialrayone.transfer-to-stash";
-constexpr char PluginVersion[] = "1.5.0";
+constexpr char PluginVersion[] = "1.6.0";
 constexpr char SourceFile[]    = "transfer-to-stash";
 
 const D2RL::PluginContext* Context{};
@@ -217,7 +208,6 @@ constexpr std::uint64_t CanQuickMoveRva        = 0x15A0B0;
 constexpr std::uint64_t TransferRva            = 0x15F8B0;
 constexpr std::uint64_t PlaySoundRva           = 0x1A0780;
 constexpr std::uint64_t InteractionBlockedRva  = 0x1C7360;   // not checked, see section 3
-constexpr std::uint64_t GridTypeRva            = 0x2C5B80;
 constexpr std::uint64_t UnitInventoryRva       = 0x34A360;
 constexpr std::uint64_t UnitTypeRva            = 0x34B9D0;
 constexpr std::uint64_t ItemPageRva            = 0x36CFE0;
@@ -226,7 +216,6 @@ constexpr std::uint64_t NextItemRva            = 0x38ABA0;
 constexpr std::uint64_t StashDestinationRva    = 0x46DA50;
 constexpr std::uint64_t FindChildRva           = 0x856220;
 constexpr std::uint64_t WidgetRectRva          = 0x8562A0;
-constexpr std::uint64_t SetWidgetPositionRva   = 0x856FB0;
 constexpr std::uint64_t ButtonTypeRva          = 0x86F0B0;
 
 // Called by the shared stash transfer (section 7)
@@ -253,23 +242,13 @@ constexpr std::uint64_t QuickMoveActionRva     = 0x2AAAA0;
 constexpr std::uint64_t ButtonSetEnabledRva    = 0x0837D0;
 constexpr std::uint64_t ButtonSetVisibleRva    = 0x0F02A0;
 
-// Data: the layout field tables the game loads the grid widget with
-constexpr std::uint64_t CellCountFieldRva      = 0x236C1B0;   // InventoryGridWidget "cellCount"
-constexpr std::uint64_t CellCountNameRva       = 0x1CF39E0;
-constexpr std::uint64_t CellSizeFieldRva       = 0x236A530;   // InventoryItemWidget "cellSize"
-constexpr std::uint64_t CellSizeNameRva        = 0x1CF1530;
-constexpr std::size_t   FieldNameOffset        = 0x00;
-constexpr std::size_t   FieldOffsetOffset      = 0x10;
-constexpr std::uint64_t CellCountOffset        = 0x628;
-constexpr std::uint64_t CellSizeOffset         = 0x5B8;
-
 // Widget layout
 constexpr std::size_t WidgetParentOffset       = 0x30;
 constexpr std::size_t WidgetEnabledOffset      = 0x50;
 constexpr std::size_t WidgetVisibleOffset      = 0x51;
-constexpr std::size_t WidgetFillParentOffset   = 0x52;
 constexpr std::size_t WidgetChildrenOffset     = 0x58;
 constexpr std::size_t WidgetChildCountOffset   = 0x60;
+constexpr std::size_t WidgetNameOffset         = 0x08;     // char*, read by 856220 for the name compare
 constexpr std::size_t VtableSetEnabled         = 0x48 / 8;
 constexpr std::size_t VtableSetVisible         = 0x50 / 8;
 constexpr std::size_t VtableType               = 0x58 / 8;
@@ -309,9 +288,6 @@ constexpr std::size_t   PayloadActionOffset     = 0x10;
 constexpr std::size_t   PayloadHoldOffset       = 0x19;
 
 // Widget names
-constexpr char GridName[]        = "grid";
-constexpr char GoldButtonName[]  = "gold_button";
-constexpr char GoldAmountName[]  = "gold_amount";
 
 // ---------------------------------------------------------------------------
 // The button
@@ -321,58 +297,6 @@ constexpr std::string_view ClickTarget  = "PanelManager";
 constexpr std::string_view ClickCommand = "OpenPanel";
 constexpr std::string_view ClickText           = "CelestialRayOneTransferToStash";
 constexpr std::string_view ControllerClickText = "CelestialRayOneTransferToStashController";
-
-// Text in the game's font over the plugin's own sprite. Normal and pressed use
-// the gold of the inventory's gold amount; hover is lighter. The keyboard/mouse
-// tooltip is the plugin string TransferButtonTooltip (see TooltipStrings). The position is
-// set at run time (section 4). "filename" is the sprite's resource path
-// relative to data/hd/global/ui, without the extension.
-constexpr char DesktopLayout[] = R"json({
-    "type": "ButtonWidget", "name": "celestialrayone.transfer-to-stash/TransferButton",
-    "fields": {
-        "rect": { "x": 0, "y": 0 },
-        "filename": "d2rloader/celestialrayone.transfer-to-stash/transferbutton",
-        "normalFrame": 0,
-        "pressedFrame": 1,
-        "disabledFrame": 2,
-        "hoveredFrame": 3,
-        "textString": "Transfer to Stash",
-        "pointSize": "$SmallPanelFontSize",
-        "textColor": { "r": 207, "g": 193, "b": 119, "a": 255 },
-        "textHoverColor": { "r": 240, "g": 226, "b": 160, "a": 255 },
-        "textDisabledColor": { "r": 110, "g": 105, "b": 95, "a": 255 },
-        "pressLabelOffset": { "x": 0, "y": 2 },
-        "tooltipString": "@celestialrayone.transfer-to-stash:TransferButtonTooltip",
-        "onClickMessage": "PanelManager:OpenPanel:CelestialRayOneTransferToStash"
-    }
-}
-)json";
-
-constexpr char ControllerLayout[] = R"json({
-    "type": "ButtonWidget", "name": "celestialrayone.transfer-to-stash/TransferButtonController",
-    "fields": {
-        "rect": { "x": 0, "y": 0 },
-        "filename": "d2rloader/celestialrayone.transfer-to-stash/transferbuttoncontroller",
-        "navigation": {
-            "left": { "name": "gold_button" },
-            "up": { "name": "grid" }
-        },
-        "buttonLegendAction": "select",
-        "buttonLegendString": "Transfer to Stash",
-        "normalFrame": 0,
-        "pressedFrame": 1,
-        "disabledFrame": 2,
-        "hoveredFrame": 3,
-        "textString": "Transfer to Stash",
-        "pointSize": "$SmallMediumFontSize",
-        "textColor": { "r": 207, "g": 193, "b": 119, "a": 255 },
-        "textHoverColor": { "r": 240, "g": 226, "b": 160, "a": 255 },
-        "textDisabledColor": { "r": 110, "g": 105, "b": 95, "a": 255 },
-        "pressLabelOffset": { "x": 0, "y": 2 },
-        "onClickMessage": "PanelManager:OpenPanel:CelestialRayOneTransferToStashController"
-    }
-}
-)json";
 
 // The keyboard/mouse tooltip, as a string of the plugin's own namespace. A
 // layout field shows its text as written, so a color code there is drawn as
@@ -403,35 +327,23 @@ auto TooltipStrings() -> std::string {
 }
 
 struct ButtonSpec {
-    const char*                    label;            // for the log and the console
-    const char*                    localId;
-    const char*                    widgetName;
-    const char*                    layoutPath;
-    const char*                    layout;
-    std::uint64_t                  layoutSize;
-    int                            spriteId;         // RCDATA ids, resource_ids.h
-    int                            lowendSpriteId;
-    const char*                    spritePath;
-    const char*                    lowendSpritePath;
-    D2RL::Panels::ChildLayoutFlags flags;
-    std::int32_t                   rightInset;       // layout units inside the grid's right edge (negative: outside)
+    const char* label;            // for the log and the console
+    const char* widgetName;       // the button's name in the mod's inventory layout
+    int         spriteId;         // RCDATA ids, resource_ids.h
+    int         lowendSpriteId;
+    const char* spritePath;
+    const char* lowendSpritePath;
 };
 
 const std::array<ButtonSpec, 2> Buttons{ {
-    { "keyboard/mouse", "TransferButton", "celestialrayone.transfer-to-stash/TransferButton",
-      "data/global/ui/layouts/celestialrayone.transfer-to-stash/TransferButtonhd.json",
-      DesktopLayout, sizeof(DesktopLayout) - 1,
+    { "keyboard/mouse", "transfer_to_stash_button",
       TRANSFER_BUTTON_SPRITE_ID, TRANSFER_BUTTON_LOWEND_SPRITE_ID,
       "data/hd/global/ui/d2rloader/celestialrayone.transfer-to-stash/transferbutton.sprite",
-      "data/hd/global/ui/d2rloader/celestialrayone.transfer-to-stash/transferbutton.lowend.sprite",
-      D2RL::Panels::ChildLayoutFlags::KeyboardMouseOnly, 54 },
-    { "controller", "TransferButtonController", "celestialrayone.transfer-to-stash/TransferButtonController",
-      "data/global/ui/layouts/celestialrayone.transfer-to-stash/TransferButtonControllerhd.json",
-      ControllerLayout, sizeof(ControllerLayout) - 1,
+      "data/hd/global/ui/d2rloader/celestialrayone.transfer-to-stash/transferbutton.lowend.sprite" },
+    { "controller", "transfer_to_stash_controller_button",
       TRANSFER_BUTTON_CONTROLLER_SPRITE_ID, TRANSFER_BUTTON_CONTROLLER_LOWEND_SPRITE_ID,
       "data/hd/global/ui/d2rloader/celestialrayone.transfer-to-stash/transferbuttoncontroller.sprite",
-      "data/hd/global/ui/d2rloader/celestialrayone.transfer-to-stash/transferbuttoncontroller.lowend.sprite",
-      D2RL::Panels::ChildLayoutFlags::ControllerOnly, -10 },
+      "data/hd/global/ui/d2rloader/celestialrayone.transfer-to-stash/transferbuttoncontroller.lowend.sprite" },
 } };
 
 // ---------------------------------------------------------------------------
@@ -469,9 +381,6 @@ constexpr std::uint8_t TransferBytes[]{
 constexpr std::uint8_t PlaySoundBytes[]{
     0x40,0x55,0x56,0x57,0x41,0x56,0x41,0x57,0x48,0x8D,0x6C,0x24,0xD1,0x48,0x81,0xEC,
     0x00,0x01,0x00,0x00,0x48,0x8B,0x05,0x2D,0xAB,0x82,0x02,0x48,0x33,0xC4,0x48,0x89 };
-constexpr std::uint8_t GridTypeBytes[]{
-    0x40,0x53,0x48,0x83,0xEC,0x20,0x48,0x8D,0x0D,0x03,0xD7,0xA1,0x01,0xE8,0xFE,0xD4,
-    0x58,0x00,0x48,0x85,0xC0,0x75,0x13,0x48,0x8D,0x4C,0x24,0x30,0x88,0x44,0x24,0x30 };
 constexpr std::uint8_t UnitInventoryBytes[]{
     0x48,0x89,0x5C,0x24,0x18,0x56,0x48,0x83,0xEC,0x20,0x48,0x8B,0xF1,0x48,0x85,0xC9,
     0x75,0x13,0x88,0x4C,0x24,0x30,0x48,0x8D,0x4C,0x24,0x30,0xE8,0x70,0xCC,0xFF,0xFF };
@@ -496,12 +405,6 @@ constexpr std::uint8_t FindChildBytes[]{
 constexpr std::uint8_t WidgetRectBytes[]{
     0x40,0x53,0x48,0x83,0xEC,0x30,0x80,0x79,0x52,0x00,0x48,0x8B,0xDA,0x74,0x2A,0x48,
     0x8B,0x49,0x30,0x48,0x8D,0x54,0x24,0x20,0xE8,0xE3,0xFF,0xFF,0xFF,0x33,0xC0,0x48 };
-constexpr std::uint8_t SetWidgetPositionBytes[]{
-    0x48,0x89,0x5C,0x24,0x10,0x57,0x48,0x83,0xEC,0x20,0x80,0x79,0x52,0x00,0x48,0x8B,
-    0xFA,0x48,0x8B,0xD9,0x74,0x14,0x48,0x8D,0x4C,0x24,0x30,0xC6,0x44,0x24,0x30,0x00,
-    0xE8,0x8B,0xDA,0xFF,0xFF,0x84,0xC0,0x74,0x01,0xCC,0x48,0x8B,0x07,0x89,0x43,0x70,
-    0x48,0xC1,0xE8,0x20,0x89,0x43,0x74,0x48,0x8B,0x5C,0x24,0x38,0x48,0x83,0xC4,0x20,
-    0x5F,0xC3 };
 constexpr std::uint8_t ButtonTypeBytes[]{
     0x40,0x53,0x48,0x83,0xEC,0x20,0x48,0x8D,0x0D,0x63,0x24,0x48,0x01,0xE8,0xCE,0x3F,
     0xFE,0xFF,0x48,0x85,0xC0,0x75,0x13,0x48,0x8D,0x4C,0x24,0x30,0x88,0x44,0x24,0x30 };
@@ -578,7 +481,6 @@ const Witness Witnesses[]{
     W(CanQuickMoveRva, CanQuickMoveBytes, "Advanced Stash eligibility"),
     W(TransferRva, TransferBytes, "item transfer request"),
     W(PlaySoundRva, PlaySoundBytes, "play sound"),
-    W(GridTypeRva, GridTypeBytes, "InventoryGridWidget type"),
     W(UnitInventoryRva, UnitInventoryBytes, "unit inventory"),
     W(UnitTypeRva, UnitTypeBytes, "unit type"),
     W(ItemPageRva, ItemPageBytes, "item page"),
@@ -587,7 +489,6 @@ const Witness Witnesses[]{
     W(StashDestinationRva, StashDestinationBytes, "Advanced Stash owner"),
     W(FindChildRva, FindChildBytes, "child widget by name"),
     W(WidgetRectRva, WidgetRectBytes, "widget rect"),
-    W(SetWidgetPositionRva, SetWidgetPositionBytes, "set widget position"),
     W(ButtonTypeRva, ButtonTypeBytes, "ButtonWidget type"),
     W(ButtonSetEnabledRva, ButtonSetEnabledBytes, "ButtonWidget set enabled"),
     W(ButtonSetVisibleRva, ButtonSetVisibleBytes, "ButtonWidget set visible"),
@@ -650,7 +551,6 @@ using NextItemFn           = void*(__fastcall*)(void* item);
 using StashDestinationFn   = void*(__fastcall*)(void* player);
 using FindWidgetFn         = void*(__fastcall*)(void* parent, const char* name);
 using WidgetRectFn         = WidgetRect*(__fastcall*)(void* widget, WidgetRect* rect);
-using SetWidgetPositionFn  = void(__fastcall*)(void* widget, const std::int32_t* point);
 using InventoryUpdateFn    = std::uint64_t(__fastcall*)(void* panel);
 using WidgetBoolFn         = void(__fastcall*)(void* widget, bool value);
 using WidgetTypeFn         = void*(__fastcall*)(void* widget);
@@ -682,7 +582,6 @@ CanQuickMoveFn       CanQuickMove{};
 TransferFn           Transfer{};
 PlaySoundFn          PlaySound{};
 InteractionBlockedFn InteractionBlocked{};
-TypeFn               GridType{};
 TypeFn               ButtonType{};
 UnitInventoryFn      UnitInventory{};
 UnitTypeFn           UnitType{};
@@ -692,7 +591,6 @@ NextItemFn           NextItem{};
 StashDestinationFn   StashDestination{};
 FindWidgetFn         FindChild{};
 WidgetRectFn         GetWidgetRect{};
-SetWidgetPositionFn  SetWidgetPosition{};
 InventoryUpdateFn    OriginalInventoryUpdate{};
 ButtonInputFn        OriginalButtonInput{};
 OnlineStateFn        OnlineState{};
@@ -726,7 +624,6 @@ void BindNatives() {
     Transfer           = At<TransferFn>(TransferRva);
     PlaySound          = At<PlaySoundFn>(PlaySoundRva);
     InteractionBlocked = At<InteractionBlockedFn>(InteractionBlockedRva);
-    GridType           = At<TypeFn>(GridTypeRva);
     ButtonType         = At<TypeFn>(ButtonTypeRva);
     UnitInventory      = At<UnitInventoryFn>(UnitInventoryRva);
     UnitType           = At<UnitTypeFn>(UnitTypeRva);
@@ -736,7 +633,6 @@ void BindNatives() {
     StashDestination   = At<StashDestinationFn>(StashDestinationRva);
     FindChild          = At<FindWidgetFn>(FindChildRva);
     GetWidgetRect      = At<WidgetRectFn>(WidgetRectRva);
-    SetWidgetPosition  = At<SetWidgetPositionFn>(SetWidgetPositionRva);
     OnlineState        = At<OnlineStateFn>(OnlineStateRva);
     ClientUnit         = At<ClientUnitFn>(ClientUnitRva);
     SharedRequest      = At<SharedRequestFn>(SharedRequestRva);
@@ -777,7 +673,7 @@ auto StateName(PluginState state) noexcept -> const char* {
     case PluginState::UnsupportedBuild: return "not installed, this D2R build does not match";
     case PluginState::ServicesMissing:  return "not installed, D2RLoader lacks a needed service";
     case PluginState::InstallFailed:    return "not installed, the inventory panel hook failed";
-    case PluginState::ButtonFailed:     return "the button could not be added";
+    case PluginState::ButtonFailed:     return "the button art, tooltip or click listener could not be registered";
     case PluginState::Active:           return "active";
     }
     return "unknown";
@@ -786,10 +682,8 @@ auto StateName(PluginState state) noexcept -> const char* {
 PluginState       State = PluginState::Loading;
 std::string       VerifyFailures;
 std::atomic<bool> Active{};
-bool              CellFieldsValid{};
 
 std::atomic<std::uint64_t> PanelUpdates{};     // inventory updates with the button in the panel
-std::atomic<std::uint64_t> ButtonMoves{};
 std::atomic<std::uint64_t> Presses{};          // button clicks
 std::atomic<std::uint64_t> HotkeyPresses{};    // Controls key presses with the stash open
 std::atomic<std::uint64_t> QueueFailures{};
@@ -819,18 +713,12 @@ auto Count(const std::atomic<std::uint64_t>& counter) noexcept -> unsigned long 
 
 // What the last inventory update found, for the console command.
 struct PlacementView {
-    bool         seen{};
-    const char*  layout{};
-    bool         stashOpen{};
-    bool         shown{};
-    bool         placed{};
-    bool         haveGrid{};
-    bool         haveGold{};
-    WidgetRect   grid{};
-    std::int32_t gridWidth{};
-    WidgetRect   row{};
-    WidgetRect   button{};
-    const char*  problem{};
+    bool        seen{};
+    const char* layout{};
+    const char* name{};
+    bool        stashOpen{};
+    bool        shown{};
+    WidgetRect  button{};
 };
 
 // What the shared stash transfer did, for the console command.
@@ -866,9 +754,6 @@ SharedView    LastShared;
 
 // One warning per problem per session.
 std::atomic<bool> WarnedNotButton{};
-std::atomic<bool> WarnedNoGrid{};
-std::atomic<bool> WarnedNoGold{};
-std::atomic<bool> WarnedFillParent{};
 
 void WarnOnce(std::atomic<bool>& flag, const char* message) {
     if (!flag.exchange(true)) Context->LogWarn(message);
@@ -884,37 +769,39 @@ constexpr char DefaultConfigToml[] =
     "# Adds a \"Transfer to Stash\" button to the inventory panel.\n"
     "#\n"
     "# What it does\n"
-    "#   - The button sits under the inventory grid, on the right, centred on the\n"
-    "#     gold row. It only shows while the stash is open.\n"
-    "#       keyboard/mouse  right edge 27 px (at 1080p) inside the grid's right edge\n"
-    "#       controller      right edge on the grid frame's outer edge; a bigger\n"
-    "#                       button with the next font size up\n"
+    "#   - A \"Transfer to Stash\" button in the inventory, shown only while the stash\n"
+    "#     is open. The button itself is part of the mod's inventory layouts (see\n"
+    "#     The buttons, below); this plugin gives it its art, tooltip and click.\n"
     "#   - Left click: does what Ctrl+click does with the stash open, for every\n"
     "#     Advanced Stash item in the inventory and in the Horadric Cube at once.\n"
     "#     The game picks the stash tab for each item.\n"
     "#   - Shift + left click: the same, then every other item in the inventory and\n"
     "#     in the cube goes to the shared stash (see below). Hovering the button\n"
-    "#     shows this as a tooltip, in two gray lines. Its text is the string\n"
-    "#     celestialrayone.transfer-to-stash:TransferButtonTooltip; a mod can change\n"
-    "#     it from its own string files with that full key.\n"
+    "#     shows this as a tooltip.\n"
     "#   - Controller: tap A on the button for a left click, hold A for a\n"
     "#     Shift + left click.\n"
-    "#   - The position comes from the inventory layout the game loaded, so a mod's\n"
-    "#     own inventory layout needs no numbers here. Where the gold display sits\n"
-    "#     is up to the mod's layout; the plugin does not move it.\n"
-    "#   - On a controller the d-pad reaches the button from the gold button, once\n"
-    "#     the mod's controller inventory layout points gold_button's \"right\"\n"
-    "#     navigation at celestialrayone.transfer-to-stash/TransferButtonController.\n"
     "#   - Keyboard key: Options > Controls > Stash > Transfer to Stash, no default\n"
     "#     key. It does the same as a left click, and only while the stash is open.\n"
     "#     Holding it down counts as one press.\n"
-    "#   - The button art is inside the DLL. A mod can replace it with its own files\n"
-    "#     under data/hd/global/ui/d2rloader/celestialrayone.transfer-to-stash/:\n"
-    "#       transferbutton.sprite, transferbutton.lowend.sprite\n"
-    "#         4 frames of 368x58 (184x29 for lowend)\n"
-    "#       transferbuttoncontroller.sprite, transferbuttoncontroller.lowend.sprite\n"
-    "#         4 frames of 404x82 (202x41 for lowend)\n"
-    "#     Frame order: normal, pressed, disabled, hovered.\n"
+    "#\n"
+    "# The buttons\n"
+    "#   The mod's inventory layouts hold the buttons, so their place, size, font\n"
+    "#   and d-pad links are set there. The plugin finds them by name:\n"
+    "#     transfer_to_stash_button             keyboard/mouse inventory\n"
+    "#     transfer_to_stash_controller_button  controller inventory\n"
+    "#   An expansion layout lists the same names, like its other children. Each\n"
+    "#   button needs the plugin's click message and art:\n"
+    "#   keyboard/mouse button\n"
+    "#     \"onClickMessage\": \"PanelManager:OpenPanel:CelestialRayOneTransferToStash\"\n"
+    "#     \"filename\": \"d2rloader/celestialrayone.transfer-to-stash/transferbutton\"\n"
+    "#     \"tooltipString\": \"@celestialrayone.transfer-to-stash:TransferButtonTooltip\"\n"
+    "#   controller button\n"
+    "#     \"onClickMessage\": \"PanelManager:OpenPanel:CelestialRayOneTransferToStashController\"\n"
+    "#     \"filename\": \"d2rloader/celestialrayone.transfer-to-stash/transferbuttoncontroller\"\n"
+    "#   The art: 4 frames each (normal, pressed, disabled, hovered), 368x58 for\n"
+    "#   keyboard/mouse and 404x82 for controller, half that for lowend. A mod can\n"
+    "#   replace it with its own files under\n"
+    "#     data/hd/global/ui/d2rloader/celestialrayone.transfer-to-stash/\n"
     "#\n"
     "# Which items move on a left click\n"
     "#   - Items whose misc.txt row has AdvancedStashStackable = 1 and that have a\n"
@@ -1038,19 +925,6 @@ auto VerifyAll() -> bool {
     return ok;
 }
 
-// The grid's cell fields, read from the field tables the game loads layouts
-// with: the entry's name pointer and its field offset must be the ones above.
-auto CheckField(std::uint64_t fieldRva, std::uint64_t nameRva, const char* name, std::uint64_t offset) noexcept -> bool {
-    const auto* entry = reinterpret_cast<const std::uint8_t*>(Base + fieldRva);
-    std::uintptr_t namePointer{};
-    std::uint64_t  fieldOffset{};
-    std::memcpy(&namePointer, entry + FieldNameOffset, sizeof(namePointer));
-    std::memcpy(&fieldOffset, entry + FieldOffsetOffset, sizeof(fieldOffset));
-    return namePointer == Base + nameRva
-        && std::memcmp(reinterpret_cast<const char*>(Base + nameRva), name, std::strlen(name) + 1) == 0
-        && fieldOffset == offset;
-}
-
 // ---------------------------------------------------------------------------
 // Widgets
 // ---------------------------------------------------------------------------
@@ -1086,15 +960,6 @@ auto RectOf(void* widget) noexcept -> WidgetRect {
     return rect;
 }
 
-void MoveTo(void* widget, std::int32_t x, std::int32_t y) {
-    if (Read<std::uint8_t>(widget, WidgetFillParentOffset) != 0) {
-        WarnOnce(WarnedFillParent, "TransferToStash: the button fills its parent and cannot be moved.");
-        return;
-    }
-    const std::int32_t point[2]{ x, y };
-    SetWidgetPosition(widget, point);
-}
-
 void SetShown(void* widget, bool shown) noexcept {
     const std::uint8_t wanted = shown ? 1 : 0;
     if (Read<std::uint8_t>(widget, WidgetVisibleOffset) != wanted) {
@@ -1105,33 +970,35 @@ void SetShown(void* widget, bool shown) noexcept {
     }
 }
 
-// The inventory grid: the direct child named "grid", or else the first direct
-// child that is an InventoryGridWidget.
-auto FindGrid(void* panel) noexcept -> void* {
-    void* const gridType = GridType();
-    void* grid = FindChild(panel, GridName);
-    if (grid != nullptr && IsA(grid, gridType)) return grid;
-    void** const children = Read<void**>(panel, WidgetChildrenOffset);
-    const auto count = Read<std::uint64_t>(panel, WidgetChildCountOffset);
-    if (children == nullptr || count > MaxChildren) return nullptr;
-    for (std::uint64_t i = 0; i < count; ++i) {
-        if (children[i] != nullptr && IsA(children[i], gridType)) return children[i];
-    }
-    return nullptr;
-}
-
-auto GridWidth(void* grid, const WidgetRect& rect) noexcept -> std::int32_t {
-    if (rect.width > 0) return rect.width;
-    if (!CellFieldsValid) return 0;
-    const auto columns = Read<std::int32_t>(grid, CellCountOffset);
-    const auto cell    = Read<std::int32_t>(grid, CellSizeOffset);
-    if (columns <= 0 || columns > 64 || cell <= 0 || cell > 1024) return 0;
-    return columns * cell;
-}
-
 // ---------------------------------------------------------------------------
 // Hook: the inventory panel update
 // ---------------------------------------------------------------------------
+
+// Console diagnostics: the direct children of the last inventory panel whose
+// update found neither button, as 856220 sees them (name at +8h).
+std::atomic<std::uint64_t> UpdatesWithoutButton{};
+std::string                PanelChildren;     // under ViewMutex
+const void*                PanelChildrenOf{};  // under ViewMutex
+
+void NoteMissingButton(void* panel) {
+    UpdatesWithoutButton.fetch_add(1, std::memory_order_relaxed);
+    std::lock_guard lock(ViewMutex);
+    if (panel == PanelChildrenOf) return;
+    PanelChildrenOf = panel;
+    PanelChildren.clear();
+    void** const children = Read<void**>(panel, WidgetChildrenOffset);
+    const auto count = Read<std::uint64_t>(panel, WidgetChildCountOffset);
+    if (children == nullptr || count > MaxChildren) {
+        PanelChildren = "(unreadable)";
+        return;
+    }
+    for (std::uint64_t i = 0; i < count && PanelChildren.size() < 900; ++i) {
+        if (!PanelChildren.empty()) PanelChildren += ", ";
+        const char* name = children[i] != nullptr ? Read<const char*>(children[i], WidgetNameOffset) : nullptr;
+        if (name == nullptr) PanelChildren += "?";
+        else PanelChildren.append(name, strnlen(name, 96));
+    }
+}
 
 void Arrange(void* panel) {
     const ButtonSpec* spec = nullptr;
@@ -1145,6 +1012,7 @@ void Arrange(void* panel) {
     }
     if (button == nullptr) {         // neither button is loaded in this panel
         ControllerButton.store(nullptr, std::memory_order_relaxed);
+        NoteMissingButton(panel);
         return;
     }
     ControllerButton.store(spec == &Buttons[1] ? button : nullptr, std::memory_order_relaxed);
@@ -1155,51 +1023,14 @@ void Arrange(void* panel) {
     }
     PanelUpdates.fetch_add(1, std::memory_order_relaxed);
 
+    // The layout places the button; the plugin only shows it with the stash.
     PlacementView view{};
     view.seen      = true;
     view.layout    = spec->label;
+    view.name      = spec->widgetName;
     view.stashOpen = UiStateOpen(StashUiState) != 0;
     view.button    = RectOf(button);
-
-    void* const grid = FindGrid(panel);
-    if (grid != nullptr) {
-        view.grid      = RectOf(grid);
-        view.gridWidth = GridWidth(grid, view.grid);
-        view.haveGrid  = view.gridWidth > 0;
-    }
-    void* const coin   = FindChild(panel, GoldButtonName);
-    void* const amount = FindChild(panel, GoldAmountName);
-    view.haveGold = coin != nullptr || amount != nullptr;
-    if (coin != nullptr) view.row = RectOf(coin);
-    if (view.row.height <= 0 && amount != nullptr) view.row = RectOf(amount);
-
-    if (!view.haveGrid) {
-        view.problem = "no inventory grid with a known width";
-        WarnOnce(WarnedNoGrid, "TransferToStash: the inventory panel has no grid with a known width; the button "
-                               "stays hidden.");
-    } else if (!view.haveGold) {
-        view.problem = "no gold_button or gold_amount in the inventory panel";
-        WarnOnce(WarnedNoGold, "TransferToStash: the inventory panel has no gold_button or gold_amount; the "
-                               "button has no row to sit on and stays hidden.");
-    } else if (view.button.width <= 0 || view.button.height <= 0) {
-        view.problem = "the button has no size yet (its sprite is not loaded)";
-    } else if (view.row.height <= 0) {
-        view.problem = "the gold row has no size yet";
-    } else {
-        // Right edge rightInset inside the grid's right edge (outside when
-        // negative), centred on the gold row.
-        const std::int32_t x = view.grid.x + view.gridWidth - spec->rightInset - view.button.width;
-        const std::int32_t y = view.row.y + view.row.height / 2 - view.button.height / 2;
-        if (view.button.x != x || view.button.y != y) {
-            MoveTo(button, x, y);
-            view.button.x = x;
-            view.button.y = y;
-            ButtonMoves.fetch_add(1, std::memory_order_relaxed);
-        }
-        view.placed = true;
-    }
-
-    view.shown = view.stashOpen && view.placed;
+    view.shown     = view.stashOpen;
     SetShown(button, view.shown);
 
     std::lock_guard lock(ViewMutex);
@@ -1509,7 +1340,6 @@ void __cdecl RunTransfer(const D2RL::PluginContext*, void*) noexcept {
 // ---------------------------------------------------------------------------
 
 const D2RL::ResourceService*    ResourceSvc{};
-const D2RL::PanelService*       PanelSvc{};
 const D2RL::SharedEventService* EventSvc{};
 const D2RL::ThreadService*      ThreadSvc{};
 const D2RL::InputService*       InputSvc{};
@@ -1518,10 +1348,8 @@ std::atomic<D2RL::Input::ActionHandle> HotkeyAction{ D2RL::Input::InvalidHandle 
 std::atomic<bool>                      HotkeyHeld{};
 
 struct ButtonHandles {
-    D2RL::Resources::RegistrationHandle layout = D2RL::Resources::InvalidHandle;
     D2RL::Resources::RegistrationHandle sprite = D2RL::Resources::InvalidHandle;
     D2RL::Resources::RegistrationHandle lowend = D2RL::Resources::InvalidHandle;
-    D2RL::Panels::ChildLayoutHandle     child  = D2RL::Panels::InvalidChildLayoutHandle;
 };
 std::array<ButtonHandles, 2>       Handles{};
 D2RL::Resources::RegistrationHandle StringsHandle = D2RL::Resources::InvalidHandle;
@@ -1532,11 +1360,6 @@ auto QueryServices() -> bool {
     if (Context->QueryService(&ResourceSvc) != D2RL::ServiceQueryResult::Success
             || !D2RL::HasResourceServiceField(ResourceSvc, D2RL::ResourceServiceRequiredSize)) {
         Context->LogError("TransferToStash: D2RLoader has no resource service.");
-        ok = false;
-    }
-    if (Context->QueryService(&PanelSvc) != D2RL::ServiceQueryResult::Success
-            || !D2RL::HasPanelServiceField(PanelSvc, D2RL::PanelServiceUnregisterChildLayoutFieldEnd)) {
-        Context->LogError("TransferToStash: D2RLoader has no panel service with child layouts.");
         ok = false;
     }
     if (Context->QueryService(&EventSvc) != D2RL::ServiceQueryResult::Success
@@ -1658,11 +1481,7 @@ void RemoveButton() {
     }
     StringsHandle = D2RL::Resources::InvalidHandle;
     for (ButtonHandles& handles : Handles) {
-        if (handles.child != D2RL::Panels::InvalidChildLayoutHandle && PanelSvc != nullptr) {
-            (void)PanelSvc->unregisterChildLayout(Context, handles.child);
-        }
-        handles.child = D2RL::Panels::InvalidChildLayoutHandle;
-        for (auto* handle : { &handles.layout, &handles.sprite, &handles.lowend }) {
+        for (auto* handle : { &handles.sprite, &handles.lowend }) {
             if (*handle != D2RL::Resources::InvalidHandle && ResourceSvc != nullptr) {
                 (void)ResourceSvc->unregisterResource(Context, *handle);
             }
@@ -1709,7 +1528,7 @@ auto RegisterSprite(int id, const char* path, D2RL::Resources::RegistrationHandl
 }
 
 auto AddButton() -> bool {
-    // The strings go first: the keyboard/mouse layout refers to them.
+    // The tooltip string, the art and the click listener for the layout's buttons.
     const std::string strings = TooltipStrings();
     const D2RL::Resources::ResourceRegistration stringFile{
         .structSize = D2RL::Resources::ResourceRegistrationSize,
@@ -1734,20 +1553,6 @@ auto AddButton() -> bool {
             RemoveButton();
             return false;
         }
-        const D2RL::Resources::ResourceRegistration layout{
-            .structSize = D2RL::Resources::ResourceRegistrationSize,
-            .flags      = 0,
-            .path       = spec.layoutPath,
-            .bytes      = spec.layout,
-            .byteCount  = spec.layoutSize,
-        };
-        const auto layoutResult = ResourceSvc->registerResource(Context, &layout, &handles.layout);
-        if (layoutResult != D2RL::Resources::Result::Success) {
-            D2RL::LogErrorF(Context, "TransferToStash: the %s button layout could not be registered (result %u).",
-                spec.label, static_cast<unsigned>(layoutResult));
-            RemoveButton();
-            return false;
-        }
     }
 
     const D2RL::SharedEvents::UiMessageListener listener{
@@ -1766,23 +1571,6 @@ auto AddButton() -> bool {
         return false;
     }
 
-    for (std::size_t i = 0; i < Buttons.size(); ++i) {
-        const ButtonSpec& spec = Buttons[i];
-        const D2RL::Panels::ChildLayoutRegistration child{
-            .structSize = D2RL::Panels::ChildLayoutRegistrationSize,
-            .flags      = spec.flags,
-            .stockPanel = D2RL::Panels::StockPanel::PlayerInventory,
-            .reserved   = 0,
-            .localId    = spec.localId,
-        };
-        const auto childResult = PanelSvc->registerChildLayout(Context, &child, &Handles[i].child);
-        if (childResult != D2RL::Panels::Result::Success) {
-            D2RL::LogErrorF(Context, "TransferToStash: the %s button could not be added to the inventory panel "
-                "(result %u).", spec.label, static_cast<unsigned>(childResult));
-            RemoveButton();
-            return false;
-        }
-    }
     return true;
 }
 
@@ -1814,21 +1602,26 @@ auto __cdecl StatusCommand(D2R::Game::Client*, const D2RL::ConsoleCommandContext
     }
 
     if (!placement.seen) {
-        say("  inventory panel: the button has not been seen yet (open the inventory with keyboard and mouse).");
+        say("  inventory panel: no button seen yet (open the inventory).");
     } else {
-        std::snprintf(line, sizeof(line), "  inventory panel: button seen in %llu updates; grid at %d,%d, %d wide; "
-            "gold row at y %d, %d high.", Count(PanelUpdates), placement.grid.x, placement.grid.y,
-            placement.gridWidth, placement.row.y, placement.row.height);
+        std::snprintf(line, sizeof(line), "  %s button %s: at %d,%d, %dx%d, %s (stash %s); seen in %llu updates.",
+            placement.layout != nullptr ? placement.layout : "?", placement.name != nullptr ? placement.name : "?",
+            placement.button.x, placement.button.y, placement.button.width, placement.button.height,
+            placement.shown ? "shown" : "hidden", placement.stashOpen ? "open" : "closed", Count(PanelUpdates));
         say(line);
-        std::snprintf(line, sizeof(line), "  %s button: at %d,%d, %dx%d, %s (stash %s), moved %llu times.",
-            placement.layout != nullptr ? placement.layout : "?", placement.button.x, placement.button.y,
-            placement.button.width, placement.button.height,
-            placement.shown ? "shown" : "hidden", placement.stashOpen ? "open" : "closed", Count(ButtonMoves));
-        say(line);
-        if (placement.problem != nullptr) {
-            std::snprintf(line, sizeof(line), "  placement: %s.", placement.problem);
-            say(line);
+    }
+
+    if (Count(UpdatesWithoutButton) != 0) {
+        std::string children;
+        {
+            std::lock_guard lock(ViewMutex);
+            children = PanelChildren;
         }
+        std::snprintf(line, sizeof(line), "  inventory panel without transfer_to_stash_button or transfer_to_stash_controller_button: %llu updates. "
+            "Its children:",
+            Count(UpdatesWithoutButton));
+        say(line);
+        say(("    " + children).c_str());
     }
 
     if (!transfer.ran) {
@@ -1906,19 +1699,14 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
         Context->LogError("TransferToStash: this D2R build does not match; nothing was installed.");
         return true;
     }
-    CellFieldsValid = CheckField(CellCountFieldRva, CellCountNameRva, "cellCount", CellCountOffset)
-                   && CheckField(CellSizeFieldRva, CellSizeNameRva, "cellSize", CellSizeOffset);
-    if (!CellFieldsValid) {
-        Context->LogWarn("TransferToStash: the grid cell fields do not match; only the grid's own width is used.");
-    }
     BindNatives();
     if (!QueryServices()) {
         State = PluginState::ServicesMissing;
         return true;
     }
 
-    // The hook goes in first: a button without it would sit, always shown, in
-    // the panel's corner.
+    // The hook goes in first: it shows the layout's button only while the stash
+    // is open.
     if (!Context->InstallInlineHook(InventoryUpdateRva, InventoryUpdateBytes, sizeof(InventoryUpdateBytes),
             &HookedInventoryUpdate, &OriginalInventoryUpdate)) {
         State = PluginState::InstallFailed;
@@ -1946,10 +1734,9 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
     const bool hotkey = RegisterHotkey();
 
     State = PluginState::Active;
-    D2RL::LogInfoF(Context, "TransferToStash %s: active (buttons %s and %s, Controls key %s, controller hold %s, "
-        "grid cell fields %s).", PluginVersion, Buttons[0].widgetName, Buttons[1].widgetName,
-        hotkey ? "Stash > Transfer to Stash" : "none", ControllerHoldReady ? "ready" : "not available",
-        CellFieldsValid ? "checked" : "not used");
+    D2RL::LogInfoF(Context, "TransferToStash %s: active (buttons %s and %s from the mod's layouts, Controls key %s, "
+        "controller hold %s).", PluginVersion, Buttons[0].widgetName, Buttons[1].widgetName,
+        hotkey ? "Stash > Transfer to Stash" : "none", ControllerHoldReady ? "ready" : "not available");
     return true;
 }
 

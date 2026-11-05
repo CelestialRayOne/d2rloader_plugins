@@ -71,17 +71,49 @@
 //      0x1C3120  action 2, dropped by hand  reuses or recreates the item
 //      0x1C4DB0  action 3, seen on ground   recreates the item
 //  After the stock handler the item exists, decoded, in mode 3 or 5. The hook
-//  looks it up with 0x9A5D0(id, 4) and queues its chat lines and sounds, once
-//  per item per game. Hooks: 18, 18 and 13 bytes of register saves and stack
-//  setup; in all three the next instruction is the RIP-relative security
-//  cookie load, which is not stolen.
+//  looks it up with 0x9A5D0(id, 4) and queues its chat lines and sounds. Each
+//  handler is reached only from its own case of the 0x9C switch (0x12E356,
+//  0x12E374, 0x12E383). A drop (0 or 2) alerts every time. Action 3 comes
+//  again whenever the item's room comes back into view, so it gives only what
+//  that item has not given yet this game: its chat lines and its sounds are
+//  remembered apart, by item id, until the game is joined or left. Hooks: 18,
+//  18 and 13 bytes of register saves and stack setup; in all three the next
+//  instruction is the RIP-relative security cookie load, which is not stolen.
 //
 // -----------------------------------------------------------------------------
 //  OUTPUT
 // -----------------------------------------------------------------------------
-//  Chat: 0x2E97F0(string*) is the console's own "print a system line" call. It
-//  copies the text into the chat queue (0x137F910 -> 0x138CF70) and keeps no
-//  pointer. String object: {char* data, u64 size, u64 capacity | top bit}.
+//  Chat: lines go into the game's chat the way the game shows the local player
+//  its own notices (0x160290, "cannot socket items in the shared stash"): the
+//  chat entry push, through the game's own thunk 0x3E2B7F0 (jmp [slot], which
+//  D2RLoader binds to D2RCore). Arguments, as that notice passes them: the
+//  chat data (0x85E5C0), the text, a base color (font color index, 0 white),
+//  0, the channel the player is viewing (chat data +0xC3AC0 type, +0xC3AC8
+//  name, copied through the game's string constructor 0x76190; the push takes
+//  the copy over), four empty optionals (account, character, chat epoch,
+//  reporting id) and 0. The push copies the text by pointer and size and keeps
+//  no pointer to it. The game's body (0x8617D0) tells the chat list at once
+//  only about a line in the viewed channel, hence the copy.
+//  String object: {char* data, u64 size, u64 capacity | top bit while the text
+//  sits in the buffer that follows}.
+//  0x2E97F0, used before 1.5.2, posts to the Battle.net channel chat instead
+//  (0x137F910 -> 0x138CF70), which an offline game never shows.
+//  A filter's own "chatNotifications": false (top level) drops every chat line
+//  about an item: notify, chatMessage and chatMessageWhenHidden (the engine
+//  leaves them out). The plugin's own lines (the filter announce, level
+//  changes, Show Hidden Items) still print.
+//  The player's switch sits above that: selection.json "chatNotifications":
+//  false (the launcher's Enable chat notifications) silences the plugin in
+//  chat for every filter, whatever the filter says: no item lines, and none
+//  of the plugin's own lines either. True, or no key, leaves it to the
+//  filter. The drop alert applies it when it queues an item's lines, as it
+//  does playSounds; the plugin's own lines go through QueueOwnChat, which
+//  reads ChatSwitch, a copy of the switch kept next to CurrentSelection.
+//  A reload announces only what it changed: the announce when the filter
+//  itself changed (another filter, new text, a different load result), the
+//  level change line when only its level did, nothing otherwise. So flipping
+//  a launcher switch, or the plugin reading back the level its own level key
+//  just wrote, prints nothing.
 //  Colors: the renderer only knows the game's color marker, which 0x0CD6E0
 //  takes from the "ColorCode" string. The plugin asks 0x0CD6E0 for it once and
 //  swaps every ÿc in filter text for it.
@@ -157,6 +189,24 @@
 //  data/hd/global/ui/d2rloader/<plugin id>/icons/<name>.sprite (and a half
 //  size .lowend.sprite), the way plugin buttons get theirs. Sprites load on
 //  the UI thread, never inside the minimap pass.
+//  Icons are remembered by item id, since the minimap only gets the units of
+//  the rooms next to the player, and forgotten once the item leaves the ground:
+//      seen in a mode other than 3 (ground) or 5 (dropping): picked up;
+//      unknown to the client while its room is in sight: gone. Picking up
+//      gold, a pickup that merges into a stack and another player's pickup
+//      remove the unit (0x0A) without the client ever seeing it in a new mode.
+//      A room the server takes out of sight loses its units the same way and
+//      then the room itself (0x08), so an item still on the ground is only
+//      missing from the client while its room is out of sight.
+//      in sight    DrlgRoom +0x2A, the room's "client in sight" count: 0x07's
+//                  0x328680 puts the room in sight only while it is 0 (the
+//                  check at 0x3286DF); 0x08 takes it back to 0
+//      near rooms  0x2EFDE0(room, &list, &count): ActiveRoom +0x00 list, +0x40
+//                  count. An icon keeps its item's DrlgRoom (ActiveRoom +0x18,
+//                  0x192B20), which lasts for the act's whole session, and only
+//                  compares it with the near rooms' own; it never reads it.
+//  The check runs on the UI thread once per frame, queued from the frame
+//  callback, so it works whether the minimap is open or not.
 //
 // -----------------------------------------------------------------------------
 //  DROPLIGHT
@@ -177,6 +227,26 @@
 //  Color: the engine cannot recolor the beam effect, so for each color the
 //  plugin makes its own copy of the beam (beam_recolor.h) from the file the
 //  mod ships (droplight_beam), and serves it with the definition.
+//
+// -----------------------------------------------------------------------------
+//  STAT VALUES: the number the tooltip prints
+// -----------------------------------------------------------------------------
+//  Every stat a filter reads (itemStats, playerStats, formulas, {stat:}) is
+//  the number the item tooltip prints, computed the way the game's stat line
+//  formatter 0x2D97E0 does before it calls the line writer 0x2D6520: for op 2
+//  to 5, value * (local player's op base stat >> that stat's ValShift) >> op
+//  param (imul and sar, 32 bits); then >> ValShift; descfunc 5 and 10 then
+//  print value * 100 / 128 (0x2D691B). The itemstatcost.txt columns come from
+//  the mod's own file (stat_values.h).
+//
+//  Every param of one stat (statMax, statSum, skill names on chance-to-cast and
+//  charges): D2RCore keeps a unit's stats as one array of 16-byte entries
+//  {u32 param, u32 stat, i32 value, u32} sorted by (stat << 32 | param). The
+//  unit's list is at +0x88; when its dword at +0x1C is negative (the extended
+//  list) the full stats are at +0xA8 (array) and +0xB0 (count), otherwise at
+//  +0x30 and +0x38. That is exactly how D2RCore 1.3.1's ReadWideUnitStat
+//  reads one stat; its instructions are checked at load, and the plugin walks
+//  the same array. When they differ, those reads give 0 and the log says so.
 //
 //  Console command "lootfilter" shows the state; "lootfilter reload" reloads.
 //  Settings: d2rloader/config/celestialrayone.loot-filter.toml
@@ -206,6 +276,7 @@
 #include "filter_program.h"
 #include "json_value.h"
 #include "sound_player.h"
+#include "stat_values.h"
 
 #include <algorithm>
 #include <cctype>
@@ -235,7 +306,7 @@ namespace {
 using namespace lootfilter;
 
 constexpr char PluginIdText[]  = "celestialrayone.loot-filter";
-constexpr char PluginVersion[] = "1.5.1";
+constexpr char PluginVersion[] = "1.8.2";
 
 const D2RL::PluginContext* Context{};
 std::uintptr_t             Base{};
@@ -293,20 +364,29 @@ auto Widen(std::string_view text) -> std::wstring {
 constexpr const char DefaultConfigToml[] = R"TOML(# celestialrayone.loot-filter
 #
 # Loot Filter
-#   D2RLAN-style loot filters in JSON. A filter can rename items, hide ground
-#   labels, color label backgrounds and borders, recolor item names by quality,
-#   print chat lines and play sounds when an item drops, every time it drops.
+#   D2RLAN-style loot filters in JSON. A filter can rename items, show or hide
+#   ground labels by item stats and formulas, color label backgrounds and
+#   borders, recolor item names by quality,
+#   print chat lines and play sounds when an item drops, every time it drops;
+#   an item coming back into view does not repeat them.
 #   Filter texts can use the game's own translated strings.
 #
 # Where filters live
 #   Filters that ship with the mod:   <game>\mods\<mod>\LootFilters\
 #   Your own and imported filters:    <Saved Games>\Diablo II Resurrected\mods\<mod>\LootFilters\
+#   Live filters:                     a folder per GitHub repository the mod lists in
+#                                     <game>\mods\<mod>\LootFilters\sources.json, inside your
+#                                     own filters folder. The launcher downloads each new
+#                                     version and the plugin applies it at once.
 #   Sound files a filter plays sit in a "sounds" folder next to that filter,
 #   and the .sprite files its minimap icons use in an "icons" folder.
 #   The launcher's Loot Filter tab manages all of this. Which filter is active,
-#   its level for each filter and whether sounds play are kept in
-#   selection.json in your own filters folder. Changing a filter or the
-#   selection while the game runs applies it at once.
+#   its level for each filter, whether sounds play and whether chat
+#   notifications print are kept in selection.json in your own filters
+#   folder. With chat notifications off, the plugin prints nothing in chat:
+#   no item lines and none of its own lines (the filter announce, level
+#   changes, Show Hidden Items). On, the filter decides. Changing a filter or
+#   the selection while the game runs applies it at once.
 #
 # Keys (Options > Controls > Loot Filter, no default keys)
 #   Next Filter Level    switches to the filter's next level and says which.
@@ -359,8 +439,10 @@ droplight_brightness = 50
 file_sound_volume = 80
 
 # Print the filter's title and level in chat when a game starts and when the
-# filter changes. The level key, and a level picked in the launcher during a
-# game, always print the filter's level change line.
+# filter changes (another filter, or a new version of it). The level key, and
+# a level picked in the launcher during a game, print the filter's level
+# change line whether this is on or off. With the launcher's Enable chat
+# notifications off, none of these print.
 announce = true
 
 # Text added to the label of a hidden item while Show Hidden Items is on.
@@ -512,7 +594,6 @@ constexpr std::uint64_t LocalPlayerRva      = 0x09A480;
 constexpr std::uint64_t ClientUnitRva       = 0x09A5D0;
 constexpr std::uint64_t PlaySoundRva        = 0x1A0780;
 constexpr std::uint64_t ColorizeRva         = 0x0CD6E0;
-constexpr std::uint64_t PrintChatRva        = 0x2E97F0;
 constexpr std::uint64_t TextLocaleRva       = 0x5F65F0;
 constexpr std::uint64_t LocaleNameRva       = 0x5F6790;
 constexpr std::uint64_t GetItemDataRva      = 0x34A500;
@@ -526,6 +607,9 @@ constexpr std::uint64_t InventoryOwnerRva   = 0x388BA0;
 constexpr std::uint64_t UnitRoomRva         = 0x34B440;
 constexpr std::uint64_t RoomDataRva         = 0x192B20;
 constexpr std::uint64_t RoomLevelIdRva      = 0x360FC0;
+constexpr std::uint64_t NearRoomsRva        = 0x2EFDE0;   // (room, &list, &count)
+constexpr std::uint64_t InSightCheckRva     = 0x3286DF;   // inside 0x328680: cmp word [drlgRoom+2Ah], 0
+constexpr std::size_t   DrlgRoomInSightOffset = 0x2A;
 constexpr std::uint64_t LabelScreenSpaceRva = 0x846210;
 constexpr std::uint64_t ProjectPointRva     = 0x65B030;
 constexpr std::uint64_t FillRectRva         = 0x657B90;
@@ -545,6 +629,13 @@ constexpr std::uint64_t OverlayRemovedRva   = 0x773C70;
 constexpr std::uint64_t UnitRemovedRva      = 0x782670;
 constexpr std::uint64_t OverlayPathRva      = 0x662A90;
 constexpr std::uint64_t GameStringRva       = 0x0BF810;
+
+// Chat: the game's own local notice 0x160290 shows the call
+constexpr std::uint64_t ChatDataRva         = 0x85E5C0;
+constexpr std::uint64_t PushChatEntryRva    = 0x3E2B7F0;   // the game's thunk: jmp [slot]
+constexpr std::uint64_t StringConstructRva  = 0x076190;
+constexpr std::uint64_t ChatNoticeLoadRva   = 0x1602BA;    // the notice: chat data, its viewed channel copied
+constexpr std::uint64_t ChatNoticeCallRva   = 0x16039B;    // the notice: the push and its arguments
 
 // Data
 constexpr std::uint64_t HoverColorRva       = 0x3440608;   // filled in by the game after plugins load
@@ -571,6 +662,9 @@ constexpr std::size_t RoomLevelOffset       = 0x90;
 constexpr std::size_t LevelDrlgOffset       = 0x1C8;
 constexpr std::size_t DrlgDifficultyOffset  = 0x830;
 constexpr std::size_t LabelUnitIdOffset     = 16;
+constexpr std::size_t ChatChannelTypeOffset = 0xC3AC0;   // chat data: the channel the player is viewing
+constexpr std::size_t ChatChannelNameOffset = 0xC3AC8;   // its name: data, then size
+constexpr std::int32_t ChatBaseColor        = 0;         // font color index of a line: white
 
 constexpr std::uint32_t FlagIdentified = 0x10;
 constexpr std::uint32_t FlagEthereal   = 0x400000;
@@ -621,9 +715,6 @@ constexpr std::uint8_t ColorizeBytes[]{
     0x48, 0x89, 0x5C, 0x24, 0x18, 0x57, 0x48, 0x81, 0xEC, 0x50, 0x04, 0x00, 0x00, 0x48, 0x8B, 0x05,
     0xD4, 0xDB, 0x8F, 0x02, 0x48, 0x33, 0xC4, 0x48, 0x89, 0x84, 0x24, 0x40, 0x04, 0x00, 0x00, 0x80,
     0x39, 0x00, 0x8B, 0xFA, 0x48, 0x8B, 0xD9 };
-constexpr std::uint8_t PrintChatBytes[]{
-    0x48, 0x83, 0xEC, 0x68, 0x48, 0x8B, 0x05, 0xCD, 0x1A, 0x6E, 0x02, 0x48, 0x33, 0xC4, 0x48, 0x89,
-    0x44, 0x24, 0x50, 0x48, 0x83, 0x79, 0x08, 0x00, 0x76, 0x65 };
 constexpr std::uint8_t TextLocaleBytes[]{
     0x40, 0x53, 0x48, 0x83, 0xEC, 0x20, 0x8B, 0x05, 0xC4, 0x7E, 0xDB, 0x01, 0x33, 0xDB, 0x48, 0x8B,
     0x15, 0x73, 0x92, 0xCF, 0x02, 0x83, 0xF8, 0xFF, 0x75, 0x1E };
@@ -653,6 +744,10 @@ constexpr std::uint8_t UnitRoomBytes[]{
     0x88, 0x4C, 0x24, 0x30, 0x48, 0x8D, 0x4C, 0x24, 0x30, 0xE8, 0x54, 0xA7, 0xFF, 0xFF };
 constexpr std::uint8_t RoomDataBytes[]{ 0x48, 0x8B, 0x41, 0x18, 0xC3 };
 constexpr std::uint8_t RoomLevelIdBytes[]{ 0x48, 0x8B, 0x81, 0x90, 0x00, 0x00, 0x00, 0x8B, 0x80, 0xF8, 0x01, 0x00, 0x00, 0xC3 };
+// mov eax,[rcx+40h] / mov [r8],eax / mov rax,[rcx] / mov [rdx],rax / ret
+constexpr std::uint8_t NearRoomsBytes[]{ 0x8B, 0x41, 0x40, 0x41, 0x89, 0x00, 0x48, 0x8B, 0x01, 0x48, 0x89, 0x02, 0xC3 };
+// cmp word ptr [rax+2Ah],0 / jnz / mov r8b,1 (status 1, client in sight) / mov rdx,rax / movzx ecx,bl
+constexpr std::uint8_t InSightCheckBytes[]{ 0x66, 0x83, 0x78, 0x2A, 0x00, 0x75, 0x0E, 0x41, 0xB0, 0x01, 0x48, 0x8B, 0xD0, 0x0F, 0xB6, 0xCB };
 constexpr std::uint8_t LabelScreenSpaceBytes[]{
     0x48, 0x8B, 0x05, 0x59, 0x9F, 0xBF, 0x02, 0x48, 0x85, 0xC0, 0x74, 0x08, 0x0F, 0xB6, 0x80, 0xB9, 0x00, 0x00, 0x00, 0xC3 };
 constexpr std::uint8_t ProjectPointBytes[]{
@@ -735,6 +830,39 @@ constexpr std::uint8_t OverlayPathTailBytes[]{ 0x48, 0x8B, 0x05, 0x21, 0x88, 0x3
 constexpr std::uint8_t GameStringBytes[]{
     0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x74, 0x24, 0x10, 0x57, 0x48, 0x83, 0xEC, 0x20, 0x33,
     0xDB, 0x48, 0x8D, 0x41, 0x18, 0x48, 0x89, 0x59, 0x08, 0x48, 0x8B, 0xF9, 0x48, 0x89, 0x01, 0x48 };
+// The chat data getter: its static's init guard, then lea rax,[0x24707D0] / ret.
+constexpr std::uint8_t ChatDataBytes[]{
+    0x48, 0x83, 0xEC, 0x28, 0x65, 0x48, 0x8B, 0x04, 0x25, 0x58, 0x00, 0x00, 0x00, 0x8B, 0x0D, 0xF5,
+    0x5E, 0xD5, 0x02, 0xBA, 0x6C, 0x12, 0x00, 0x00, 0x48, 0x8B, 0x0C, 0xC8, 0x8B, 0x04, 0x0A, 0x39,
+    0x05, 0x1B, 0x1E, 0xBE, 0x02, 0x7F, 0x0C, 0x48, 0x8D, 0x05, 0xE2, 0x21, 0xC1, 0x01, 0x48, 0x83,
+    0xC4, 0x28, 0xC3 };
+// The chat entry push's thunk: jmp [0x3E2AF10].
+constexpr std::uint8_t PushChatEntryBytes[]{ 0xFF, 0x25, 0x1A, 0xF7, 0xFF, 0xFF };
+// The game's string constructor (string, text, size): data = the 16-byte
+// buffer at +0x18, size 0, capacity 0x800000000000000F, then reserve (0x76210).
+constexpr std::uint8_t StringConstructBytes[]{
+    0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x74, 0x24, 0x10, 0x57, 0x48, 0x83, 0xEC, 0x20, 0x48,
+    0x8D, 0x41, 0x18, 0x48, 0xC7, 0x41, 0x08, 0x00, 0x00, 0x00, 0x00, 0x48, 0x8B, 0xD9, 0x48, 0x89,
+    0x01, 0x48, 0xB9, 0x0F, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x80, 0x48, 0x8B, 0xF2, 0x49, 0x8B,
+    0xD0, 0x49, 0x8B, 0xF8, 0x48, 0x89, 0x4B, 0x10, 0x48, 0x8B, 0xCB, 0xC6, 0x00, 0x00, 0xE8, 0x3D,
+    0x00, 0x00, 0x00 };
+// The notice 0x160290: call 0x85E5C0 / mov rsi,rax / clear three optionals /
+// mov ecx,[rax+0C3AC0h] / mov r8,[rax+0C3AD0h] / mov rdx,[rax+0C3AC8h] /
+// mov [rbp-9],ecx / lea rcx,[rbp-1] / clear the fourth / call 0x76190.
+constexpr std::uint8_t ChatNoticeLoadBytes[]{
+    0xE8, 0x01, 0xE3, 0x6F, 0x00, 0x48, 0x8B, 0xF0, 0xC6, 0x45, 0xBF, 0x00, 0xC6, 0x45, 0xCF, 0x00,
+    0xC6, 0x45, 0xDF, 0x00, 0x8B, 0x88, 0xC0, 0x3A, 0x0C, 0x00, 0x4C, 0x8B, 0x80, 0xD0, 0x3A, 0x0C,
+    0x00, 0x48, 0x8B, 0x90, 0xC8, 0x3A, 0x0C, 0x00, 0x89, 0x4D, 0xF7, 0x48, 0x8D, 0x4D, 0xFF, 0xC6,
+    0x45, 0xEF, 0x00, 0xE8, 0x9E, 0x5E, 0xF1, 0xFF };
+// ...and its push: rdx = text, byte [rsp+48h] = 0, r9d = 0, rcx = chat data,
+// optionals at [rsp+40h], [rsp+38h], [rsp+30h], [rsp+28h], r8d = 1 (color),
+// the channel at [rsp+20h], call 0x3E2B7F0.
+constexpr std::uint8_t ChatNoticeCallBytes[]{
+    0x48, 0x8D, 0x55, 0x27, 0xC6, 0x44, 0x24, 0x48, 0x00, 0x45, 0x33, 0xC9, 0x48, 0x8B, 0xCE, 0xC6,
+    0x04, 0x03, 0x00, 0x48, 0x8D, 0x45, 0xB7, 0x48, 0x89, 0x44, 0x24, 0x40, 0x45, 0x8D, 0x41, 0x01,
+    0x48, 0x8D, 0x45, 0xC7, 0x48, 0x89, 0x5D, 0x2F, 0x48, 0x89, 0x44, 0x24, 0x38, 0x48, 0x8D, 0x45,
+    0xD7, 0x48, 0x89, 0x44, 0x24, 0x30, 0x48, 0x8D, 0x45, 0xE7, 0x48, 0x89, 0x44, 0x24, 0x28, 0x48,
+    0x8D, 0x45, 0xF7, 0x48, 0x89, 0x44, 0x24, 0x20, 0xE8, 0x08, 0xB4, 0xCC, 0x03 };
 constexpr std::uint8_t HoverColorLoadBytes[]{
     0x0F, 0x10, 0x05, 0x32, 0x8A, 0xF2, 0x01, 0x49, 0x8B, 0xD6, 0x8B, 0xCD, 0x0F, 0x11, 0x43, 0x14 };
 // D2RCore.dll 1.3.1, GetItemName export: push rbp/rsi/rdi/rbx, sub rsp,0A8h,
@@ -752,14 +880,13 @@ struct Witness {
 };
 
 #define LF_WITNESS(rva, bytes, what) Witness{ rva, bytes, sizeof(bytes), what }
-constexpr std::array<Witness, 22> GameWitnesses{
+constexpr std::array<Witness, 21> GameWitnesses{
     LF_WITNESS(ReadStatRva, ReadStatBytes, "stat reader thunk"),
     LF_WITNESS(LocalIndexRva, LocalIndexBytes, "local data context"),
     LF_WITNESS(LocalPlayerRva, LocalPlayerBytes, "local player"),
     LF_WITNESS(ClientUnitRva, ClientUnitBytes, "client unit lookup"),
     LF_WITNESS(PlaySoundRva, PlaySoundBytes, "sound player"),
     LF_WITNESS(ColorizeRva, ColorizeBytes, "text colouring"),
-    LF_WITNESS(PrintChatRva, PrintChatBytes, "chat line"),
     LF_WITNESS(TextLocaleRva, TextLocaleBytes, "text language"),
     LF_WITNESS(LocaleNameRva, LocaleNameBytes, "language code"),
     LF_WITNESS(GetItemDataRva, GetItemDataBytes, "item data"),
@@ -781,16 +908,47 @@ constexpr std::array<Witness, 3> DrawWitnesses{
     LF_WITNESS(ProjectPointRva, ProjectPointBytes, "label projection"),
     LF_WITNESS(FillRectRva, FillRectBytes, "filled rectangle"),
 };
+constexpr std::array<Witness, 5> ChatWitnesses{
+    LF_WITNESS(ChatDataRva, ChatDataBytes, "chat data"),
+    LF_WITNESS(PushChatEntryRva, PushChatEntryBytes, "chat entry thunk"),
+    LF_WITNESS(StringConstructRva, StringConstructBytes, "game string constructor"),
+    LF_WITNESS(ChatNoticeLoadRva, ChatNoticeLoadBytes, "chat channel copy (shared stash notice)"),
+    LF_WITNESS(ChatNoticeCallRva, ChatNoticeCallBytes, "chat entry call (shared stash notice)"),
+};
 #undef LF_WITNESS
 
 // ---------------------------------------------------------------------------
 //  Native functions
 // ---------------------------------------------------------------------------
-struct GameString {
-    const char*   data;
+// The game's byte string: data, size, capacity. While the top bit of the
+// capacity is set the text sits in the buffer right after these fields and
+// nothing is allocated (the game's own strings carry 16 bytes there, its chat
+// records 512).
+template <std::size_t Buffer>
+struct NativeString {
+    char*         data;
     std::uint64_t size;
     std::uint64_t capacity;
+    char          buffer[Buffer];
 };
+constexpr std::uint64_t NativeStringInline = 0x8000000000000000ULL;
+
+// A chat channel: its type, then its name as a game string.
+struct ChatChannel {
+    std::int32_t     type;
+    std::int32_t     padding;
+    NativeString<16> name;
+};
+static_assert(sizeof(ChatChannel) == 48, "the push reads the name at +8");
+
+// One of the push's optionals (account, character, chat epoch, reporting id):
+// the value, then the "has a value" byte at +8.
+struct ChatOptional {
+    std::uint64_t value;
+    std::uint8_t  engaged;
+    std::uint8_t  padding[7];
+};
+static_assert(sizeof(ChatOptional) == 16, "the push reads the flag at +8");
 
 using ReadStatFn         = std::int32_t(__fastcall*)(void* unit, std::int32_t stat, std::int32_t layer);
 using LocalIndexFn       = std::int32_t(__fastcall*)();
@@ -798,7 +956,12 @@ using LocalPlayerFn      = void*(__fastcall*)(std::int32_t index);
 using ClientUnitFn       = void*(__fastcall*)(std::uint32_t id, std::uint32_t type);
 using PlaySoundFn        = std::uint64_t(__fastcall*)(std::int32_t sound, void* unit, std::int32_t delay, std::int32_t option, std::uint8_t flag);
 using ColorizeFn         = char*(__fastcall*)(char* buffer, std::int32_t color);
-using PrintChatFn        = void(__fastcall*)(const GameString* text);
+using ChatDataFn         = std::uint8_t*(__fastcall*)();
+using StringConstructFn  = void*(__fastcall*)(void* string, const char* text, std::uint64_t size);
+// (chat data, text, color, 0, channel, account, character, chat epoch, reporting id, 0)
+using PushChatEntryFn    = std::uint64_t(__fastcall*)(void* chat, const void* text, std::int32_t color, std::uint8_t flag,
+                                                      ChatChannel* channel, ChatOptional* accountId, ChatOptional* characterId,
+                                                      ChatOptional* chatEpoch, ChatOptional* reportingId, std::uint8_t trailing);
 using TextLocaleFn       = std::int32_t(__fastcall*)();
 using LocaleNameFn       = const char*(__fastcall*)(std::int32_t index);
 using GetItemDataFn      = std::uint8_t*(__fastcall*)(void* item);
@@ -812,6 +975,7 @@ using InventoryOwnerFn   = std::int32_t(__fastcall*)(void* inventory);
 using UnitRoomFn         = void*(__fastcall*)(void* unit);
 using RoomDataFn         = std::uint8_t*(__fastcall*)(void* activeRoom);
 using RoomLevelIdFn      = std::int32_t(__fastcall*)(void* roomData);
+using NearRoomsFn        = void(__fastcall*)(void* activeRoom, void*** list, std::int32_t* count) noexcept;
 using LabelScreenSpaceFn = bool(__fastcall*)();
 using ProjectPointFn     = std::uint64_t(__fastcall*)(std::uint64_t point);
 using FillRectFn         = void(__fastcall*)(std::int32_t x1, std::int32_t y1, std::int32_t x2, std::int32_t y2, const float* rgba, std::int32_t mode);
@@ -867,7 +1031,9 @@ LocalPlayerFn      LocalPlayer{};
 ClientUnitFn       ClientUnit{};
 PlaySoundFn        NativePlaySound{};
 ColorizeFn         NativeColorize{};
-PrintChatFn        NativePrintChat{};
+ChatDataFn         NativeChatData{};          // bound once the chat witnesses match
+StringConstructFn  NativeStringConstruct{};
+PushChatEntryFn    NativePushChatEntry{};
 TextLocaleFn       TextLocale{};
 LocaleNameFn       LocaleName{};
 GetItemDataFn      GetItemData{};
@@ -881,6 +1047,7 @@ InventoryOwnerFn   InventoryOwner{};
 UnitRoomFn         UnitRoom{};
 RoomDataFn         RoomData{};
 RoomLevelIdFn      RoomLevelId{};
+NearRoomsFn        NearRooms{};  // null when the room checks do not match: icons then only go once seen picked up
 LabelScreenSpaceFn LabelScreenSpace{};
 ProjectPointFn     ProjectPoint{};
 FillRectFn         FillRect{};
@@ -933,7 +1100,6 @@ void BindNatives() noexcept {
     ClientUnit       = At<ClientUnitFn>(ClientUnitRva);
     NativePlaySound  = At<PlaySoundFn>(PlaySoundRva);
     NativeColorize   = At<ColorizeFn>(ColorizeRva);
-    NativePrintChat  = At<PrintChatFn>(PrintChatRva);
     TextLocale       = At<TextLocaleFn>(TextLocaleRva);
     LocaleName       = At<LocaleNameFn>(LocaleNameRva);
     GetItemData      = At<GetItemDataFn>(GetItemDataRva);
@@ -965,6 +1131,7 @@ struct Installed {
     bool hide{};
     bool labelColors{};
     bool alerts{};
+    bool chat{};
     bool qualityColors{};
     bool setTooltipColor{};
     bool soundVolume{};
@@ -994,6 +1161,7 @@ struct Selection {
     std::string                          activeFilter;  // "shipped:x.json", "user:x.json" or ""
     std::unordered_map<std::string, int> levels;
     bool                                 playSounds{ true };
+    bool                                 chatNotifications{ true };  // false: no chat line at all, whatever the filter says
     bool                                 fromFile{};
 };
 
@@ -1006,11 +1174,15 @@ struct LoadedFilter {
     std::size_t                          warnings{};
     bool                                 loadFailed{};
     std::string                          failure;
+    std::uint64_t                        textHash{};  // FNV-1a of the filter file as read; 0 when it was not read
 };
 
 std::shared_mutex   FilterLock;
 LoadedFilter        Current;
 Selection           CurrentSelection;
+// CurrentSelection.chatNotifications, stored with it under FilterLock, so the
+// plugin's own chat lines can check the switch without taking the lock.
+std::atomic<bool>   ChatSwitch{ true };
 std::atomic<std::uint64_t> Revision{ 1 };
 std::mutex          ReloadLock;
 
@@ -1116,17 +1288,33 @@ auto FileStamp(const std::wstring& path) -> std::uint64_t {
 
 auto SelectionPath() -> std::wstring { return UserFolder.empty() ? std::wstring() : UserFolder + L"\\selection.json"; }
 
-// "shipped:name.json" / "user:name.json" -> full path and folder. False for "" or a bad id.
+// "shipped:name.json" / "user:name.json" / "repo:folder/name.json" -> full path
+// and folder. A repo filter is a live filter: it sits in its repository's folder
+// inside the player's filters folder, where the launcher keeps it in step with
+// GitHub. False for "" or a bad id.
 auto FilterPathOf(const std::string& id, std::wstring& path, std::wstring& folder) -> bool {
+    const auto plainName = [](const std::string& name) {
+        return !name.empty() && name.find_first_of("\\/:") == std::string::npos && name.find("..") == std::string::npos;
+    };
     const std::size_t colon = id.find(':');
     if (colon == std::string::npos) return false;
     const std::string where = id.substr(0, colon);
-    const std::string file  = id.substr(colon + 1);
-    if (file.empty() || file.find_first_of("\\/:") != std::string::npos || file.find("..") != std::string::npos) return false;
-    if (where == "shipped") folder = ShippedFolder;
-    else if (where == "user") folder = UserFolder;
-    else return false;
-    if (folder.empty()) return false;
+    std::string file = id.substr(colon + 1);
+    if (where == "shipped") {
+        folder = ShippedFolder;
+    } else if (where == "user") {
+        folder = UserFolder;
+    } else if (where == "repo") {
+        const std::size_t slash = file.find('/');
+        if (slash == std::string::npos || UserFolder.empty()) return false;
+        const std::string repository = file.substr(0, slash);
+        file = file.substr(slash + 1);
+        if (!plainName(repository)) return false;
+        folder = UserFolder + L"\\" + Widen(repository);
+    } else {
+        return false;
+    }
+    if (folder.empty() || !plainName(file)) return false;
     path = folder + L"\\" + Widen(file);
     return true;
 }
@@ -1156,6 +1344,9 @@ auto ReadSelection() -> Selection {
     }
     if (const json::Value* sounds = root.Find("playSounds"); sounds != nullptr && sounds->IsBool()) {
         selection.playSounds = sounds->boolean;
+    }
+    if (const json::Value* chat = root.Find("chatNotifications"); chat != nullptr && chat->IsBool()) {
+        selection.chatNotifications = chat->boolean;
     }
     return selection;
 }
@@ -1189,7 +1380,8 @@ auto WriteSelection(const Selection& selection) -> bool {
         first = false;
     }
     text += first ? "},\n" : "\n  },\n";
-    text += std::string("  \"playSounds\": ") + (selection.playSounds ? "true" : "false") + "\n}\n";
+    text += std::string("  \"playSounds\": ") + (selection.playSounds ? "true" : "false") + ",\n";
+    text += std::string("  \"chatNotifications\": ") + (selection.chatNotifications ? "true" : "false") + "\n}\n";
     return WriteWholeFile(SelectionPath(), text);
 }
 
@@ -1453,6 +1645,8 @@ void UnregisterIcons() noexcept {
     IconFilesRegistered.clear();
 }
 
+auto StatRows() -> const StatDisplayTable&;  // itemstatcost.txt for tooltip numbers, below
+
 class FilterNames final : public NameResolver {
 public:
     FilterNames(std::wstring soundsFolder, std::wstring iconsFolder)
@@ -1479,6 +1673,14 @@ public:
         }
         return sounds_.Find(name);
     }
+    auto SkillRow(std::string_view name) -> int override {
+        if (!skillsLoaded_) {
+            skillsLoaded_ = true;
+            if (!skills_.Load(ExcelFolder + L"\\skills.txt", "skill")) LogWarn("LootFilter: skills.txt could not be read from the mod.");
+        }
+        return skills_.Find(name);
+    }
+    auto StatPacksSkillLevel(int stat) -> bool override { return StatRows().PacksSkillLevel(stat); }
     auto SoundFile(std::string_view fileName, std::wstring& fullPath) -> bool override {
         fullPath = soundsFolder_ + L"\\" + Widen(fileName);
         const DWORD attributes = GetFileAttributesW(fullPath.c_str());
@@ -1498,6 +1700,8 @@ private:
     TxtNames     types_;
     TxtNames     stats_;
     TxtNames     sounds_;
+    TxtNames     skills_;
+    bool         skillsLoaded_{};
     bool         typesLoaded_{};
     bool         statsLoaded_{};
     bool         soundsLoaded_{};
@@ -1633,6 +1837,34 @@ void CopyLimited(char* destination, std::size_t capacity, const std::string& tex
     destination[length] = '\0';
 }
 
+// One line into the game's chat, set up the way the game shows the local
+// player its own notices (0x160290). UI thread, in a game.
+auto PrintChatLine(const std::string& text) noexcept -> bool {
+    if (!Hooks.chat || text.empty()) return false;
+    std::uint8_t* chat = NativeChatData();
+    if (chat == nullptr) return false;
+    // The text in its own buffer, shaped like a chat record's: the push copies
+    // it by pointer and size and keeps nothing, so nothing is allocated.
+    NativeString<512> line{};
+    CopyLimited(line.buffer, sizeof(line.buffer), text);
+    line.data     = line.buffer;
+    line.size     = std::strlen(line.buffer);
+    line.capacity = (sizeof(line.buffer) - 1) | NativeStringInline;
+    if (line.size == 0) return false;
+    // The channel the player is viewing, copied with the game's own string
+    // constructor; the push takes the copy over and frees what it allocated.
+    ChatChannel channel{};
+    channel.type = ReadAt<std::int32_t>(chat, ChatChannelTypeOffset);
+    NativeStringConstruct(&channel.name, ReadAt<const char*>(chat, ChatChannelNameOffset),
+                          ReadAt<std::uint64_t>(chat, ChatChannelNameOffset + 8));
+    ChatOptional accountId{};
+    ChatOptional characterId{};
+    ChatOptional chatEpoch{};
+    ChatOptional reportingId{};
+    NativePushChatEntry(chat, &line, ChatBaseColor, 0, &channel, &accountId, &characterId, &chatEpoch, &reportingId, 0);
+    return true;
+}
+
 void __cdecl FlushOutput(const D2RL::PluginContext*, void*) noexcept {
     FlushQueued.store(false);
     PendingOutput output;
@@ -1648,11 +1880,10 @@ void __cdecl FlushOutput(const D2RL::PluginContext*, void*) noexcept {
     }
     try {
         for (const std::string& line : output.chat) {
-            const std::string text = GameText(line);
-            if (text.empty() || NativePrintChat == nullptr) continue;
-            const GameString value{ text.c_str(), text.size(), text.size() | 0x8000000000000000ULL };
-            NativePrintChat(&value);
-            if (Config.debugLog) LogInfo("LootFilter debug: chat line printed: %s", line.c_str());
+            const bool printed = PrintChatLine(GameText(line));
+            if (!Config.debugLog) continue;
+            if (printed) LogInfo("LootFilter debug: chat line printed: %s", line.c_str());
+            else LogInfo("LootFilter debug: chat line not printed (chat lines are %s): %s", Hooks.chat ? "on" : "off", line.c_str());
         }
         for (const auto& [row, volume] : output.tableSounds) {
             if (NativePlaySound == nullptr) continue;
@@ -1674,6 +1905,17 @@ void QueueChat(std::string line) {
         if (Pending.chat.size() < 64) Pending.chat.push_back(std::move(line));
     }
     QueueFlush();
+}
+
+// The plugin's own lines: the filter announce, level changes and Show Hidden
+// Items. With the launcher's Enable chat notifications off they are dropped,
+// as item lines are (AlertGroundItem checks those against the same switch).
+void QueueOwnChat(std::string line) {
+    if (!ChatSwitch.load()) {
+        if (Config.debugLog) LogInfo("LootFilter debug: chat line not printed (chat notifications are off in the launcher): %s", line.c_str());
+        return;
+    }
+    QueueChat(std::move(line));
 }
 
 // volume: 0-100, the rule's soundVolume (else the filter's, else 100).
@@ -1726,18 +1968,39 @@ auto LevelChangeLine(const LoadedFilter& filter) -> std::string {
 void Announce(const LoadedFilter& filter) {
     if (!Config.announce) return;
     if (filter.loadFailed) {
-        QueueChat("\xC3\xBF" "c1Loot filter: " + filter.failure);
+        QueueOwnChat("\xC3\xBF" "c1Loot filter: " + filter.failure);
         return;
     }
     if (!filter.program) {
-        QueueChat("\xC3\xBF" "c5Loot filter: none");
+        QueueOwnChat("\xC3\xBF" "c5Loot filter: none");
         return;
     }
     std::string line = "\xC3\xBF" "c4Loot filter: \xC3\xBF" "c0" + (filter.title.empty() ? filter.id : filter.title);
     const std::string level = LevelName(*filter.program, filter.level, LanguageNow());
     if (!level.empty()) line += " \xC3\xBF" "c5(" + level + ")";
     if (filter.errors > 0) line += " \xC3\xBF" "c1" + std::to_string(filter.errors) + " problems, see the plugin log";
-    QueueChat(line);
+    QueueOwnChat(line);
+}
+
+// FNV-1a over the filter file, so a reload can tell new text from the same.
+auto TextHash(std::string_view text) -> std::uint64_t {
+    std::uint64_t hash = 14695981039346656037ULL;
+    for (const char c : text) {
+        hash ^= static_cast<unsigned char>(c);
+        hash *= 1099511628211ULL;
+    }
+    return hash;
+}
+
+// What a reload changed, which decides its chat line (see the OUTPUT notes).
+enum class ReloadChange { Nothing, Level, Filter };
+
+auto ChangeOf(const LoadedFilter& before, const LoadedFilter& after) -> ReloadChange {
+    const bool sameFilter = before.id == after.id && before.textHash == after.textHash && before.loadFailed == after.loadFailed
+                         && before.failure == after.failure && static_cast<bool>(before.program) == static_cast<bool>(after.program);
+    if (!sameFilter) return ReloadChange::Filter;
+    if (after.program && before.level != after.level && after.program->HasLevels()) return ReloadChange::Level;
+    return ReloadChange::Nothing;
 }
 
 // Reads the selection and the filter it names. Any thread.
@@ -1757,6 +2020,7 @@ void LoadActiveFilter(bool announce) {
             next.loadFailed = true;
             next.failure = "\"" + selection.activeFilter + "\" could not be read";
         } else {
+            next.textHash = TextHash(text);
             auto program = std::make_shared<FilterProgram>();
             std::vector<Problem> problems;
             const bool usable = CompileFilter(text, *program, problems);
@@ -1794,26 +2058,23 @@ void LoadActiveFilter(bool announce) {
         LogInfo("LootFilter: no filter selected.");
     }
     if (next.loadFailed) LogError("LootFilter: %s.", next.failure.c_str());
-    std::string previousId;
-    int previousLevel = 0;
-    bool hadProgram = false;
+    ReloadChange change = ReloadChange::Nothing;
     {
         std::unique_lock<std::shared_mutex> lock(FilterLock);
-        previousId       = Current.id;
-        previousLevel    = Current.level;
-        hadProgram       = static_cast<bool>(Current.program);
+        change           = ChangeOf(Current, next);
         Current          = next;
         CurrentSelection = std::move(selection);
+        ChatSwitch.store(CurrentSelection.chatNotifications);
     }
     PublishQualityColors(next.program.get());
     Strings.Clear();
     PrepareDroplights(next.program.get());
     Revision.fetch_add(1);
     if (!announce) return;
-    // The launcher changed only the level of the same filter: say so like the level key does.
-    if (hadProgram && next.program && previousId == next.id && previousLevel != next.level && next.program->HasLevels()) {
-        QueueChat(LevelChangeLine(next));
-    } else {
+    if (change == ReloadChange::Level) {
+        // The launcher changed only the level of the same filter: say so like the level key does.
+        QueueOwnChat(LevelChangeLine(next));
+    } else if (change == ReloadChange::Filter) {
         Announce(next);
     }
 }
@@ -1874,10 +2135,120 @@ void WatchFolders() noexcept {
 // ---------------------------------------------------------------------------
 //  Items as the engine sees them
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+//  Stat values: tooltip numbers and every param of one stat
+// ---------------------------------------------------------------------------
+// itemstatcost.txt as the tooltip numbers need it, read once from the mod.
+auto StatRows() -> const StatDisplayTable& {
+    static std::once_flag once;
+    static StatDisplayTable table;
+    std::call_once(once, [] {
+        std::string text;
+        if (ExcelFolder.empty() || !ReadWholeFile(ExcelFolder + L"\\itemstatcost.txt", text) || !ParseStatDisplayTable(text, table)) {
+            table = StatDisplayTable{};
+            LogWarn("LootFilter: itemstatcost.txt could not be read for tooltip numbers; filters see stats as stored.");
+        }
+    });
+    return table;
+}
+
+// The number the item tooltip prints for a stored stat value.
+auto TooltipStat(int stat, std::uint32_t param, std::int32_t stored) -> std::int32_t {
+    const StatDisplayTable& table = StatRows();
+    std::int32_t base = 0;
+    if (stored != 0 && table.UsesOpBase(stat)) {
+        if (void* player = LocalPlayerUnit()) base = ReadStat(player, table.Find(stat)->opBase, 0);
+    }
+    return TooltipNumber(table, stat, param, stored, base);
+}
+
+constexpr std::size_t UnitStatListOffset  = 0x88;
+constexpr std::size_t StatListFlagsOffset = 0x1C;  // negative: the extended list
+constexpr std::size_t FullStatsOffset     = 0xA8;  // array, then count at +8
+constexpr std::size_t PlainStatsOffset    = 0x30;
+
+// D2RCore.dll 1.3.1, ReadWideUnitStat (export: sub rsp,28h / call body): the
+// body from mov rsi,[rcx+88h] (body +16h) to mov eax,[r9+8] (body +E0h).
+constexpr std::size_t  WideStatReaderOffset = 0x16;
+constexpr std::uint8_t WideStatReaderBytes[]{
+    0x48, 0x8B, 0xB1, 0x88, 0x00, 0x00, 0x00, 0x48, 0x85, 0xF6, 0x41, 0x0F, 0x94, 0xC1, 0x81, 0xFA,
+    0x00, 0x80, 0x00, 0x00, 0x41, 0x0F, 0x93, 0xC2, 0x45, 0x08, 0xCA, 0x0F, 0x85, 0xDB, 0x00, 0x00,
+    0x00, 0x44, 0x89, 0xC7, 0x0F, 0xB6, 0x89, 0xBD, 0x01, 0x00, 0x00, 0x48, 0x89, 0xD3, 0xFF, 0x15,
+    0xD6, 0x65, 0x32, 0x00, 0x48, 0x89, 0xC1, 0x31, 0xC0, 0x48, 0x85, 0xC9, 0x0F, 0x84, 0xBA, 0x00,
+    0x00, 0x00, 0x48, 0xC1, 0xE3, 0x20, 0x41, 0x89, 0xF8, 0x49, 0x09, 0xD8, 0x8B, 0x56, 0x1C, 0x85,
+    0xD2, 0xB8, 0xA8, 0x00, 0x00, 0x00, 0x41, 0xB9, 0x30, 0x00, 0x00, 0x00, 0x4C, 0x0F, 0x48, 0xC8,
+    0x4E, 0x8B, 0x5C, 0x0E, 0x08, 0x31, 0xC0, 0x4D, 0x85, 0xDB, 0x74, 0x45, 0x4A, 0x8B, 0x3C, 0x0E,
+    0x45, 0x31, 0xD2, 0x4D, 0x89, 0xDE, 0x4C, 0x89, 0xDB, 0xEB, 0x17, 0x66, 0x66, 0x66, 0x66, 0x66,
+    0x66, 0x2E, 0x0F, 0x1F, 0x84, 0x00, 0x00, 0x00, 0x00, 0x00, 0x49, 0x89, 0xDE, 0x48, 0x85, 0xDB,
+    0x74, 0x22, 0x48, 0xD1, 0xEB, 0x4E, 0x8D, 0x3C, 0x13, 0x49, 0xC1, 0xE7, 0x04, 0x4E, 0x39, 0x04,
+    0x3F, 0x73, 0xE7, 0x49, 0x01, 0xDA, 0x49, 0xFF, 0xC2, 0x48, 0xF7, 0xD3, 0x4C, 0x01, 0xF3, 0xEB,
+    0xD9, 0x45, 0x31, 0xD2, 0x4D, 0x39, 0xDA, 0x74, 0x43, 0x4E, 0x8B, 0x0C, 0x0E, 0x49, 0xC1, 0xE2,
+    0x04, 0x4F, 0x39, 0x04, 0x11, 0x75, 0x35, 0x4D, 0x01, 0xD1, 0x41, 0x8B, 0x41, 0x08,
+};
+bool WideStatsChecked{};
+
+auto CheckWideStatLayout() -> bool {
+    HMODULE core = GetModuleHandleW(L"D2RCore.dll");
+    const auto* exported = core != nullptr ? reinterpret_cast<const std::uint8_t*>(GetProcAddress(core, "ReadWideUnitStat")) : nullptr;
+    static constexpr std::uint8_t Head[]{ 0x48, 0x83, 0xEC, 0x28, 0xE8 };
+    if (exported == nullptr || std::memcmp(exported, Head, sizeof(Head)) != 0) return false;
+    std::int32_t rel = 0;
+    std::memcpy(&rel, exported + 5, sizeof(rel));
+    const std::uint8_t* body = exported + 9 + rel;
+    return std::memcmp(body + WideStatReaderOffset, WideStatReaderBytes, sizeof(WideStatReaderBytes)) == 0;
+}
+
+struct WideStatEntry {
+    std::uint32_t param;
+    std::uint32_t stat;
+    std::int32_t  value;
+    std::uint32_t unused;
+};
+static_assert(sizeof(WideStatEntry) == 16);
+
+// Calls visit(param, stored value) for every entry of `stat` on the unit.
+template <typename Visit>
+void ForEachParam(void* unit, int stat, Visit&& visit) {
+    if (!WideStatsChecked || unit == nullptr || stat < 0 || stat >= 0x8000) return;
+    const auto* list = ReadAt<const std::uint8_t*>(static_cast<const std::uint8_t*>(unit), UnitStatListOffset);
+    if (list == nullptr) return;
+    const std::size_t at = ReadAt<std::int32_t>(list, StatListFlagsOffset) < 0 ? FullStatsOffset : PlainStatsOffset;
+    const auto* entries = ReadAt<const WideStatEntry*>(list, at);
+    const std::uint64_t count = ReadAt<std::uint64_t>(list, at + 8);
+    if (entries == nullptr || count == 0 || count > 0x100000) return;
+    const auto key = [](const WideStatEntry& entry) { return static_cast<std::uint64_t>(entry.stat) << 32 | entry.param; };
+    const std::uint64_t first = static_cast<std::uint64_t>(stat) << 32;
+    std::size_t low = 0;
+    std::size_t high = static_cast<std::size_t>(count);
+    while (low < high) {
+        const std::size_t middle = low + (high - low) / 2;
+        if (key(entries[middle]) < first) low = middle + 1;
+        else high = middle;
+    }
+    for (std::size_t i = low; i < count && entries[i].stat == static_cast<std::uint32_t>(stat); ++i) visit(entries[i].param, entries[i].value);
+}
+
+// The highest tooltip number among a stat's entries, optionally only those for one skill.
+auto HighestParam(void* unit, int stat, int skill) -> std::int32_t {
+    const StatDisplayTable& table = StatRows();
+    bool any = false;
+    std::int32_t best = 0;
+    ForEachParam(unit, stat, [&](std::uint32_t param, std::int32_t value) {
+        if (value == 0 || (skill >= 0 && table.SkillOf(param) != static_cast<std::uint32_t>(skill))) return;
+        const std::int32_t shown = TooltipStat(stat, param, value);
+        best = any ? std::max(best, shown) : shown;
+        any = true;
+    });
+    return best;
+}
+
 class GamePlayer final : public PlayerSubject {
 public:
     explicit GamePlayer(void* unit) : unit_(unit) {}
-    [[nodiscard]] auto Stat(int stat, int param) const -> int override { return unit_ != nullptr ? ReadStat(unit_, stat, param) : 0; }
+    [[nodiscard]] auto Stat(int stat, int param) const -> int override {
+        return unit_ != nullptr ? TooltipStat(stat, static_cast<std::uint32_t>(param), ReadStat(unit_, stat, param)) : 0;
+    }
+    [[nodiscard]] auto StatForSkill(int stat, int skill) const -> int override { return HighestParam(unit_, stat, skill); }
     [[nodiscard]] auto Difficulty() const -> int override {
         if (difficulty_ == -2) {
             difficulty_ = -1;
@@ -1960,7 +2331,16 @@ public:
         return *area_;
     }
     [[nodiscard]] auto IsType(int row) const -> bool override { return row >= 0 && CheckItemType(unit_, row) != 0; }
-    [[nodiscard]] auto Stat(int stat, int param) const -> int override { return ReadStat(unit_, stat, param); }
+    [[nodiscard]] auto Stat(int stat, int param) const -> int override {
+        return TooltipStat(stat, static_cast<std::uint32_t>(param), ReadStat(unit_, stat, param));
+    }
+    [[nodiscard]] auto StatMax(int stat) const -> int override { return HighestParam(unit_, stat, -1); }
+    [[nodiscard]] auto StatSum(int stat) const -> std::int64_t override {
+        std::int64_t total = 0;
+        ForEachParam(unit_, stat, [&](std::uint32_t param, std::int32_t value) { total += TooltipStat(stat, param, value); });
+        return total;
+    }
+    [[nodiscard]] auto StatForSkill(int stat, int skill) const -> int override { return HighestParam(unit_, stat, skill); }
     [[nodiscard]] auto IsGold() const -> bool override { return Code() == PackItemCode("gld"); }
     [[nodiscard]] auto DisplayName() const -> std::string override {
         if (OriginalGetItemName == nullptr) return {};
@@ -2409,6 +2789,7 @@ struct RememberedIcon {
     std::int32_t width{};
     std::int32_t height{};
     Rgba         color{};
+    const void*  drlgRoom{};  // the room it lay in, compared by pointer only
 };
 std::mutex                                        IconMemoryLock;
 std::unordered_map<std::uint32_t, RememberedIcon> IconMemory;  // by item unit id
@@ -2488,6 +2869,7 @@ void RecordIcon(void* unit) noexcept {
             entry.act = ActOfLevel(entry.level);
             entry.x = UnitClientX(unit);
             entry.y = UnitClientY(unit);
+            if (void* room = UnitRoom(unit)) entry.drlgRoom = RoomData(room);
             entry.sprite = icon->spriteName;
             entry.width = icon->width;
             entry.height = icon->height;
@@ -2501,6 +2883,98 @@ void RecordIcon(void* unit) noexcept {
         }
     } catch (...) {
     }
+}
+
+// The rooms around the player, as the client has them now.
+struct NearRoomsNow {
+    const void*  rooms[256]{};  // their DrlgRooms, the player's own first
+    std::int32_t count{};
+    int          act{ -1 };
+    int          level{ -1 };
+};
+
+auto CurrentNearRooms(NearRoomsNow& out) -> bool {
+    void* player = LocalPlayerUnit();
+    void* room = player != nullptr ? UnitRoom(player) : nullptr;
+    if (room == nullptr || NearRooms == nullptr) return false;
+    out.level = LevelOfUnit(player);
+    out.act = ActOfLevel(out.level);
+    out.count = 0;
+    if (const std::uint8_t* own = RoomData(room)) out.rooms[out.count++] = own;
+    void** list = nullptr;
+    std::int32_t count = 0;
+    NearRooms(room, &list, &count);
+    for (std::int32_t i = 0; list != nullptr && i < count && out.count < 256; ++i) {
+        if (list[i] == nullptr) continue;
+        if (const std::uint8_t* drlg = RoomData(list[i])) out.rooms[out.count++] = drlg;
+    }
+    return true;
+}
+
+// Whether the icon's room is one of the rooms around the player and in sight.
+auto IconRoomInSight(const RememberedIcon& icon, const NearRoomsNow& around) -> bool {
+    if (icon.drlgRoom == nullptr) return false;
+    if (icon.act >= 0 && around.act >= 0 ? icon.act != around.act : icon.level != around.level) return false;
+    for (std::int32_t i = 0; i < around.count; ++i) {
+        if (around.rooms[i] != icon.drlgRoom) continue;
+        return ReadAt<std::uint16_t>(static_cast<const std::uint8_t*>(around.rooms[i]), DrlgRoomInSightOffset) != 0;
+    }
+    return false;
+}
+
+// IconMemoryLock held. Forgets the icons of items that left the ground and
+// follows the rest. Without `around` only a pickup the client saw counts.
+void SweepIconMemory(const NearRoomsNow* around) {
+    for (auto it = IconMemory.begin(); it != IconMemory.end();) {
+        const char* gone = nullptr;
+        if (void* unit = ClientUnit(it->first, UnitTypeItem)) {
+            GameItem item(unit);
+            if (item.Valid()) {
+                const std::uint32_t mode = item.Mode();
+                if (mode != 3 && mode != 5) {
+                    gone = "picked up";
+                } else {
+                    it->second.x = UnitClientX(unit);
+                    it->second.y = UnitClientY(unit);
+                    if (void* room = UnitRoom(unit)) it->second.drlgRoom = RoomData(room);
+                }
+            }
+        } else if (around != nullptr && IconRoomInSight(it->second, *around)) {
+            gone = "gone from the ground while its room is in sight";
+        }
+        if (gone == nullptr) {
+            ++it;
+            continue;
+        }
+        if (Config.debugLog) LogInfo("LootFilter debug: minimap icon of item %u removed: %s.", it->first, gone);
+        it = IconMemory.erase(it);
+    }
+}
+
+// UI thread, once per frame: the full check, rooms included.
+std::atomic<bool> IconSweepQueued{};
+void __cdecl SweepIcons(const D2RL::PluginContext*, void*) noexcept {
+    IconSweepQueued.store(false);
+    if (!Active.load() || !Hooks.icons) return;
+    try {
+        NearRoomsNow around;
+        const bool known = CurrentNearRooms(around);
+        std::lock_guard<std::mutex> lock(IconMemoryLock);
+        SweepIconMemory(known ? &around : nullptr);
+    } catch (...) {
+    }
+}
+
+void QueueIconSweep() noexcept {
+    if (ThreadSvc == nullptr || IconSweepQueued.exchange(true)) return;
+    {
+        std::lock_guard<std::mutex> lock(IconMemoryLock);
+        if (IconMemory.empty()) {
+            IconSweepQueued.store(false);
+            return;
+        }
+    }
+    if (ThreadSvc->runOnUiThread(Context, &SweepIcons, nullptr) != D2RL::Threads::Result::Success) IconSweepQueued.store(false);
 }
 
 // As the game draws its own minimap markers (0x0D6DB0): centred on the
@@ -2550,30 +3024,21 @@ void DrawRememberedIcons(void* context) noexcept {
     const int act = ActOfLevel(level);
     std::vector<RememberedIcon> visible;
     {
+        // The room check stays on the UI thread (SweepIcons), where the
+        // client's own packets run, so it never sees a room half taken out.
         std::lock_guard<std::mutex> lock(IconMemoryLock);
-        for (auto it = IconMemory.begin(); it != IconMemory.end();) {
-            if (void* unit = ClientUnit(it->first, UnitTypeItem)) {
-                GameItem item(unit);
-                if (item.Valid()) {
-                    const std::uint32_t mode = item.Mode();
-                    if (mode != 3 && mode != 5) {  // picked up
-                        it = IconMemory.erase(it);
-                        continue;
-                    }
-                    it->second.x = UnitClientX(unit);
-                    it->second.y = UnitClientY(unit);
-                }
-            }
-            const RememberedIcon& icon = it->second;
+        SweepIconMemory(nullptr);
+        for (const auto& [id, icon] : IconMemory) {
             if (icon.act >= 0 && act >= 0 ? icon.act == act : icon.level == level) visible.push_back(icon);
-            ++it;
         }
     }
+    if (FrameHandle == D2RL::Overlay::InvalidCallbackHandle) QueueIconSweep();
     for (const RememberedIcon& icon : visible) DrawIconAt(context, icon);
 }
 
 void __cdecl OnFrame(const D2RL::PluginContext*, const D2RL::Overlay::Frame*, void*) noexcept {
     FrameCount.fetch_add(1, std::memory_order_relaxed);
+    if (Hooks.icons && Active.load(std::memory_order_relaxed)) QueueIconSweep();
 }
 
 std::int64_t __fastcall HookAutomapUnit(void* unit, void* context) noexcept {
@@ -2625,6 +3090,11 @@ void DebugItem(void* unit, const Outcome* outcome, const std::string& verdict, s
         std::string rules;
         if (outcome != nullptr) {
             for (int number : outcome->matchedRules) rules += (rules.empty() ? "" : ", ") + std::to_string(number);
+            if (outcome->shownBy > 0) rules += " (shown by rule " + std::to_string(outcome->shownBy) + ")";
+            if (!outcome->skippedUnidentified.empty()) {
+                rules += "; skipped while unidentified:";
+                for (int number : outcome->skippedUnidentified) rules += " " + std::to_string(number);
+            }
         }
         char line[1024];
         std::snprintf(line, sizeof(line),
@@ -2818,8 +3288,34 @@ std::uint64_t __fastcall HookDrawLabel(void* record, const char* text, const flo
     return OriginalDrawLabel(record, text, use);
 }
 
+// What each item already gave this game, by item unit id: AlertedChat once its
+// chat lines printed, AlertedSound once its sounds played. Cleared when a game
+// is joined or left.
+constexpr std::uint8_t AlertedChat  = 1;
+constexpr std::uint8_t AlertedSound = 2;
+std::mutex                                      AlertedLock;
+std::unordered_map<std::uint32_t, std::uint8_t> Alerted;
+
+// Takes away from `chat` and `sound` what the item already gave this game,
+// unless this is a drop, and remembers what is given now.
+void TakeAlert(std::uint32_t id, bool drop, bool& chat, bool& sound) {
+    std::lock_guard<std::mutex> lock(AlertedLock);
+    const auto found = Alerted.find(id);
+    const std::uint8_t given = found != Alerted.end() ? found->second : 0;
+    if (!drop) {
+        chat  = chat && (given & AlertedChat) == 0;
+        sound = sound && (given & AlertedSound) == 0;
+    }
+    const auto now = static_cast<std::uint8_t>(given | (chat ? AlertedChat : 0) | (sound ? AlertedSound : 0));
+    if (now != given) Alerted[id] = now;
+}
+
 // Queues the chat lines and sounds of the item a ground action just placed.
-void AlertGroundItem(const std::uint8_t* packet) noexcept {
+// `drop`: a new drop or a drop by hand (actions 0 and 2), which alert every
+// time. Otherwise the item is on the ground already and came into view
+// (action 3), which the server sends again each time its room comes back into
+// view: it gives only what the item has not given yet.
+void AlertGroundItem(const std::uint8_t* packet, bool drop) noexcept {
     if (packet == nullptr || !Active.load()) return;
     try {
         const std::uint32_t id = ReadAt<std::uint32_t>(packet, 4);
@@ -2827,8 +3323,7 @@ void AlertGroundItem(const std::uint8_t* packet) noexcept {
         if (item == nullptr) return;
         Outcome outcome;
         if (!Evaluate(item, outcome)) return;
-        // Every drop and every time an item comes into view alerts; each of these
-        // runs once per 0x9C packet, so one event never alerts twice.
+        // Each 0x9C ground action runs this once, so one event never alerts twice.
         RecordIcon(item);
         if (outcome.droplight != nullptr) QueueDroplightCheck(id);
         if (outcome.chatMessages.empty() && outcome.sounds.empty()) {
@@ -2836,15 +3331,26 @@ void AlertGroundItem(const std::uint8_t* packet) noexcept {
             return;
         }
         bool playSounds = true;
+        bool chatNotifications = true;
         {
             std::shared_lock<std::shared_mutex> lock(FilterLock);
             playSounds = CurrentSelection.playSounds;
+            chatNotifications = CurrentSelection.chatNotifications;
         }
-        DebugItem(item, &outcome,
-                  "On the ground: " + std::to_string(outcome.chatMessages.size()) + " chat line(s), " + std::to_string(outcome.sounds.size())
-                      + (playSounds ? " sound(s)." : " sound(s), sounds are off."),
-                  nullptr);
-        if (!outcome.chatMessages.empty()) {
+        const bool hasChat  = !outcome.chatMessages.empty();
+        const bool hasSound = !outcome.sounds.empty();
+        bool printChat = chatNotifications && hasChat;
+        bool playSound = playSounds && hasSound;
+        TakeAlert(id, drop, printChat, playSound);
+        std::string note = std::string(drop ? "On the ground (dropped): " : "On the ground (came into view): ")
+                         + std::to_string(outcome.chatMessages.size()) + " chat line(s)";
+        if (hasChat && !chatNotifications) note += ", chat notifications are off";
+        else if (hasChat && !printChat) note += ", already printed for this item";
+        note += ", " + std::to_string(outcome.sounds.size()) + " sound(s)";
+        if (hasSound && !playSounds) note += ", sounds are off";
+        else if (hasSound && !playSound) note += ", already played for this item";
+        DebugItem(item, &outcome, note + ".", nullptr);
+        if (printChat) {
             GameItem facts(item);
             const std::string name = facts.DisplayName();
             for (std::string line : outcome.chatMessages) {
@@ -2853,7 +3359,7 @@ void AlertGroundItem(const std::uint8_t* packet) noexcept {
                 QueueChat(std::move(line));
             }
         }
-        if (playSounds) {
+        if (playSound) {
             for (const SoundPlay& play : outcome.sounds) QueueSound(*play.sound, play.volume);
         }
     } catch (...) {
@@ -2862,19 +3368,19 @@ void AlertGroundItem(const std::uint8_t* packet) noexcept {
 
 std::int64_t __fastcall HookNewDrop(const std::uint8_t* packet, std::uint64_t action) noexcept {
     const std::int64_t result = OriginalNewDrop(packet, action);
-    AlertGroundItem(packet);
+    AlertGroundItem(packet, true);
     return result;
 }
 
 std::int64_t __fastcall HookHandDrop(const std::uint8_t* packet, std::uint64_t action) noexcept {
     const std::int64_t result = OriginalHandDrop(packet, action);
-    AlertGroundItem(packet);
+    AlertGroundItem(packet, true);
     return result;
 }
 
 std::int64_t __fastcall HookSeenOnGround(const std::uint8_t* packet, std::uint64_t action) noexcept {
     const std::int64_t result = OriginalSeenOnGround(packet, action);
-    AlertGroundItem(packet);
+    AlertGroundItem(packet, false);
     return result;
 }
 
@@ -3097,7 +3603,7 @@ auto __cdecl OnNextLevel(const D2RL::PluginContext*, const D2RL::Input::ActionEv
         }
         Revision.fetch_add(1);
         if (!WriteSelection(selection)) LogWarn("LootFilter: selection.json could not be written.");
-        QueueChat(LevelChangeLine(filter));
+        QueueOwnChat(LevelChangeLine(filter));
     } catch (...) {
     }
     return D2RL::Input::ActionResult::Handled;
@@ -3112,7 +3618,7 @@ auto __cdecl OnShowHidden(const D2RL::PluginContext*, const D2RL::Input::ActionE
     ShowHidden.store(now);
     Revision.fetch_add(1);
     try {
-        QueueChat(now ? "\xC3\xBF" "c4Loot filter: \xC3\xBF" "c0hidden items shown" : "\xC3\xBF" "c4Loot filter: \xC3\xBF" "c0hidden items hidden");
+        QueueOwnChat(now ? "\xC3\xBF" "c4Loot filter: \xC3\xBF" "c0hidden items shown" : "\xC3\xBF" "c4Loot filter: \xC3\xBF" "c0hidden items hidden");
     } catch (...) {
     }
     return D2RL::Input::ActionResult::Handled;
@@ -3139,6 +3645,8 @@ void __cdecl OnGameEvent(const D2RL::PluginContext*, const D2RL::Lifecycle::Game
             if (event->kind == D2RL::Lifecycle::GameplayEventKind::GameLeft) RetiredNodes.clear();
             std::lock_guard<std::mutex> iconLock(IconMemoryLock);
             IconMemory.clear();
+            std::lock_guard<std::mutex> alertLock(AlertedLock);
+            Alerted.clear();
         }
         if (event->kind == D2RL::Lifecycle::GameplayEventKind::LocalPlayerReady) {
             LanguagePacked.store(PackItemCode(CurrentLanguage()));
@@ -3226,18 +3734,26 @@ auto __cdecl StatusCommand(D2R::Game::Client*, const D2RL::ConsoleCommandContext
     LoadedFilter filter;
     bool playSounds = true;
     Snapshot(filter, playSounds);
+    bool chatNotifications = true;
+    {
+        std::shared_lock<std::shared_mutex> lock(FilterLock);
+        chatNotifications = CurrentSelection.chatNotifications;
+    }
     std::snprintf(message, sizeof(message),
-        "lootfilter %s: %s. Hooks: names %s, gold %s, hide %s, label colors %s, drop alerts %s, quality colors %s, set tooltip color %s, "
-        "sound volume %s, game strings %s, minimap icons %s, droplights %s, hidden items unpickable %s.",
+        "lootfilter %s: %s. Hooks: names %s, gold %s, hide %s, label colors %s, drop alerts %s, chat lines %s, quality colors %s, "
+        "set tooltip color %s, sound volume %s, game strings %s, minimap icons %s, droplights %s, hidden items unpickable %s, "
+        "every-param stats %s.",
         PluginVersion, StateText(), Hooks.names ? "on" : "off", Hooks.goldLabels ? "on" : "off", Hooks.hide ? "on" : "off",
-        Hooks.labelColors ? "on" : "off", Hooks.alerts ? "on" : "off", Hooks.qualityColors ? "on" : "off",
+        Hooks.labelColors ? "on" : "off", Hooks.alerts ? "on" : "off", Hooks.chat ? "on" : "off", Hooks.qualityColors ? "on" : "off",
         Hooks.setTooltipColor ? "on" : "off", Hooks.soundVolume ? "on" : "off", LocalizationSvc != nullptr ? "on" : "off", Hooks.icons ? "on" : "off",
-        Hooks.droplights ? "on" : "off", Hooks.pickup ? "on" : "off");
+        Hooks.droplights ? "on" : "off", Hooks.pickup ? "on" : "off", WideStatsChecked ? "on" : "off");
     command->plugin->WriteConsoleMessage(message);
     if (filter.program) {
-        std::snprintf(message, sizeof(message), "Filter %s \"%s\": %zu of %zu rules active, level %d (%s), %zu errors, %zu warnings, sounds %s, hidden items %s.",
+        std::snprintf(message, sizeof(message),
+            "Filter %s \"%s\": %zu of %zu rules active, level %d (%s), %zu errors, %zu warnings, sounds %s, chat notifications %s, hidden items %s.",
             filter.id.c_str(), filter.title.c_str(), filter.program->EnabledRuleCount(), filter.program->rules.size(), filter.level,
             LevelName(*filter.program, filter.level, LanguageNow()).c_str(), filter.errors, filter.warnings, playSounds ? "on" : "off",
+            !chatNotifications ? "off in the launcher" : (filter.program->chatNotifications ? "on" : "off in the filter"),
             ShowHidden.load() ? "shown" : "hidden");
     } else if (filter.loadFailed) {
         std::snprintf(message, sizeof(message), "No filter: %s.", filter.failure.c_str());
@@ -3300,6 +3816,11 @@ auto QueryServices() -> bool {
 auto InstallHooks() -> bool {
     if (!PrepareStubPage()) LogWarn("LootFilter: no free page within jump range of the game image.");
     Hooks.names = InstallNameThunk();
+    WideStatsChecked = CheckWideStatLayout();
+    if (!WideStatsChecked) {
+        LogWarn("LootFilter: D2RCore's ReadWideUnitStat does not match D2RLoader 1.3.1; statMax, statSum and skill names on "
+                "chance-to-cast and charge stats read 0.");
+    }
     if (!Hooks.names) LogWarn("LootFilter: item names stay stock (the GetItemName thunk could not be taken).");
     Hooks.goldLabels = Context->CheckExpectedBytes(LabelTextRva + sizeof(LabelTextBytes), LabelTextTailBytes, sizeof(LabelTextTailBytes))
         && Context->InstallInlineHook(LabelTextRva, LabelTextBytes, sizeof(LabelTextBytes), &HookLabelText, &OriginalLabelText);
@@ -3324,6 +3845,15 @@ auto InstallHooks() -> bool {
                                    sizeof(SeenOnGroundTailBytes), &HookSeenOnGround, &OriginalSeenOnGround);
     Hooks.alerts = newDrop || handDrop || seen;
     if (!Hooks.alerts) LogWarn("LootFilter: drop chat lines and sounds are off.");
+    bool chatOk = true;
+    for (const Witness& witness : ChatWitnesses) chatOk = Verify(witness) && chatOk;
+    if (chatOk) {
+        NativeChatData        = At<ChatDataFn>(ChatDataRva);
+        NativeStringConstruct = At<StringConstructFn>(StringConstructRva);
+        NativePushChatEntry   = At<PushChatEntryFn>(PushChatEntryRva);
+    }
+    Hooks.chat = chatOk;
+    if (!Hooks.chat) LogWarn("LootFilter: chat lines are off (the game's chat code does not match D2RLoader 1.3.1).");
     bool drawOk = true;
     for (const Witness& witness : DrawWitnesses) drawOk = Verify(witness) && drawOk;
     Hooks.labelColors = drawOk && Context->InstallInlineHook(DrawLabelRva, DrawLabelBytes, sizeof(DrawLabelBytes), &HookDrawLabel, &OriginalDrawLabel);
@@ -3384,6 +3914,13 @@ auto InstallHooks() -> bool {
         SpriteDrawHd   = At<SpriteDrawHdFn>(SpriteDrawHdRva);
         Hooks.icons = Context->InstallInlineHook(AutomapUnitRva, AutomapUnitBytes, sizeof(AutomapUnitBytes), &HookAutomapUnit,
                                                  &OriginalAutomapUnit);
+        if (Context->CheckExpectedBytes(NearRoomsRva, NearRoomsBytes, sizeof(NearRoomsBytes))
+            && Context->CheckExpectedBytes(InSightCheckRva, InSightCheckBytes, sizeof(InSightCheckBytes))) {
+            NearRooms = At<NearRoomsFn>(NearRoomsRva);
+        } else {
+            LogWarn("LootFilter: the room checks do not match D2RLoader 1.3.1, so a minimap icon only goes once its item is seen "
+                    "picked up (picking up gold or into a stack, or another player's pickup, leave it until the game ends).");
+        }
     }
     if (Context->CheckExpectedBytes(UnitSelectTestRva + sizeof(UnitSelectTestBytes), UnitSelectTestTailBytes, sizeof(UnitSelectTestTailBytes))
         && Context->CheckExpectedBytes(TargetSelectTestRva + sizeof(TargetSelectTestBytes), TargetSelectTestTailBytes, sizeof(TargetSelectTestTailBytes))

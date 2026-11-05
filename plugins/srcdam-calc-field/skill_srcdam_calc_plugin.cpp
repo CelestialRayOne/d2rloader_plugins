@@ -27,6 +27,11 @@
 // 0x00302380 and cross-checked against the code that reads them:
 //   SrcDam  byte  at 589   (read at 0x003BFEF8)
 //   calc1 .. calc10 dwords at 400, 404, 408, 412, 416, 420, 424, 428, 432, 436
+//
+// The SrcDam byte lives in the shared compiled skills table, so a written value
+// stays there until something writes it again. The row's static SrcDam is
+// captured the first time the plugin touches it, put back whenever the formula
+// evaluates to 0 or less, and put back on unload.
 
 #include <D2RLPlugin/api.h>
 
@@ -34,6 +39,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <unordered_map>
 
 namespace {
 
@@ -115,11 +121,16 @@ std::size_t   g_calcOffset    = Calc1Offset + (CalcColumnDefault - 1) * CalcStri
 bool          g_hookInstalled = false;
 bool          g_missileUngated = false;
 
+// Static SrcDam of every row this plugin has touched, keyed by the address of
+// the byte in the compiled table. Captured before the first write.
+std::unordered_map<std::uintptr_t, std::uint8_t> g_staticSrcDam;
+
 // Last applied write, so the console command can prove the path is live.
 std::uint64_t g_appliedCount  = 0;
 std::int32_t  g_lastSkillId   = -1;
 std::int32_t  g_lastSkillLvl  = -1;
 std::int32_t  g_lastValue     = -1;
+bool          g_lastWasStatic = false;
 
 constexpr auto ByteSize(std::size_t size) noexcept -> std::uint32_t {
 	return static_cast<std::uint32_t>(size);
@@ -378,29 +389,51 @@ void ApplyCalcToSrcDam(void* game, void* unit, std::int32_t skillId, std::uint32
 		return;
 	}
 
-	const std::int32_t value = g_evaluateSkillFormula(dataContext, unit, calcHandle, skillId, static_cast<std::int32_t>(skillLevel));
-	if (value <= 0) {
+	std::uint8_t* const srcDam = record + SrcDamOffset;
+
+	// First touch of this row: remember its static SrcDam before anything is
+	// written, so a later 0-or-less result can put it back.
+	std::uint8_t staticSrcDam = *srcDam;
+	try {
+		staticSrcDam = g_staticSrcDam.try_emplace(reinterpret_cast<std::uintptr_t>(srcDam), *srcDam).first->second;
+	} catch (...) {
+		// Out of memory: the row could not be restored later, so leave it alone.
 		return;
 	}
 
-	record[SrcDamOffset] = static_cast<std::uint8_t>(value > SrcDamMax ? SrcDamMax : value);
+	const std::int32_t value = g_evaluateSkillFormula(dataContext, unit, calcHandle, skillId, static_cast<std::int32_t>(skillLevel));
+
+	const bool         useStatic = value <= 0;
+	const std::uint8_t newValue  = useStatic ? staticSrcDam : static_cast<std::uint8_t>(value > SrcDamMax ? SrcDamMax : value);
+	const bool         changed   = *srcDam != newValue;
+
+	*srcDam = newValue;
 
 	++g_appliedCount;
-	g_lastSkillId  = skillId;
-	g_lastSkillLvl = static_cast<std::int32_t>(skillLevel);
-	g_lastValue    = value > SrcDamMax ? SrcDamMax : value;
+	g_lastSkillId   = skillId;
+	g_lastSkillLvl  = static_cast<std::int32_t>(skillLevel);
+	g_lastValue     = newValue;
+	g_lastWasStatic = useStatic;
 
-	if (g_config.logApplied && g_context != nullptr) {
+	if (changed && g_config.logApplied && g_context != nullptr) {
 		char message[160] {};
 		std::snprintf(message,
 		              sizeof(message),
-		              "skill %d level %d: calc%d -> SrcDam %d",
+		              useStatic ? "skill %d level %d: calc%d <= 0 -> static SrcDam %d"
+		                        : "skill %d level %d: calc%d -> SrcDam %d",
 		              skillId,
 		              g_lastSkillLvl,
 		              g_config.calcColumn,
 		              g_lastValue);
 		g_context->LogInfo(message);
 	}
+}
+
+void RestoreStaticSrcDam() noexcept {
+	for (const auto& [address, staticValue] : g_staticSrcDam) {
+		*reinterpret_cast<std::uint8_t*>(address) = staticValue;
+	}
+	g_staticSrcDam.clear();
 }
 
 auto __fastcall HookServerDoHandler(
@@ -452,11 +485,12 @@ auto SrcDamCalcCommand(D2R::Game::Client* client, const D2RL::ConsoleCommandCont
 	} else {
 		std::snprintf(message,
 		              sizeof(message),
-		              "%llu writes so far, last: skill %d level %d -> SrcDam %d",
+		              "%llu writes so far, last: skill %d level %d -> SrcDam %d%s",
 		              static_cast<unsigned long long>(g_appliedCount),
 		              g_lastSkillId,
 		              g_lastSkillLvl,
-		              g_lastValue);
+		              g_lastValue,
+		              g_lastWasStatic ? " (static, formula <= 0)" : "");
 		command->plugin->WriteConsoleMessage(message);
 	}
 
@@ -510,7 +544,7 @@ constexpr D2RL::PluginInfo SkillSrcDamCalcInfo {
 	.abiVersion  = D2RL_PLUGIN_ABI_VERSION,
 	.id          = "celestialrayone.skill-srcdam-calc",
 	.name        = "Skill SrcDam from Calc",
-	.version     = "1.0.0",
+	.version     = "1.0.1",
 	.author      = "CelestialRayOne",
 	.description = "Drives skills.txt SrcDam from a skills.txt calc1-calc10 formula evaluated in the caster's context.",
 	.flags       = D2RL::PluginFlags::Server | D2RL::PluginFlags::NativeHooks,
@@ -571,6 +605,7 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
 }
 
 D2RL_PLUGIN_EXPORT void D2RLoaderUnloadPlugin() noexcept {
+	RestoreStaticSrcDam();
 	g_context              = nullptr;
 	g_originalServerDo     = nullptr;
 	g_getSkillsTxtRecord   = nullptr;

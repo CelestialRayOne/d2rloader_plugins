@@ -11,8 +11,8 @@ TRANSFER_BUTTON_CONTROLLER_SPRITE_ID        RCDATA "transferbuttoncontroller.spr
 TRANSFER_BUTTON_CONTROLLER_LOWEND_SPRITE_ID RCDATA "transferbuttoncontroller.lowend.sprite"
 
 1 VERSIONINFO
-FILEVERSION 1,5,0,0
-PRODUCTVERSION 1,5,0,0
+FILEVERSION 1,6,0,0
+PRODUCTVERSION 1,6,0,0
 BEGIN
   BLOCK "StringFileInfo"
   BEGIN
@@ -20,11 +20,11 @@ BEGIN
     BEGIN
       VALUE "CompanyName", "CelestialRayOne"
       VALUE "FileDescription", "Transfer to Stash button on the inventory panel."
-      VALUE "FileVersion", "1.5.0"
+      VALUE "FileVersion", "1.6.0"
       VALUE "InternalName", "celestialrayone.transfer-to-stash"
       VALUE "OriginalFilename", "d2rl-celestialrayone-transfer-to-stash.dll"
       VALUE "ProductName", "Transfer to Stash"
-      VALUE "ProductVersion", "1.5.0"
+      VALUE "ProductVersion", "1.6.0"
     END
   END
   BLOCK "VarFileInfo"

@@ -30,6 +30,17 @@
 //     the owner link, the value of each paired stat on that owner and the
 //     decision. summon-resist-cap shows the latest of these lines.
 //
+// 3.4.0, bound demons:
+//   - With Bound Demon Scaling (celestialrayone.bound-demon-scaling) loaded, a
+//     bound demon is decided as its pseudo row: that row's Align byte, the
+//     extra_monster_ids and the [uncap] pairs all use the pseudo row's id,
+//     through the same decision every other monster takes. The row comes from
+//     that plugin's "stats-row" service, version 1, asked on every decision.
+//   - Every other unit, and every bound demon while that plugin is missing, off
+//     or has no pseudo row, is decided by its own monstats row exactly as
+//     before. The service is looked up on first use and again every 5 seconds
+//     while it is missing; the log says once which of the two it is.
+//
 // Cap decision service (3.3.0): the gate's decision is also published through
 // D2RLoader's plugin communication service as "cap-decision", version 1 (see
 // CapDecisionService below). Monster Display asks it for every monster it
@@ -152,6 +163,10 @@ constexpr char DefaultConfig[] = R"toml(# ======================================
 # Every monster whose monstats.txt Align column is 1 (summons, Valkyrie,
 # golems, Revives, hirelings), plus the rows in extra_monster_ids. Every other
 # monster is left alone.
+#
+# Bound demons: with the Bound Demon Scaling plugin installed, a bound demon
+# counts as that plugin's pseudo_row here, for the Align column,
+# extra_monster_ids and [uncap] pairs alike.
 #
 # UNCAPPED SUMMONS
 # [uncap] pairs lists [monster id, stat id] pairs. While the player who owns a
@@ -411,7 +426,7 @@ constexpr D2RL::PluginInfo Info{
     .abiVersion = D2RL_PLUGIN_ABI_VERSION,
     .id = "celestialrayone.summon-resist-cap",
     .name = "Summon Resist Cap",
-    .version = "3.3.1",
+    .version = "3.4.0",
     .author = "CelestialRayOne",
     .description =
         "Caps allied monsters' resistances the way player resistances are "
@@ -1081,6 +1096,89 @@ auto OwnerStatUncaps(
     return uncapped;
 }
 
+// ------------------------------------------------- bound demon stats row
+// Bound Demon Scaling's "stats-row" service, in the layout its provider
+// publishes (celestialrayone.bound-demon-scaling 1.0.0 and later).
+struct StatsRowService {
+    using StatsRowFn = std::int32_t(__cdecl*)(void* unit) noexcept;
+
+    std::uint32_t serviceSize;
+    std::uint32_t serviceVersion;
+    // Game thread, server unit: the monstats row a bound demon takes its stats
+    // from, -1 for every other unit.
+    StatsRowFn statsRow;
+};
+static_assert(sizeof(StatsRowService) == 16U);
+static_assert(offsetof(StatsRowService, statsRow) == 8U);
+
+constexpr char StatsRowProviderId[] = "celestialrayone.bound-demon-scaling";
+constexpr char StatsRowServiceName[] = "stats-row";
+constexpr std::uint32_t StatsRowServiceVersion = 1U;
+constexpr std::uint64_t StatsRowRetryMs = 5000U;
+
+// Game thread only, apart from the atomics the console reads.
+D2RL::PluginCommunication::ServiceLease<StatsRowService> StatsRowLease;
+std::uint64_t StatsRowLastAttempt{};
+std::atomic<std::uint32_t> StatsRowLastResult{0xFFFFFFFFU};
+std::atomic_bool StatsRowAcquired{};
+std::atomic_bool StatsRowNoted{};
+std::atomic<std::uint64_t> BoundDemonRows{};
+
+// Acquires the service on first use and retries every few seconds while it is
+// missing. Held until unload.
+auto StatsRowProvider() noexcept -> const StatsRowService* {
+    if (StatsRowLease) return StatsRowLease.Get();
+    const std::uint64_t now = ::GetTickCount64();
+    if (StatsRowLastAttempt != 0U && now - StatsRowLastAttempt < StatsRowRetryMs) {
+        return nullptr;
+    }
+    StatsRowLastAttempt = now;
+    const D2RL::PluginCommunicationService* communication = nullptr;
+    if (Context->QueryService(&communication) != D2RL::ServiceQueryResult::Success
+            || !D2RL::HasPluginCommunicationServiceField(
+                communication, D2RL::PluginCommunicationServiceRequiredSize)) {
+        StatsRowLastResult.store(static_cast<std::uint32_t>(
+            D2RL::PluginCommunication::Result::Unavailable));
+        return nullptr;
+    }
+    const auto result = D2RL::PluginCommunication::Acquire(Context, communication,
+        StatsRowProviderId, StatsRowServiceName, StatsRowServiceVersion,
+        static_cast<std::uint32_t>(sizeof(StatsRowService)), &StatsRowLease);
+    StatsRowLastResult.store(static_cast<std::uint32_t>(result));
+    if (result != D2RL::PluginCommunication::Result::Success || !StatsRowLease
+            || StatsRowLease->statsRow == nullptr) {
+        StatsRowLease.Reset();
+        if (!StatsRowNoted.exchange(true)) {
+            char text[256]{};
+            std::snprintf(text, sizeof(text),
+                "SummonResistCap: Bound Demon Scaling's stats-row service is not "
+                "available (result %u); bound demons are decided by their own "
+                "monstats row.",
+                static_cast<unsigned>(result));
+            Context->LogInfo(text);
+        }
+        return nullptr;
+    }
+    StatsRowAcquired.store(true);
+    Context->LogInfo(
+        "SummonResistCap: using Bound Demon Scaling's stats-row service; bound "
+        "demons are decided as its pseudo row.");
+    return StatsRowLease.Get();
+}
+
+// The monstats row a unit's cap is decided by: a bound demon's pseudo row
+// when Bound Demon Scaling names one, otherwise the unit's own class id.
+auto StatsRowFor(void* unit) noexcept -> std::int32_t {
+    if (const StatsRowService* service = StatsRowProvider(); service != nullptr) {
+        const std::int32_t row = service->statsRow(unit);
+        if (row >= 0) {
+            BoundDemonRows.fetch_add(1U, std::memory_order_relaxed);
+            return row;
+        }
+    }
+    return GetUnitClassId(unit);
+}
+
 enum class MonsterCap : std::uint8_t { Skip, CapAlign, CapList, UncapPair };
 
 // The cap decision for a monster defender: the one place it is made, for the
@@ -1124,7 +1222,7 @@ auto EvaluateCapGate(void* ctx) noexcept -> std::int32_t {
     if (!IsPlausiblePointer(defender)) return 0;
     if (GetUnitType(defender) != UnitTypeMonster) return 0;
 
-    const std::int32_t classId = GetUnitClassId(defender);
+    const std::int32_t classId = StatsRowFor(defender);
     ObservedRow* row = NoteRow(defender, classId);
 
     switch (DecideMonster(defender, classId, true)) {
@@ -1175,7 +1273,7 @@ auto __cdecl MonsterCapState(void* monster) noexcept -> std::int32_t {
         return -1;
     }
     ServiceQueries.fetch_add(1U, std::memory_order_relaxed);
-    switch (DecideMonster(monster, GetUnitClassId(monster), false)) {
+    switch (DecideMonster(monster, StatsRowFor(monster), false)) {
     case MonsterCap::CapAlign:
     case MonsterCap::CapList:
         return 1;
@@ -1441,7 +1539,7 @@ auto Status(
         message,
         sizeof(message),
         used,
-        "Summon Resist Cap 3.3.1: active=%s; build=%s; gate 0x45249C: %s; "
+        "Summon Resist Cap 3.4.0: active=%s; build=%s; gate 0x45249C: %s; "
         "gate calls=%llu; players=%llu; capped=%llu by Align / %llu by list; "
         "skipped=%llu; uncap pairs: checked=%llu, no player owner=%llu, "
         "uncapped=%llu; cap-decision service: %s, %llu queries; Align "
@@ -1503,6 +1601,15 @@ auto Status(
     }
     Append(
         message, sizeof(message), used, "; config=%s.", LoadedConfigPath.c_str());
+    Append(
+        message,
+        sizeof(message),
+        used,
+        "; bound demons: stats-row service %s (last result %u), %llu decisions "
+        "made as the pseudo row",
+        StatsRowAcquired.load(std::memory_order_acquire) ? "in use" : "not available",
+        StatsRowLastResult.load(std::memory_order_relaxed),
+        static_cast<unsigned long long>(BoundDemonRows.load(std::memory_order_relaxed)));
     command->plugin->WriteConsoleMessage(message);
     return D2RL::ConsoleCommandResult::Handled;
 }
@@ -1689,7 +1796,7 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(
     std::snprintf(
         message,
         sizeof(message),
-        "Summon Resist Cap 3.3.1 active for observed D2R %s; Align column=%s, "
+        "Summon Resist Cap 3.4.0 active for observed D2R %s; Align column=%s, "
         "%zu extra rows, %zu uncap pairs; cap gate 0x45249C relayed; function "
         "entry 0x4523E0 left untouched; cap-decision service %s; config=%s.",
         RuntimeBuild.c_str(),

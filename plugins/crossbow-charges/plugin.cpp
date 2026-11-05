@@ -58,6 +58,18 @@
 // (TOML debug, or "crossbowcharges debug on") writes every decision with its
 // reason, and the console command shows counters for each step.
 //
+// 1.4.0: bolts reload faster while the player stands still. Every server frame
+// the player spends in a neutral mode, NU (1) or TN (5), counts
+// standing_reload_bonus percent extra on the reload clock; every other mode
+// (walking, running, attacking, casting, getting hit, ...) counts normally.
+// The mode is read every frame, so the faster reload starts on the first frame
+// the player stands still. The clock now adds up hundredths of a frame per
+// frame instead of comparing frame numbers, which lets its speed change from
+// one frame to the next; the button shadow follows it on the host (from the
+// server pool) and on a joined client (from its own player's mode). The bonus
+// sits on the clock, after globaldelay was worked out, so it goes past any
+// limit inside the globaldelay formula.
+//
 // ---------------------------------------------------------------------------
 // 1. Which skills are crossbow skills
 // ---------------------------------------------------------------------------
@@ -127,6 +139,24 @@
 //   (D2RCore SetWideUnitStat); D2RCore's widened stat packets carry it to the
 //   owning client, and a joined client reads it back through 2F5020. On a
 //   host the client side reads the server pool directly.
+//
+//   Each tick adds 100 to the progress of the bolt reloading now, or
+//   100 + standing_reload_bonus when the player's mode is NU (1) or TN (5);
+//   the bolt is back once its progress reaches its reload frames * 100, and
+//   what is left over goes to the next bolt. So at the normal speed a bolt
+//   takes exactly its globaldelay frames, as before.
+//     mode     the dword at unit+0Ch, the field UNITS_IsDead 34C2C0 compares
+//              with 0 (DT) and 17 (DD) for players and with 0 and 12 for
+//              monsters (witnessed at 34C2F2, an optional part: a mismatch
+//              only turns the standing bonus off)
+//     neutral  the player mode start table 1D18FB0 (24-byte rows, start
+//              function first) gives modes 1 and 5 the same start function
+//              429660, which picks 1, or 5 when the unit's room is in town
+//              (2F0750), sets it (491130) and clears the used skill; walk,
+//              run and town walk (2, 3, 6) share 4297E0
+//   A joined client counts its copy of the front bolt in milliseconds the
+//   same way, from its own player's mode, every time a button or the gate
+//   reads it.
 //
 // ---------------------------------------------------------------------------
 // 5. Which hits get the damage bonus: cast ids and the missile in progress
@@ -453,6 +483,8 @@ constexpr std::size_t GameFrameOffset       = 0x170;
 constexpr std::size_t GameDataContextOffset = 0x106;
 constexpr std::size_t UnitCastIdOffset      = 0x12C;
 constexpr std::size_t UnitModeOffset        = 0x0C;
+constexpr std::int32_t NeutralMode           = 1;   // NU
+constexpr std::int32_t TownNeutralMode       = 5;   // TN
 constexpr std::size_t UnitAnimRecordOffset  = 0x70;
 constexpr std::size_t AnimRecordFramesOffset = 0x08;
 constexpr std::size_t UnitSequenceRowsOffset   = 0x40;
@@ -497,7 +529,7 @@ constexpr std::size_t DamagePoisonCount   = 0x48;
 constexpr std::size_t PoisonEntrySize     = 12;
 constexpr std::size_t PoisonEntryDamage   = 4;
 
-constexpr const char*   PluginVersion       = "1.3.2";
+constexpr const char*   PluginVersion       = "1.4.0";
 
 constexpr std::uint64_t MsPerFrame          = 40;
 constexpr std::uint64_t PredictionTimeoutMs = 1500;
@@ -689,6 +721,16 @@ constexpr std::uint8_t ServerUnitAllocBytes[]{
     0x00,0x41,0x0F,0xB6,0x97,0x06,0x01,0x00,0x00,0xE8,0x1E,0xDB,0xEB,0xFF,0xBA,0x00,
     0x00,0x00,0x04,0x41,0xB8,0x01,0x00,0x00,0x00,0x48,0x8B,0xCF,0xE8,0x6B,0xDA,0xEB,
     0xFF };
+// 34C2F2..34C327 in UNITS_IsDead 34C2C0: type 0 (player) jumps to 34C31C,
+// mov eax,[rcx+0Ch] / test eax,eax / jz / cmp eax,11h; type 1 (monster)
+// reads the same dword at 34C310 and compares it with 0Ch. Read only: proves
+// the mode field the standing check reads.
+constexpr std::uint64_t UnitModeWitnessRva = 0x34C2F2;
+constexpr std::uint8_t UnitModeWitnessBytes[]{
+    0x8B,0x11,0x85,0xD2,0x74,0x24,0x83,0xFA,0x01,0x74,0x13,0xF7,0x81,0x28,0x01,0x00,
+    0x00,0x00,0x00,0x00,0x04,0x75,0x1F,0x33,0xC0,0x48,0x83,0xC4,0x28,0xC3,0x8B,0x41,
+    0x0C,0x85,0xC0,0x74,0x11,0x83,0xF8,0x0C,0xEB,0x0A,0x8B,0x41,0x0C,0x85,0xC0,0x74,
+    0x05,0x83,0xF8,0x11,0x75,0xE1 };
 constexpr std::uint8_t InventoryBytes[]{
     0x48,0x89,0x5C,0x24,0x18,0x56,0x48,0x83,0xEC,0x20,0x48,0x8B,0xF1,0x48,0x85,0xC9 };
 constexpr std::uint8_t LeftHandWeaponBytes[]{
@@ -926,6 +968,17 @@ constexpr char DefaultConfigToml[] =
     "#     fires. A skill's own `localdelay` still applies on top.\n"
     "#   - Each spent bolt reloads for the `globaldelay` frames of the skill that\n"
     "#     spent it. Bolts come back one at a time, in the order they were spent.\n"
+    "#   - Standing still reloads faster. While the player stands still (player\n"
+    "#     mode 1, neutral, or 5, town neutral) bolts reload standing_reload_bonus\n"
+    "#     percent faster. Walking, running, attacking, casting, getting hit and\n"
+    "#     every other mode reload at the normal speed. The mode is checked every\n"
+    "#     game frame (25 a second), so the faster reload starts on the first frame\n"
+    "#     the player stands still and ends on the first frame he does anything\n"
+    "#     else. It counts whatever weapon is held, like the rest of the reload.\n"
+    "#   - The standing bonus speeds up the reload itself, after `globaldelay` was\n"
+    "#     worked out, so it goes past any limit inside the `globaldelay` formula.\n"
+    "#     At 25, a 1 second reload takes 0.8 seconds and a 0.8 second reload\n"
+    "#     0.64 seconds while standing still the whole time.\n"
     "#   - With no bolts left, crossbow skills cannot be cast.\n"
     "#   - Maximum bolts is default_max_bolts plus the max bolts stat, at least 1.\n"
     "#   - The pool keeps reloading whatever weapon is held. Maximum bolts is only\n"
@@ -963,7 +1016,8 @@ constexpr char DefaultConfigToml[] =
     "#   While any bolt is reloading, the shadow image on the button clocks down the\n"
     "#   bolt that comes back next, over that bolt's own reload time, then restarts\n"
     "#   for the one after it. It goes away when the pool is full. At 0 bolts the button keeps its normal colour; the\n"
-    "#   shadow is the only sign.\n"
+    "#   shadow is the only sign. Standing still speeds the shadow up with the\n"
+    "#   reload.\n"
     "#   The shadow is an ImageWidget child of the skill button, named as below, in\n"
     "#   hudpanelhd.json and controller/hudpanelhd.json. A button without that\n"
     "#   child still shows the number.\n"
@@ -983,6 +1037,8 @@ constexpr char DefaultConfigToml[] =
     "# which cast it belongs to, whether that is a crossbow cast and why, and for\n"
     "# hits the damage before and after the bonus. At most 60 lines per second;\n"
     "# the rest are counted and reported. Also switchable in game (see above).\n"
+    "# While a bolt reloads it also logs every switch between standing still and\n"
+    "# not, with the player's mode and the reload speed.\n"
     "debug = false\n"
     "\n"
     "# itemtypes.txt codes that count as crossbows. Child types count too.\n"
@@ -990,6 +1046,10 @@ constexpr char DefaultConfigToml[] =
     "\n"
     "# Bolts every crossbow user has. The max bolts stat adds to it.\n"
     "default_max_bolts = 1\n"
+    "\n"
+    "# Percent faster bolts reload while the player stands still (player modes 1\n"
+    "# and 5). 25 turns a 1 second reload into 0.8 seconds. 0 turns it off.\n"
+    "standing_reload_bonus = 25\n"
     "\n"
     "# Frames every crossbow attack takes. The attack frames stat adds to it.\n"
     "default_attack_frames = 7\n"
@@ -1030,6 +1090,7 @@ struct Config {
     bool                       enabled{ true };
     std::vector<std::string>   itemTypes{ "xbow" };
     std::int32_t               defaultMaxBolts{ 1 };
+    std::int32_t               standingReloadBonus{ 25 };
     std::int32_t               maxBoltsStat{ 513 };
     std::int32_t               currentBoltsStat{ 514 };
     std::int32_t               damageStat{ 515 };
@@ -1148,6 +1209,8 @@ void ApplyConfigLine(std::string_view section, std::string_view key, std::string
         else bad("expected a list of 1 to 8 itemtypes.txt codes, each up to 4 characters");
     } else if (key == "default_max_bolts") {
         if (!ParseInt(value, 0, 1000, Settings.defaultMaxBolts)) bad("expected 0 to 1000");
+    } else if (key == "standing_reload_bonus") {
+        if (!ParseInt(value, 0, 1000, Settings.standingReloadBonus)) bad("expected 0 to 1000");
     } else if (key == "max_bolts_stat_id") {
         if (!ParseInt(value, 0, 32767, Settings.maxBoltsStat)) bad("expected 0 to 32767");
     } else if (key == "current_bolts_stat_id") {
@@ -1444,6 +1507,26 @@ auto InAuraPulse(void* unit) noexcept -> bool {
     return unit != nullptr && (Read<std::uint32_t>(unit, UnitFlagsExOffset) & AuraPulseFlag) != 0;
 }
 
+// The mode field matched this build (UnitModeWitnessBytes); without it the
+// standing bonus stays off.
+bool StandingPartVerified{};
+
+auto ModeOf(void* unit) noexcept -> std::int32_t {
+    return Read<std::int32_t>(unit, UnitModeOffset);
+}
+
+// Standing still: the neutral modes NU (1) and TN (5) only.
+auto IsStandingStill(void* unit) noexcept -> bool {
+    if (!StandingPartVerified || unit == nullptr) return false;
+    const std::int32_t mode = ModeOf(unit);
+    return mode == NeutralMode || mode == TownNeutralMode;
+}
+
+// Speed of the reload clock, percent of normal.
+auto ReloadRate(bool standing) noexcept -> std::int64_t {
+    return 100 + (standing ? static_cast<std::int64_t>(Settings.standingReloadBonus) : 0);
+}
+
 // ---------------------------------------------------------------------------
 // Server pools (game thread)
 // ---------------------------------------------------------------------------
@@ -1451,14 +1534,17 @@ auto InAuraPulse(void* unit) noexcept -> bool {
 struct Pool {
     bool                     initialized{};
     bool                     everSpent{};
+    bool                     standing{};      // the last frame counted had the standing bonus
+    bool                     tickStanding{};  // what the last tick saw (debug log only)
     std::int32_t             current{};
     std::int32_t             lastMax{ 1 };
     std::int32_t             lastDuration{ 1 };
-    std::int32_t             headStart{};
+    std::int32_t             clockFrame{};    // server frame the reload clock has counted up to
+    std::int64_t             progress{};      // front bolt's reload done, hundredths of a frame
+    std::uint64_t            clockMs{};       // wall clock of the last count
     std::int32_t             written{ -1 };
     std::uint32_t            lastCastId{};  // cast that spent the last bolt
     std::int32_t             tickFrame{};   // server frame of the last update
-    std::uint64_t            tickMs{};      // wall clock of the last update
     std::deque<std::int32_t> reloads;   // frames, front = reloading now
 };
 
@@ -1526,6 +1612,8 @@ void RefreshCapacity(Pool& pool, void* unit, std::int32_t frame) {
             pool.initialized = true;
             pool.current     = pool.lastMax;
             pool.reloads.clear();
+            pool.progress    = 0;
+            pool.clockFrame  = frame;
         }
     }
     if (!pool.initialized) return;
@@ -1540,22 +1628,35 @@ void RefreshCapacity(Pool& pool, void* unit, std::int32_t frame) {
         if (!pool.everSpent) {
             pool.current += max - total;
         } else {
-            if (pool.reloads.empty()) pool.headStart = frame;
+            if (pool.reloads.empty()) {
+                pool.progress   = 0;
+                pool.clockFrame = frame;
+            }
             for (std::int32_t i = total; i < max; ++i) pool.reloads.push_back(pool.lastDuration);
         }
     }
 }
 
-void Advance(Pool& pool, std::int32_t frame) {
+// Counts the reload clock up to frame. Every frame adds 100 to the progress of
+// the bolt reloading now, or 100 + standing_reload_bonus when the player stood
+// still in it; the bolt is back once its progress reaches its reload frames *
+// 100, and what is left over goes to the next bolt. The progress is 0 whenever
+// nothing reloads.
+void Advance(Pool& pool, std::int32_t frame, bool standing) {
+    const std::int32_t elapsed = frame - pool.clockFrame;
+    pool.clockFrame = frame;
+    pool.clockMs    = GetTickCount64();
+    pool.standing   = standing;
+    if (elapsed > 0 && !pool.reloads.empty()) pool.progress += static_cast<std::int64_t>(elapsed) * ReloadRate(standing);
     while (!pool.reloads.empty()) {
-        const std::int32_t duration = std::max(1, pool.reloads.front());
-        if (frame - pool.headStart < duration) break;
-        pool.headStart += duration;
+        const std::int64_t needed = static_cast<std::int64_t>(std::max(1, pool.reloads.front())) * 100;
+        if (pool.progress < needed) break;
+        pool.progress -= needed;
         pool.reloads.pop_front();
         ++pool.current;
         BoltsReloaded.fetch_add(1, std::memory_order_relaxed);
     }
-    if (pool.reloads.empty()) pool.headStart = frame;
+    if (pool.reloads.empty()) pool.progress = 0;
 }
 
 // Returns the value to write, or -1. The write itself happens after the lock
@@ -1588,12 +1689,18 @@ void PrunePools(std::int32_t frame) {
 }
 
 void TickServer(void* game, void* unit) {
-    const std::uint32_t guid  = GuidOf(unit);
-    std::int32_t        write = -1;
+    const std::uint32_t guid     = GuidOf(unit);
+    const bool          standing = IsStandingStill(unit);
+    std::int32_t        write    = -1;
+    bool                switched = false;
+    std::int32_t        frame    = 0;
+    std::int32_t        bolts    = 0;
+    std::int32_t        max      = 0;
+    std::int64_t        left     = 0;
     {
         std::lock_guard lock(ServerMutex);
         ResetServerIfNeeded(game);
-        const std::int32_t frame = FrameOf(game);
+        frame = FrameOf(game);
         PrunePools(frame);
         auto it = Pools.find(guid);
         if (it == Pools.end()) {
@@ -1603,12 +1710,22 @@ void TickServer(void* game, void* unit) {
         Pool& pool = it->second;
         RefreshCapacity(pool, unit, frame);
         if (!pool.initialized) return;
-        Advance(pool, frame);
+        switched          = standing != pool.tickStanding && !pool.reloads.empty();
+        pool.tickStanding = standing;
+        Advance(pool, frame, standing);
         pool.tickFrame = frame;
-        pool.tickMs    = GetTickCount64();
         write = Commit(pool);
+        bolts = pool.current;
+        max   = pool.lastMax;
+        if (!pool.reloads.empty()) left = static_cast<std::int64_t>(std::max(1, pool.reloads.front())) * 100 - pool.progress;
     }
     WriteBolts(unit, write);
+    if (switched) {
+        const std::int64_t rate = ReloadRate(standing);
+        DebugLog("[reload] player %u frame %d: mode %d, %s, reload at %lld%% speed, %d of %d bolts, next in %lld "
+            "frames at this speed", guid, frame, ModeOf(unit), standing ? "standing still" : "not standing still",
+            static_cast<long long>(rate), bolts, max, static_cast<long long>((std::max<std::int64_t>(0, left) + rate - 1) / rate));
+    }
 }
 
 // The functions up to CastOfMissile expect ServerMutex to be held.
@@ -1667,9 +1784,10 @@ auto CastOfMissile(std::uint32_t missileGuid, std::uint32_t castId, bool* linked
 // held. The unit's current cast id is that crossbow cast, so it is tagged here
 // too; a cast the skill start already tagged is left alone.
 void SpendBolt(void* game, void* unit, std::int32_t frames, std::int32_t skillId) {
-    const std::uint32_t guid   = GuidOf(unit);
-    const std::uint32_t castId = CastIdOf(unit);
-    const bool          aura   = InAuraPulse(unit);
+    const std::uint32_t guid     = GuidOf(unit);
+    const std::uint32_t castId   = CastIdOf(unit);
+    const bool          aura     = InAuraPulse(unit);
+    const bool          standing = IsStandingStill(unit);
     std::int32_t        write  = -1;
     const char*         outcome = "no pool";
     bool                tagged  = false;
@@ -1686,7 +1804,7 @@ void SpendBolt(void* game, void* unit, std::int32_t frames, std::int32_t skillId
         const std::int32_t frame = FrameOf(game);
         RefreshCapacity(pool, unit, frame);
         if (pool.initialized) {
-            Advance(pool, frame);
+            Advance(pool, frame, standing);
             if (ValidCastId(castId) && castId == pool.lastCastId) {
                 // A later do-event of a cast that already spent (Strafe's next arrow).
                 outcome = "repeat step, already spent";
@@ -1699,12 +1817,10 @@ void SpendBolt(void* game, void* unit, std::int32_t frames, std::int32_t skillId
                 } else {
                     --pool.current;
                     const std::int32_t duration = std::max(1, frames);
-                    if (pool.reloads.empty()) pool.headStart = frame;
-                    pool.reloads.push_back(duration);
+                    pool.reloads.push_back(duration);   // starts at progress 0 when nothing reloaded
                     pool.everSpent    = true;
                     pool.lastDuration = duration;
                     pool.tickFrame    = frame;
-                    pool.tickMs       = GetTickCount64();
                     write   = Commit(pool);
                     outcome = "bolt spent";
                     BoltsSpent.fetch_add(1, std::memory_order_relaxed);
@@ -1825,7 +1941,9 @@ thread_local std::uint32_t ProcOwner{};
 // copy of the reload queue: each drop of the stat is a fired bolt, reloading
 // for the globaldelay the client evaluated for its own cast. The drop and the
 // cast arrive in either order; a bolt whose cast has not been seen yet gets
-// its time the moment the cast arrives. No two locks are ever held together.
+// its time the moment the cast arrives. The front bolt's reload is counted in
+// milliseconds at the speed its own player's mode gives, the way the server
+// counts frames. No two locks are ever held together.
 
 struct SweepView {
     std::int32_t bolts{};
@@ -1842,11 +1960,13 @@ auto HostView(std::uint32_t guid, std::uint64_t now, SweepView& view) -> bool {
     view.reloading = !pool.reloads.empty();
     view.progress  = 0.0f;
     if (view.reloading) {
-        const double duration  = static_cast<double>(std::max(1, pool.reloads.front()));
-        const double sinceTick = now > pool.tickMs
-            ? static_cast<double>(now - pool.tickMs) / static_cast<double>(MsPerFrame) : 0.0;
-        const double elapsed   = static_cast<double>(pool.tickFrame - pool.headStart) + sinceTick;
-        view.progress = static_cast<float>(std::clamp(elapsed / duration, 0.0, 0.999));
+        // The server's count, plus the time since it at the speed of the last frame counted.
+        const double needed    = static_cast<double>(std::max(1, pool.reloads.front())) * 100.0;
+        const double sinceTick = now > pool.clockMs
+            ? static_cast<double>(now - pool.clockMs) / static_cast<double>(MsPerFrame) : 0.0;
+        const double done      = static_cast<double>(pool.progress)
+            + sinceTick * static_cast<double>(ReloadRate(pool.standing));
+        view.progress = static_cast<float>(std::clamp(done / needed, 0.0, 0.999));
     }
     return true;
 }
@@ -1869,7 +1989,8 @@ struct ClientPool {
     std::int32_t           lastStat{};
     std::int32_t           lastMax{ 1 };
     std::int32_t           lastDuration{ 25 };
-    std::uint64_t          headStartMs{};
+    double                 doneMs{};      // front bolt's reload done, milliseconds at the normal speed
+    std::uint64_t          clockMs{};     // wall clock doneMs is counted up to
     std::deque<Reload>     reloads;
     std::deque<Prediction> predictions;   // casts the stat has not shown yet
     std::uint32_t          lastCastId{};  // client cast that made the last prediction
@@ -1885,6 +2006,11 @@ void UpdateRemote(void* unit, std::uint64_t now) {
         Client.unit = unit;
         Client.guid = guid;
     }
+    if (!Client.reloads.empty() && Client.clockMs != 0 && now > Client.clockMs) {
+        Client.doneMs += static_cast<double>(now - Client.clockMs)
+            * static_cast<double>(ReloadRate(IsStandingStill(unit))) / 100.0;
+    }
+    Client.clockMs = now;
     while (!Client.predictions.empty() && now - Client.predictions.front().timeMs > PredictionTimeoutMs) {
         Client.predictions.pop_front();
     }
@@ -1899,7 +2025,7 @@ void UpdateRemote(void* unit, std::uint64_t now) {
         Client.synced   = true;
         Client.lastStat = current;
         for (std::int32_t i = current; i < Client.lastMax; ++i) Client.reloads.push_back({ Client.lastDuration, false });
-        Client.headStartMs = now;
+        Client.doneMs = 0.0;
     } else if (current < Client.lastStat && !clamped) {
         for (std::int32_t i = current; i < Client.lastStat; ++i) {
             Reload reload{ Client.lastDuration, false };
@@ -1908,7 +2034,7 @@ void UpdateRemote(void* unit, std::uint64_t now) {
                 Client.predictions.pop_front();
                 Client.lastDuration = reload.frames;
             }
-            if (Client.reloads.empty()) Client.headStartMs = now;
+            if (Client.reloads.empty()) Client.doneMs = 0.0;
             Client.reloads.push_back(reload);
             Client.everSpent = true;
         }
@@ -1916,7 +2042,7 @@ void UpdateRemote(void* unit, std::uint64_t now) {
         for (std::int32_t i = Client.lastStat; i < current && !Client.reloads.empty(); ++i) {
             Client.reloads.pop_front();
         }
-        Client.headStartMs = now;
+        Client.doneMs = 0.0;
     }
     Client.lastStat = current;
 
@@ -1926,7 +2052,7 @@ void UpdateRemote(void* unit, std::uint64_t now) {
             Client.reloads.pop_back();
         }
     } else if (total < Client.lastMax && Client.everSpent) {
-        if (Client.reloads.empty()) Client.headStartMs = now;
+        if (Client.reloads.empty()) Client.doneMs = 0.0;
         for (std::int32_t i = total; i < Client.lastMax; ++i) Client.reloads.push_back({ Client.lastDuration, true });
     }
 }
@@ -1944,14 +2070,14 @@ void PredictRemoteSpend(void* unit, std::int32_t frames, std::uint64_t now) {
     Client.predictions.push_back({ frames, now });
 }
 
-auto RemoteView(std::uint64_t now) -> SweepView {
+// Expects UpdateRemote to have counted the clock up to now.
+auto RemoteView() -> SweepView {
     SweepView view{};
     view.bolts     = std::max(0, Client.lastStat - static_cast<std::int32_t>(Client.predictions.size()));
     view.reloading = !Client.reloads.empty();
     if (view.reloading) {
-        const auto   durationMs = static_cast<double>(std::max(1, Client.reloads.front().frames)) * MsPerFrame;
-        const double elapsed    = now >= Client.headStartMs ? static_cast<double>(now - Client.headStartMs) : 0.0;
-        view.progress = static_cast<float>(std::clamp(elapsed / durationMs, 0.0, 0.999));
+        const auto durationMs = static_cast<double>(std::max(1, Client.reloads.front().frames)) * MsPerFrame;
+        view.progress = static_cast<float>(std::clamp(Client.doneMs / durationMs, 0.0, 0.999));
     }
     return view;
 }
@@ -1962,7 +2088,7 @@ auto LocalView(void* unit, std::uint64_t now) -> SweepView {
     if (HostView(GuidOf(unit), now, view)) return view;
     std::lock_guard lock(ClientMutex);
     UpdateRemote(unit, now);
-    return RemoteView(now);
+    return RemoteView();
 }
 
 // ---------------------------------------------------------------------------
@@ -2902,7 +3028,8 @@ auto __cdecl StatusCommand(D2R::Game::Client*, const D2RL::ConsoleCommandContext
         DebugOn.store(on);
         if (on) {
             D2RL::LogInfoF(Context, "CrossbowCharges debug: on (damage base %d%%, damage stat %d). Lines: [start] skill "
-                "starts, [spend] bolts, [missile] player missiles, [hit] player hits, [proc] procs.",
+                "starts, [spend] bolts, [reload] standing still on/off, [missile] player missiles, [hit] player hits, "
+                "[proc] procs.",
                 Settings.damageBase, Settings.damageStat);
         } else {
             Context->LogInfo("CrossbowCharges debug: off.");
@@ -2932,19 +3059,31 @@ auto __cdecl StatusCommand(D2R::Game::Client*, const D2RL::ConsoleCommandContext
         Settings.mirroredBladesSkill < 0 ? "off in config"
             : (AttackRatePatched && SequencePartVerified) ? "fixed" : "game speed (not installed)");
     say(line);
+    std::snprintf(line, sizeof(line), "  standing still (modes 1 and 5): %s.",
+        !StandingPartVerified ? "no faster reload (the unit mode field does not match this build)"
+            : Settings.standingReloadBonus == 0 ? "no faster reload (off in config)" : "bolts reload faster");
+    say(line);
+    if (StandingPartVerified && Settings.standingReloadBonus != 0) {
+        std::snprintf(line, sizeof(line), "    %d%% faster: a 25 frame (1 second) reload takes %lld frames standing still.",
+            Settings.standingReloadBonus, static_cast<long long>((2500 + ReloadRate(true) - 1) / ReloadRate(true)));
+        say(line);
+    }
     {
         std::lock_guard lock(ServerMutex);
         std::size_t shown = 0;
         for (const auto& [guid, pool] : Pools) {
             if (!pool.initialized) continue;
             if (++shown > 4) break;
-            const std::int32_t next = pool.reloads.empty() ? 0
-                : std::max(0, pool.reloads.front() - (pool.tickFrame - pool.headStart));
             std::snprintf(line, sizeof(line), "  player %u: %d of %d bolts, %zu reloading%s", guid, pool.current,
                 pool.lastMax, pool.reloads.size(), pool.reloads.empty() ? "." : ", next in ");
             if (!pool.reloads.empty()) {
-                const std::size_t used = std::strlen(line);
-                std::snprintf(line + used, sizeof(line) - used, "%d frames.", next);
+                const std::int64_t left = std::max<std::int64_t>(0,
+                    static_cast<std::int64_t>(std::max(1, pool.reloads.front())) * 100 - pool.progress);
+                const std::int64_t fast = ReloadRate(true);
+                const std::size_t  used = std::strlen(line);
+                std::snprintf(line + used, sizeof(line) - used, "%lld frames, %lld standing still; reloading at %lld%% "
+                    "now.", static_cast<long long>((left + 99) / 100), static_cast<long long>((left + fast - 1) / fast),
+                    static_cast<long long>(ReloadRate(pool.standing)));
             }
             say(line);
         }
@@ -3024,6 +3163,14 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
         return true;
     }
     BindNatives();
+    // Optional part: a mismatch here only leaves bolts at the normal reload
+    // speed while standing still.
+    StandingPartVerified = Context->CheckExpectedBytes(UnitModeWitnessRva, UnitModeWitnessBytes,
+        sizeof(UnitModeWitnessBytes));
+    if (!StandingPartVerified) {
+        D2RL::LogWarnF(Context, "CrossbowCharges: the unit mode field at RVA 0x%llX does not match; standing still "
+            "gives no faster reload.", static_cast<unsigned long long>(UnitModeWitnessRva));
+    }
     UiActive = VerifyUi();
     if (!UiActive) {
         Context->LogWarn("CrossbowCharges: the skill button parts do not match; bolts and damage work, the buttons "
@@ -3049,9 +3196,11 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
     Active.store(true);
     State = PluginState::Active;
     D2RL::LogInfoF(Context, "CrossbowCharges: active (max bolts stat %d, current bolts stat %d, damage stat %d, "
-        "damage base %d%%, skill buttons %s, attack frames %d + stat %d %s, mirrored blades skill %d %s, debug log %s).",
+        "damage base %d%%, standing reload bonus %d%% %s, skill buttons %s, attack frames %d + stat %d %s, mirrored "
+        "blades skill %d %s, debug log %s).",
         Settings.maxBoltsStat,
-        Settings.currentBoltsStat, Settings.damageStat, Settings.damageBase, UiActive ? "on" : "off",
+        Settings.currentBoltsStat, Settings.damageStat, Settings.damageBase, Settings.standingReloadBonus,
+        StandingPartVerified ? "on" : "off", UiActive ? "on" : "off",
         Settings.defaultAttackFrames, Settings.attackFramesStat, AttackRatePatched ? "on" : "off",
         Settings.mirroredBladesSkill,
         (Settings.mirroredBladesSkill >= 0 && AttackRatePatched && SequencePartVerified) ? "on" : "off",

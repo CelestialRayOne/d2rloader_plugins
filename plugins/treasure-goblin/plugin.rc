@@ -12,11 +12,11 @@ BEGIN
     BLOCK "040904B0"
     BEGIN
       VALUE "CompanyName", "CelestialRayOne"
-      VALUE "FileDescription", "Replaces HeraldThorns in the herald extra-aura roll with a configurable aura skill."
+      VALUE "FileDescription", "TreasureGoblin monster AI and timed portal escape."
       VALUE "FileVersion", "1.0.0"
-      VALUE "InternalName", "celestialrayone.herald-aura"
-      VALUE "OriginalFilename", "d2rl-celestialrayone-herald-aura.dll"
-      VALUE "ProductName", "Herald Aura"
+      VALUE "InternalName", "celestialrayone.treasure-goblin"
+      VALUE "OriginalFilename", "d2rl-celestialrayone-treasure-goblin.dll"
+      VALUE "ProductName", "Treasure Goblin"
       VALUE "ProductVersion", "1.0.0"
     END
   END

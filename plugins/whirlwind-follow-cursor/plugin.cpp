@@ -19,6 +19,8 @@
 //                              Whirlwinding player
 //   gold_while_whirlwinding    Auto Gold Pickup keeps picking up gold during
 //                              Whirlwind
+//   whirlwind_hit_interval     a new formula for the frames between a
+//                              player's Whirlwind hits (off by default)
 //
 // Every address is an RVA against the executable base. Nothing is written
 // unless the bytes at the site, and at every game function the part calls,
@@ -219,6 +221,30 @@ constexpr std::uint8_t W_IssuerTail_FAFFE[] = {0x01,0x00,0x00,0x48,0x8B,0xCB,0xE
 constexpr std::uint8_t W_GetLeftSkill_34A540[] = {0x40,0x53,0x48,0x83,0xEC,0x20,0x48,0x8B,0xD9,0x48,0x85,0xC9,0x75,0x13};
 constexpr std::uint8_t W_GetRightSkill_34B400[] = {0x40,0x53,0x48,0x83,0xEC,0x20,0x48,0x8B,0xD9,0x48,0x85,0xC9,0x75,0x13};
 constexpr std::uint8_t W_SendCommand_FC000[] = {0x48,0x89,0x5C,0x24,0x10,0x48,0x89,0x6C,0x24,0x18,0x48,0x89,0x74,0x24,0x20,0x57,0x41,0x56,0x41,0x57,0x48,0x83,0xEC,0x30};
+// Starting heading (client). Read out of the 3.3.93847 image as hosted by
+// D2RLoader 1.3.1.
+// 003411EB..00341225, in the path compute 00340E70, on its success path only:
+// the target the compute was asked for (+10h/+12h) is saved at +14h/+16h, then
+// +10h/+12h become the last route point. So +14h/+16h keep the subtile a
+// Whirlwind was cast at until the next successful compute.
+constexpr std::uint8_t W_PathSaveTarget_3411EB[] = {0x0F,0xB7,0x43,0x10,0x66,0x89,0x43,0x14,0x0F,0xB7,0x43,0x12,0x66,0x89,0x43,0x16,0x44,0x89,0x6B,0x4C,0x41,0xF6,0xC0,0x10,0x75,0x21,0x4C,0x39,0x6B,0x70,0x75,0x1B,0x48,0x63,0xCA,0x0F,0xB7,0x84,0x8B,0xC4,0x00,0x00,0x00,0x66,0x89,0x43,0x10,0x0F,0xB7,0x84,0x8B,0xC6,0x00,0x00,0x00,0x66,0x89,0x43,0x12};
+// 003416D3..00341702, in the path's face-a-point 003416C0 (rbx = rcx = path):
+// the path's first qword is the exact position, x at +0 and y at +4 in 16.16
+// subtiles, and a subtile's centre is (subtile << 16) + 8000h.
+constexpr std::uint8_t W_PathFaceToPoint_3416D3[] = {0xC1,0xE2,0x10,0x48,0x8B,0xD9,0x48,0x8B,0x09,0x81,0xC2,0x00,0x80,0x00,0x00,0x41,0xC1,0xE0,0x10,0x41,0x8B,0xF9,0x41,0x81,0xC0,0x00,0x80,0x00,0x00,0x89,0x54,0x24,0x30,0x44,0x89,0x44,0x24,0x34,0x48,0x8B,0x54,0x24,0x30,0xE8,0xAD,0xF4,0x03,0x00};
+// 00349B41..00349B6D, in UNITS_GetDirection 00349B20 (rbx = unit): for a
+// player, the facing of the path at unit+38h, through 00341950.
+constexpr std::uint8_t W_UnitsGetDirection_349B41[] = {0x8B,0x0B,0x83,0xE9,0x02,0x74,0x18,0x83,0xE9,0x02,0x74,0x13,0x83,0xF9,0x01,0x74,0x0E,0x48,0x8B,0x4B,0x38,0x48,0x83,0xC4,0x20,0x5B,0xE9,0xF0,0x7D,0xFF,0xFF,0x48,0x8B,0x43,0x38,0x0F,0xB6,0x40,0x20,0x48,0x83,0xC4,0x20,0x5B,0xC3};
+// 00341955..00341965, in PATH_GetDirection 00341950: the facing, 0 to 63, a
+// float at path+80h, truncated.
+constexpr std::uint8_t W_PathGetDirection_341955[] = {0x0F,0x57,0xC0,0xF3,0x0F,0x2C,0xC0,0xC3,0xF3,0x0F,0x2C,0x81,0x80,0x00,0x00,0x00,0xC3};
+// 00214D41..00214E07, in the skill target getter 00214C80: with no target the
+// game aims 2 subtiles ahead of the unit. Its facing (00349B20) shifted right
+// by 3 picks one of 8 offsets, x from 01CE2220/01CE2200, y from
+// 01CE2210/01CE21F0.
+constexpr std::uint8_t W_AheadPoint_214D41[] = {0xE8,0xDA,0x4D,0x13,0x00,0x66,0x0F,0x6F,0x05,0xD2,0xD4,0xAC,0x01,0x66,0x0F,0x6F,0x0D,0xAA,0xD4,0xAC,0x01,0x0F,0xB6,0xD8,0xC1,0xEB,0x03,0xF3,0x0F,0x7F,0x44,0x24,0x28,0x66,0x0F,0x6F,0x05,0xA6,0xD4,0xAC,0x01,0xF3,0x0F,0x7F,0x4C,0x24,0x38,0x66,0x0F,0x6F,0x0D,0x78,0xD4,0xAC,0x01,0xF3,0x0F,0x7F,0x44,0x24,0x48,0xF3,0x0F,0x7F,0x4C,0x24,0x58,0x48,0x85,0xFF,0x75,0x0F,0x48,0x8D,0x4C,0x24,0x20,0xE8,0x9D,0x0A,0xE7,0xFF,0x84,0xC0,0x74,0x01,0xCC,0x8B,0x0F,0x83,0xE9,0x02,0x74,0x20,0x83,0xE9,0x02,0x74,0x1B,0x83,0xF9,0x01,0x74,0x16,0x48,0x8B,0x4F,0x38,0x48,0x85,0xC9,0x74,0x09,0xE8,0x69,0xCC,0x12,0x00,0x8B,0xC8,0xEB,0x0B,0x8B,0xCE,0xEB,0x07,0x48,0x8B,0x47,0x38,0x8B,0x48,0x10,0x48,0x8D,0x1C,0x9D,0x00,0x00,0x00,0x00,0x03,0x4C,0x1C,0x28,0x41,0x89,0x0E,0x8B,0x0F,0x83,0xE9,0x02,0x74,0x1C,0x83,0xE9,0x02,0x74,0x17,0x83,0xF9,0x01,0x74,0x12,0x48,0x8B,0x4F,0x38,0x48,0x85,0xC9,0x74,0x10,0xE8,0x3C,0xCC,0x12,0x00,0x8B,0xF0,0xEB,0x07,0x48,0x8B,0x47,0x38,0x8B,0x70,0x14,0x8B,0x4C,0x1C,0x48,0x03,0xCE,0x41,0x89,0x0F};
+// 01CE21F0..01CE222F: those offset tables.
+constexpr std::uint8_t W_AheadOffsets_1CE21F0[] = {0xFE,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0x00,0x00,0x00,0x00,0x01,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x01,0x00,0x00,0x00,0x02,0x00,0x00,0x00,0x01,0x00,0x00,0x00,0x02,0x00,0x00,0x00,0x01,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0xFF,0xFF,0xFF,0xFF,0x00,0x00,0x00,0x00,0xFF,0xFF,0xFF,0xFF,0xFE,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF,0xFF};
 constexpr Witness CycloneClientWitnesses[] = {
 	{0x230AE0ULL, W_ClientStart_230AE0, 64, "ClientStart"},
 	{0x230B22ULL, W_ClientStart_230B22, 614, "ClientStart"},
@@ -231,6 +257,12 @@ constexpr Witness CycloneClientWitnesses[] = {
 	{0x34A540ULL, W_GetLeftSkill_34A540, 14, "GetLeftSkill"},
 	{0x34B400ULL, W_GetRightSkill_34B400, 14, "GetRightSkill"},
 	{0x0FC000ULL, W_SendCommand_FC000, 24, "SendCommand"},
+	{0x3411EBULL, W_PathSaveTarget_3411EB, 59, "PathSaveTarget"},
+	{0x3416D3ULL, W_PathFaceToPoint_3416D3, 48, "PathFaceToPoint"},
+	{0x349B41ULL, W_UnitsGetDirection_349B41, 45, "UnitsGetDirection"},
+	{0x341955ULL, W_PathGetDirection_341955, 17, "PathGetDirection"},
+	{0x214D41ULL, W_AheadPoint_214D41, 199, "AheadPoint"},
+	{0x1CE21F0ULL, W_AheadOffsets_1CE21F0, 64, "AheadOffsets"},
 	{0x3636D0ULL, W_CollisionReset_3636D0, 20, "CollisionReset"},
 	{0x342A50ULL, W_PathSetTarget_342A50, 23, "PathSetTarget"},
 	{0x341A20ULL, W_PathGetX_341A20, 5, "PathGetX"},
@@ -396,6 +428,17 @@ constexpr std::uint8_t P_UseItem[] = {0x40,0x55,0x53,0x56,0x57,0x41,0x54,0x41,0x
 constexpr std::uint8_t P_ItemUseLock[] = {0x48,0x83,0xEC,0x28,0xBA,0x02,0x00,0x00,0x00};
 constexpr std::uint8_t P_WhirlwindStart[] = {0x48,0x89,0x5C,0x24,0x10,0x44,0x89,0x4C,0x24,0x20,0x55,0x56,0x57,0x41,0x54,0x41,0x55,0x41,0x56,0x41,0x57};
 
+// Whirlwind hit interval (server). Read out of the 3.3.93847 image as hosted by
+// D2RLoader 1.3.1: the whole interval helper 0056AC00. It pins the frame layout
+// the relay relies on (the unit in rbp from 0056AC28 on, the animation speed at
+// rsp+60h and the attack frame at rsp+64h written by the animation lookup
+// 003E3720), the five replaced bytes at 0056AD23 and the epilogue at 0056AD6B
+// the relay returns to. Do not edit by hand.
+constexpr std::uint8_t W_IntervalHelper_56AC00[] = {0x48,0x89,0x5C,0x24,0x18,0x55,0x56,0x57,0x41,0x56,0x41,0x57,0x48,0x81,0xEC,0x80,0x00,0x00,0x00,0x48,0x8B,0x05,0xAE,0x06,0x46,0x02,0x48,0x33,0xC4,0x48,0x89,0x44,0x24,0x78,0x45,0x33,0xFF,0x4C,0x8B,0xF2,0x48,0x8B,0xE9,0x48,0x85,0xD2,0x74,0x0A,0x48,0x8B,0xCA,0xE8,0x18,0x85,0xE0,0xFF,0xEB,0x03,0x41,0x8B,0xC7,0x48,0x8B,0xCD,0x89,0x44,0x24,0x68,0xE8,0x97,0xF4,0xDD,0xFF,0x41,0xB8,0xAE,0x04,0x00,0x00,0x48,0x8D,0x15,0xBA,0x33,0x7D,0x01,0x48,0x8B,0xCD,0x0F,0xB6,0xD8,0xE8,0xFF,0xF6,0xDD,0xFF,0x48,0x8B,0xCD,0x48,0x8B,0xF0,0xE8,0x64,0x0D,0xDE,0xFF,0x41,0xB8,0xAB,0x04,0x00,0x00,0x48,0x8D,0x15,0x97,0x33,0x7D,0x01,0x48,0x8B,0xCD,0x8B,0xF8,0xE8,0xDD,0xEB,0xDD,0xFF,0x88,0x5C,0x24,0x50,0x8B,0xD0,0x41,0x8B,0xC7,0x4D,0x85,0xF6,0x44,0x8B,0xCF,0x41,0xB8,0x07,0x00,0x00,0x00,0x0F,0x94,0xC0,0x48,0x8B,0xCD,0x89,0x44,0x24,0x48,0x48,0x8D,0x44,0x24,0x68,0x44,0x89,0x7C,0x24,0x40,0x48,0x89,0x44,0x24,0x38,0x48,0x8D,0x44,0x24,0x70,0x48,0xC7,0x44,0x24,0x30,0x08,0x00,0x00,0x00,0x48,0x89,0x44,0x24,0x28,0x48,0x89,0x74,0x24,0x20,0xE8,0x32,0xBA,0xE4,0xFF,0x48,0x8B,0xCD,0x44,0x89,0x7C,0x24,0x6C,0x44,0x89,0x7C,0x24,0x60,0x44,0x89,0x7C,0x24,0x64,0xE8,0xFB,0xF3,0xDD,0xFF,0x0F,0xB6,0xC8,0x4C,0x8D,0x4C,0x24,0x60,0x48,0x8D,0x44,0x24,0x64,0x4C,0x8D,0x44,0x24,0x6C,0x48,0x89,0x44,0x24,0x20,0x48,0x8D,0x54,0x24,0x70,0xE8,0x1A,0x8A,0xE7,0xFF,0x85,0xC0,0x74,0x5C,0x45,0x33,0xC0,0x48,0x8B,0xCD,0x41,0x8D,0x50,0x44,0xE8,0x07,0xA3,0xD8,0xFF,0x48,0x8B,0xCD,0x8B,0xF8,0xE8,0x3D,0xE9,0xDD,0xFF,0x48,0x8B,0xCD,0x03,0xF8,0xE8,0x23,0xFE,0xDD,0xFF,0x48,0x8B,0xCD,0x8B,0xD8,0xE8,0x89,0xF8,0xDD,0xFF,0x3B,0xFB,0x7C,0x07,0x3B,0xF8,0x8B,0xDF,0x0F,0x4F,0xD8,0x0F,0xAF,0x5C,0x24,0x60,0xB8,0x1F,0x85,0xEB,0x51,0xF7,0xEB,0x8B,0xCA,0xC1,0xF9,0x05,0x8B,0xC1,0xC1,0xE8,0x1F,0x03,0xC8,0x8B,0x44,0x24,0x64,0xC1,0xE0,0x08,0x99,0xF7,0xF9,0xEB,0x05,0xB8,0x0A,0x00,0x00,0x00,0x48,0x8B,0x4C,0x24,0x78,0x48,0x33,0xCC,0xE8,0xD8,0x63,0xD6,0x00,0x48,0x8B,0x9C,0x24,0xC0,0x00,0x00,0x00,0x48,0x81,0xC4,0x80,0x00,0x00,0x00,0x41,0x5F,0x41,0x5E,0x5F,0x5E,0x5D,0xC3};
+constexpr Witness HitIntervalWitnesses[] = {
+	{0x56AC00ULL, W_IntervalHelper_56AC00, 399, "IntervalHelper"},
+};
+
 // ---------------------------------------------------------------------------
 // Part bookkeeping
 // ---------------------------------------------------------------------------
@@ -420,6 +463,7 @@ enum class Part : std::size_t {
 	GoldWhileWhirlwindingServer,
 	GoldWhileWhirlwindingClient,
 	CycloneController,
+	WhirlwindHitInterval,
 	Count,
 };
 
@@ -441,6 +485,7 @@ constexpr std::array<const char*, static_cast<std::size_t>(Part::Count)> PartNam
 	"Gold while Whirlwinding (server)",
 	"Gold while Whirlwinding (client)",
 	"Cyclone (controller)",
+	"Whirlwind hit interval (server)",
 };
 
 std::array<PartState, static_cast<std::size_t>(Part::Count)> g_parts {};
@@ -459,7 +504,7 @@ auto PartIs(Part part, PartState state) noexcept -> bool {
 
 constexpr const char* DefaultConfigToml = R"toml(# Whirlwind - Whirlwind rework for Diablo II: Resurrected 3.3
 #
-# Ten parts, each behind its own switch:
+# Eleven parts, each behind its own switch:
 #   [ctc_while_uninterruptible]  item procs (chance to cast) fire while the
 #                                caster is Uninterruptible, optionally filtered
 #   [proc_start_fix]             a proc no longer takes over the caster's skill
@@ -480,6 +525,8 @@ constexpr const char* DefaultConfigToml = R"toml(# Whirlwind - Whirlwind rework 
 #                                character during Whirlwind
 #   [gold_while_whirlwinding]    Auto Gold Pickup keeps picking up gold during
 #                                Whirlwind
+#   [whirlwind_hit_interval]     a new formula for the frames between a
+#                                player's Whirlwind hits (off by default)
 #
 # Safety: the plugin verifies the original bytes of every site it touches, and
 # of every game function it calls, before it installs anything. On a game build
@@ -581,7 +628,8 @@ hold_grace_ms = 120
 # What to do when the cursor is on or very close to the character, or, with
 # a controller, while the movement stick is not pushed.
 #   "keep_heading"  - keep moving in the last direction the cursor (or the
-#                     stick) gave.
+#                     stick) gave. Until it has given one, keep moving in the
+#                     direction the Whirlwind was cast in.
 #   "spin_in_place" - stop moving and spin until the cursor moves away (or
 #                     the stick is pushed again).
 # Default: "keep_heading"
@@ -713,6 +761,67 @@ enabled = true
 # potions_while_whirlwinding).
 # Default: true
 enabled = true
+
+[whirlwind_hit_interval]
+
+# Replaces the formula for how many frames pass between a player's Whirlwind
+# hits. Off by default: with it off the game's own formula runs untouched.
+#
+# Vanilla:
+#   rate     = attack rate + diminished IAS, kept between 15 and 175
+#              (250 while shapeshifted)
+#   interval = 256 * attack frame / (animation speed * rate / 100)
+# With this on:
+#   rate     = 100 + (attack rate - 100) * attackrate_weight / 100
+#              + diminished IAS, kept between min_rate and max_rate
+#   interval = 256 * attack frame * interval_stretch / 100
+#              / (animation speed * rate / 100), never below min_frames
+#
+# attack rate      the character's attack rate: 100, minus the weapon's speed,
+#                  plus attack rate from skills and auras, minus slows.
+# diminished IAS   the game's own 120 * IAS / (120 + IAS), IAS from all gear.
+# attack frame and animation speed come from animdata: the class's normal
+#                  attack (A1) row for the weapon's wclass. The attack frame
+#                  is the first frame with an event, the frame the normal
+#                  attack lands its hit.
+# Divisions round toward zero, as in the game. With a weapon in each hand each
+# hand is worked out on its own weapon and the game averages the two, rounding
+# up, as before. Players only: monster Whirlwind never uses this formula.
+# Setting the five values below to 100, 100, 0, 175 and 15 gives the vanilla
+# numbers back (shapeshifted forms aside).
+# The whirlwind console command shows how many intervals were worked out and
+# the numbers that went into the last one.
+# Site: RVA 0056AD23, inside the interval helper at RVA 0056AC00 (server).
+# Default: false
+enabled = false
+
+# How much the attack rate counts, in percent of its distance from 100. Weapon
+# speed, skill and aura attack rate and slows all go through it. 100 counts it
+# in full like vanilla, 50 counts it half. IAS is not affected.
+# Default: 50
+attackrate_weight = 50
+
+# Stretches every interval, in percent. 100 is vanilla. 170 makes every
+# interval 70% longer, so every breakpoint needs more speed.
+# Default: 170
+interval_stretch = 170
+
+# The fewest frames between hits. Nothing goes faster, whatever the speed.
+# 0 means no floor, like vanilla.
+# Default: 6
+min_frames = 6
+
+# Highest rate Whirlwind can use. Vanilla stops at 175, or 250 while
+# shapeshifted; this one value replaces both. It only blocks, it never adds
+# speed: with the defaults two-handed weapons need a rate of 185 to reach 6
+# frames, so anything below 185 stops them at 7.
+# Default: 300
+max_rate = 300
+
+# Lowest rate Whirlwind can use, for heavy slows. Vanilla is 15. A value above
+# max_rate is lowered to max_rate.
+# Default: 15
+min_rate = 15
 )toml";
 
 struct Config {
@@ -733,6 +842,12 @@ struct Config {
 	bool whirlwindSpeedSync = true;
 	bool petsFollowWhirlwind = true;
 	bool goldWhileWhirlwinding = true;
+	bool hitIntervalEnabled = false;
+	int  attackRateWeight   = 50;
+	int  intervalStretch    = 170;
+	int  minFrames          = 6;
+	int  maxRate            = 300;
+	int  minRate            = 15;
 };
 
 Config                      g_config {};
@@ -856,6 +971,15 @@ void LoadConfiguration(const D2RL::PluginContext* context) noexcept {
 		ReadBool(t, "whirlwind_speed_sync", "enabled", g_config.whirlwindSpeedSync);
 		ReadBool(t, "pets_follow_whirlwind", "enabled", g_config.petsFollowWhirlwind);
 		ReadBool(t, "gold_while_whirlwinding", "enabled", g_config.goldWhileWhirlwinding);
+		ReadBool(t, "whirlwind_hit_interval", "enabled", g_config.hitIntervalEnabled);
+		ReadInt(t, "whirlwind_hit_interval", "attackrate_weight", g_config.attackRateWeight, 0, 1000);
+		ReadInt(t, "whirlwind_hit_interval", "interval_stretch", g_config.intervalStretch, 1, 1000);
+		ReadInt(t, "whirlwind_hit_interval", "min_frames", g_config.minFrames, 0, 250);
+		ReadInt(t, "whirlwind_hit_interval", "max_rate", g_config.maxRate, 1, 1000);
+		ReadInt(t, "whirlwind_hit_interval", "min_rate", g_config.minRate, 1, 1000);
+	}
+	if (g_config.minRate > g_config.maxRate) {
+		g_config.minRate = g_config.maxRate;
 	}
 	// The server keeps a Whirlwind alive a little longer than the client does,
 	// so a client aim can never reach a server whose Whirlwind already ended.
@@ -866,6 +990,9 @@ void LoadConfiguration(const D2RL::PluginContext* context) noexcept {
 		g_config.enabled, g_config.ctcEnabled, g_config.ctcChancePercent, g_ctcAllowListActive, g_config.procStartFix,
 		g_config.dualWieldSameTarget, g_config.cycloneEnabled, g_config.holdGraceMs, g_config.keepHeading,
 		g_config.nearCursorRadius, g_config.manaIntervalFrames, g_config.spinAtMeleeTargets, g_config.deathWhileWhirlwinding, g_config.potionsWhileWhirlwinding, g_config.whirlwindWithBows, g_config.whirlwindSpeedSync, g_config.petsFollowWhirlwind, g_config.goldWhileWhirlwinding);
+	D2RL::LogInfoF(context, "config: hit_interval=%d attackrate_weight=%d interval_stretch=%d min_frames=%d max_rate=%d min_rate=%d",
+		g_config.hitIntervalEnabled, g_config.attackRateWeight, g_config.intervalStretch, g_config.minFrames, g_config.maxRate,
+		g_config.minRate);
 }
 
 // ---------------------------------------------------------------------------
@@ -898,6 +1025,7 @@ constexpr std::size_t RelayItemLockState    = 0x120;
 constexpr std::size_t RelaySequenceFallback = 0x140;
 constexpr std::size_t RelayClickGate        = 0x160;
 constexpr std::size_t RelayControllerUpdate = 0x180;
+constexpr std::size_t RelayHitInterval      = 0x1A0;   // 0x40 bytes
 
 std::uint8_t* g_relayPage = nullptr;
 
@@ -989,6 +1117,9 @@ constexpr std::size_t   PickupItemGuid          = 1;    // 004B9E76, 004BB6E9: G
 
 inline auto U32(void* object, std::size_t offset) noexcept -> std::uint32_t& {
 	return *static_cast<std::uint32_t*>(static_cast<void*>(static_cast<std::uint8_t*>(object) + offset));
+}
+inline auto U16(void* object, std::size_t offset) noexcept -> std::uint16_t& {
+	return *static_cast<std::uint16_t*>(static_cast<void*>(static_cast<std::uint8_t*>(object) + offset));
 }
 inline auto UnitType(void* unit) noexcept -> std::uint32_t { return U32(unit, 0x00); }         // 002310B0 et al: *unit == 2
 inline auto GameFrame(void* game) noexcept -> std::uint32_t { return U32(game, 0x170); }       // 0056A84C: game+368
@@ -1487,12 +1618,75 @@ struct ClientSession {
 
 ClientSession g_client {};
 
+// Path fields the starting heading reads.
+constexpr std::size_t PathPositionX  = 0x00; // 003416D9: x in 16.16 subtiles
+constexpr std::size_t PathPositionY  = 0x04; // 003416D9: y in 16.16 subtiles
+constexpr std::size_t PathCastTarget = 0x14; // 003411EF / 003411F7: x, y words
+constexpr std::size_t PathFacing     = 0x80; // 0034195D: float, 0 to 63
+
+// The offsets the game aims at when a skill has no target, 2 subtiles ahead,
+// one per eighth of the facing (00214D41, tables at 01CE21F0).
+constexpr std::array<std::int32_t, 8> AheadX {0, -1, -2, -1, 0, 1, 2, 1};
+constexpr std::array<std::int32_t, 8> AheadY {2, 1, 0, -1, -2, -1, 0, 1};
+
+std::atomic<std::uint64_t> g_headingsFromCast {0};
+std::atomic<std::uint64_t> g_headingsFromFacing {0};
+
+// The heading a session starts with, so near_cursor = "keep_heading" always has
+// one, from the first frame on. Without it, a Whirlwind cast at a point inside
+// the near radius (or, on a controller, cast without pushing the stick, which
+// aims 2 subtiles ahead) had no heading to keep and spun in place.
+// It is the direction the Whirlwind was cast in: from the character's exact
+// position to the centre of the subtile the cast aimed at, which the path keeps
+// at +14h/+16h. A session starts on the first frame of a Whirlwind, before any
+// aim update recomputed the path, so that subtile is the cast's own. The game
+// never accepts a cast at the character's own subtile (00340E70 refuses that
+// target, 00230A10 refuses a route with no points), so the direction is real.
+// A session that starts again mid-Whirlwind, after a frame hitch, reads the
+// last aim the path was computed to instead, so the heading carries on.
+// Only if the character already stands on that centre does the facing decide,
+// the same way the game picks a point ahead when a skill has no target.
+void SeedHeading(ClientSession& s, void* unit) noexcept {
+	void* const path = g_native.getDynamicPath(unit);
+	if (path == nullptr) {
+		return;
+	}
+	const std::uint32_t castX = U16(path, PathCastTarget);
+	const std::uint32_t castY = U16(path, PathCastTarget + 2);
+	if (castX != 0 && castY != 0) {
+		const double dx = (static_cast<double>((castX << 16) + 0x8000U) - static_cast<double>(U32(path, PathPositionX))) / 65536.0;
+		const double dy = (static_cast<double>((castY << 16) + 0x8000U) - static_cast<double>(U32(path, PathPositionY))) / 65536.0;
+		const double length = std::sqrt(dx * dx + dy * dy);
+		if (length > 1.0 / 256.0) {
+			s.headingX    = static_cast<float>(dx / length);
+			s.headingY    = static_cast<float>(dy / length);
+			s.haveHeading = true;
+			g_headingsFromCast.fetch_add(1, std::memory_order_relaxed);
+			return;
+		}
+	}
+	float facing = 0.0F;
+	std::memcpy(&facing, static_cast<std::uint8_t*>(path) + PathFacing, sizeof(facing));
+	if (!(facing >= 0.0F && facing < 64.0F)) {
+		facing = 0.0F;
+	}
+	const std::size_t eighth = (static_cast<std::uint32_t>(facing) & 0x3FU) >> 3;
+	const float       ox     = static_cast<float>(AheadX[eighth]);
+	const float       oy     = static_cast<float>(AheadY[eighth]);
+	const float       length = std::sqrt(ox * ox + oy * oy);
+	s.headingX               = ox / length;
+	s.headingY               = oy / length;
+	s.haveHeading            = true;
+	g_headingsFromFacing.fetch_add(1, std::memory_order_relaxed);
+}
+
 auto ClientSessionFor(void* unit, std::uint64_t now) noexcept -> ClientSession& {
 	if (g_client.unit != unit || now - g_client.lastSeenMs > 90) {
 		g_client             = {};
 		g_client.unit        = unit;
 		g_client.lastSeenMs  = now;
 		g_client.lastAimMs   = now;
+		SeedHeading(g_client, unit);
 	}
 	return g_client;
 }
@@ -1642,7 +1836,9 @@ std::atomic<std::uint64_t> g_controllerAims {0};
 // along the stick's world direction, the vector the game's own stick movement
 // walks along (0014CC17), while the stick is pushed past the game's dead zone.
 // A released stick is the controller's "cursor on the character": it keeps the
-// last stick heading or spins in place, as near_cursor says.
+// last stick heading or spins in place, as near_cursor says. Until the stick is
+// pushed, the last heading is the direction the Whirlwind was cast in
+// (SeedHeading).
 void StickAim(const std::uint8_t* manager, const std::uint8_t* slot, std::int32_t px, std::int32_t py, ClientSession& s, std::int32_t& ax, std::int32_t& ay) noexcept {
 	float rawX     = 0.0F;
 	float rawY     = 0.0F;
@@ -2029,6 +2225,60 @@ std::int32_t __fastcall OnCastAtPosition(void* caster, std::int32_t skillId, std
 }
 
 // ---------------------------------------------------------------------------
+// Whirlwind hit interval (server)
+// ---------------------------------------------------------------------------
+
+std::atomic<std::uint64_t> g_hitIntervals {0};
+std::atomic<std::int32_t>  g_lastAttackRate {0};
+std::atomic<std::int32_t>  g_lastIasBonus {0};
+std::atomic<std::int32_t>  g_lastRate {0};
+std::atomic<std::int32_t>  g_lastFrames {0};
+
+// The frames between a player's Whirlwind hits. The Whirlwind do-function
+// 00568F40 asks the interval helper 0056AC00 for them, once per hand when dual
+// wielding, and it is the helper's only caller, so monster Whirlwind (which
+// never calls it) is untouched. The helper reads the class's A1 animation for
+// the weapon's wclass (003E3720), the attack rate stat (68) and the diminished
+// IAS (00349660, used by this helper only). At 0056AD23 it holds all of them,
+// and from there the relay hands them to this function instead of the game's
+// clamp and division; the result goes back through the helper's own epilogue.
+//   vanilla: rate     = attack rate + diminished IAS, clamped 15..175 (250
+//                       shapeshifted)
+//            interval = 256 * attack frame / (animation speed * rate / 100)
+//   here:    rate     = 100 + (attack rate - 100) * attackrate_weight / 100
+//                       + diminished IAS, clamped min_rate..max_rate
+//            interval = 256 * attack frame * interval_stretch / 100
+//                       / (animation speed * rate / 100), at least min_frames
+// Every division rounds toward zero, like the game's.
+std::int32_t __fastcall WhirlwindHitInterval(void* unit, std::int32_t attackRate, std::int32_t iasBonus,
+	std::int32_t animationSpeed, std::int32_t attackFrame) noexcept {
+	(void)unit;
+	std::int64_t rate = 100 + (static_cast<std::int64_t>(attackRate) - 100) * g_config.attackRateWeight / 100 + iasBonus;
+	if (rate < g_config.minRate) {
+		rate = g_config.minRate;
+	} else if (rate > g_config.maxRate) {
+		rate = g_config.maxRate;
+	}
+	std::int64_t step = static_cast<std::int64_t>(animationSpeed) * rate / 100;
+	if (step < 1) {
+		step = 1; // an animation speed of 0 would divide by zero, as it does in the game
+	}
+	std::int64_t frames = 256LL * attackFrame * g_config.intervalStretch / (100LL * step);
+	if (frames < g_config.minFrames) {
+		frames = g_config.minFrames;
+	}
+	if (frames > INT32_MAX) {
+		frames = INT32_MAX;
+	}
+	g_hitIntervals.fetch_add(1, std::memory_order_relaxed);
+	g_lastAttackRate.store(attackRate, std::memory_order_relaxed);
+	g_lastIasBonus.store(iasBonus, std::memory_order_relaxed);
+	g_lastRate.store(static_cast<std::int32_t>(rate), std::memory_order_relaxed);
+	g_lastFrames.store(static_cast<std::int32_t>(frames), std::memory_order_relaxed);
+	return static_cast<std::int32_t>(frames);
+}
+
+// ---------------------------------------------------------------------------
 // Installation
 // ---------------------------------------------------------------------------
 
@@ -2097,6 +2347,30 @@ auto PrepareRelayPage(const D2RL::PluginContext* context) noexcept -> bool {
 	g_relayPage[RelayDualWield]     = 0xFF;
 	g_relayPage[RelayDualWield + 1] = 0x0F;
 	WriteAbsoluteJump(g_relayPage + RelayDualWield + 2, base + 0x569220);
+	// Whirlwind hit interval: entered from 0056AD23 with rbp = unit, edi = the
+	// attack rate stat, eax = the diminished IAS, [rsp+60h] = animation speed and
+	// [rsp+64h] = attack frame, rsp 16-byte aligned. Calls WhirlwindHitInterval
+	// (unit, attack rate, diminished IAS, animation speed, attack frame) and
+	// leaves through the helper's epilogue at 0056AD6B with the frames in eax.
+	// Assembled with keystone and checked by emulating hook, relay and return.
+	static constexpr std::uint8_t HitIntervalStub[] {
+		0x44, 0x8B, 0x4C, 0x24, 0x60,                         // mov  r9d, [rsp+60h]   animation speed
+		0x44, 0x8B, 0x54, 0x24, 0x64,                         // mov  r10d, [rsp+64h]  attack frame
+		0x41, 0x89, 0xC0,                                     // mov  r8d, eax         diminished IAS
+		0x89, 0xFA,                                           // mov  edx, edi         attack rate
+		0x48, 0x89, 0xE9,                                     // mov  rcx, rbp         unit
+		0x48, 0x83, 0xEC, 0x30,                               // sub  rsp, 30h
+		0x44, 0x89, 0x54, 0x24, 0x20,                         // mov  [rsp+20h], r10d  fifth argument
+		0x48, 0xB8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // mov rax, WhirlwindHitInterval
+		0xFF, 0xD0,                                           // call rax
+		0x48, 0x83, 0xC4, 0x30,                               // add  rsp, 30h
+	};
+	constexpr std::size_t HitIntervalStubTarget = 29;   // the mov rax immediate
+	static_assert(sizeof(HitIntervalStub) + 14 <= 0x40, "the hit interval relay must fit its slot");
+	std::memcpy(g_relayPage + RelayHitInterval, HitIntervalStub, sizeof(HitIntervalStub));
+	const auto hitInterval = reinterpret_cast<std::uint64_t>(&WhirlwindHitInterval);
+	std::memcpy(g_relayPage + RelayHitInterval + HitIntervalStubTarget, &hitInterval, sizeof(hitInterval));
+	WriteAbsoluteJump(g_relayPage + RelayHitInterval + sizeof(HitIntervalStub), base + 0x56AD6B);
 	DWORD previous = 0;
 	if (!VirtualProtect(g_relayPage, RelayPageBytes, PAGE_EXECUTE_READ, &previous)) {
 		VirtualFree(g_relayPage, 0, MEM_RELEASE);
@@ -2249,6 +2523,46 @@ auto InstallServerMessageGate(const D2RL::PluginContext* context) noexcept -> Pa
 	return state;
 }
 
+// "potion-scope" service, for Alchemy (celestialrayone.alchemy): Alchemy runs
+// Bottomless Vials and Savvy Elixirs before this plugin's use-item hook and
+// copies the handler's Uninterruptible refusal; this tells it whether the
+// potion part has opened its scope for that player, so a kept potion is
+// allowed while whirlwinding exactly like a used one.
+struct PotionScopeService {
+	std::uint32_t serviceSize;
+	std::uint32_t serviceVersion;
+	bool(__cdecl* potionUseOpen)(void* player) noexcept;
+};
+
+bool __cdecl PotionUseOpen(void* player) noexcept {
+	return player != nullptr && g_potionServerActive && g_potionPlayer == player;
+}
+
+constexpr PotionScopeService PotionScopeTable {
+	.serviceSize    = sizeof(PotionScopeService),
+	.serviceVersion = 1,
+	.potionUseOpen  = &PotionUseOpen,
+};
+
+void PublishPotionScope(const D2RL::PluginContext* context) noexcept {
+	const D2RL::PluginCommunicationService* communication = nullptr;
+	if (context->QueryService(&communication) != D2RL::ServiceQueryResult::Success
+	    || !D2RL::HasPluginCommunicationServiceField(communication, D2RL::PluginCommunicationServiceRequiredSize)) {
+		return;
+	}
+	const D2RL::PluginCommunication::PublishServiceRequest request {
+		.structSize     = D2RL::PluginCommunication::PublishServiceRequestSize,
+		.flags          = 0,
+		.name           = "potion-scope",
+		.serviceVersion = 1,
+		.tableSize      = static_cast<std::uint32_t>(sizeof(PotionScopeTable)),
+		.table          = &PotionScopeTable,
+	};
+	if (communication->publishService(context, &request) != D2RL::PluginCommunication::Result::Success) {
+		context->LogWarn("The potion-scope service was refused; Alchemy's kept potions are not allowed while whirlwinding.");
+	}
+}
+
 void InstallPotions(const D2RL::PluginContext* context) noexcept {
 	if (!g_config.potionsWhileWhirlwinding) {
 		SetPart(Part::PotionsWhileWhirlwinding, PartState::DisabledByConfig);
@@ -2338,6 +2652,34 @@ void InstallSpeedSync(const D2RL::PluginContext* context) noexcept {
 	SetPart(Part::WhirlwindSpeedSync, ok ? PartState::Installed : PartState::InstallFailed);
 }
 
+// The five bytes at 0056AD23 (mov rcx,rbp / add edi,eax) become a jump to the
+// relay. Everything from there to the epilogue (the vanilla clamp and division)
+// is skipped while the part is on.
+constexpr std::uint8_t HitIntervalSite[] = {0x48, 0x8B, 0xCD, 0x03, 0xF8};
+
+void InstallHitInterval(const D2RL::PluginContext* context) noexcept {
+	if (!g_config.hitIntervalEnabled) {
+		SetPart(Part::WhirlwindHitInterval, PartState::DisabledByConfig);
+		return;
+	}
+	if (!VerifyAll(context, HitIntervalWitnesses, PartNames[static_cast<std::size_t>(Part::WhirlwindHitInterval)])) {
+		SetPart(Part::WhirlwindHitInterval, PartState::UnsupportedBuild);
+		return;
+	}
+	const auto base   = static_cast<std::uintptr_t>(context->exeBase);
+	const auto next   = base + 0x56AD23 + 5;
+	const auto target = reinterpret_cast<std::uintptr_t>(g_relayPage) + RelayHitInterval;
+	if (!WithinRel32(next, target)) {
+		SetPart(Part::WhirlwindHitInterval, PartState::InstallFailed);
+		return;
+	}
+	const auto displacement = static_cast<std::int32_t>(static_cast<std::int64_t>(target) - static_cast<std::int64_t>(next));
+	std::array<std::uint8_t, 5> bytes {0xE9};
+	std::memcpy(bytes.data() + 1, &displacement, sizeof(displacement));
+	const bool ok = context->PatchBytes(0x56AD23, HitIntervalSite, sizeof(HitIntervalSite), bytes.data(), 5);
+	SetPart(Part::WhirlwindHitInterval, ok ? PartState::Installed : PartState::InstallFailed);
+}
+
 void InstallCyclone(const D2RL::PluginContext* context) noexcept {
 
 	if (!g_config.cycloneEnabled) {
@@ -2421,9 +2763,18 @@ auto WhirlwindCommand(D2R::Game::Client*, const D2RL::ConsoleCommandContext* com
 	std::snprintf(line, sizeof(line), "Controller Whirlwind aims sent: %llu",
 		static_cast<unsigned long long>(g_controllerAims.load(std::memory_order_relaxed)));
 	context->WriteConsoleMessage(line);
+	std::snprintf(line, sizeof(line), "Cyclone starting headings: %llu from the cast direction, %llu from the facing",
+		static_cast<unsigned long long>(g_headingsFromCast.load(std::memory_order_relaxed)),
+		static_cast<unsigned long long>(g_headingsFromFacing.load(std::memory_order_relaxed)));
+	context->WriteConsoleMessage(line);
 	std::snprintf(line, sizeof(line), "Gold pickups during Whirlwind: %llu sent (client), %llu let through (server)",
 		static_cast<unsigned long long>(g_goldClientSends.load(std::memory_order_relaxed)),
 		static_cast<unsigned long long>(g_goldServerPasses.load(std::memory_order_relaxed)));
+	context->WriteConsoleMessage(line);
+	std::snprintf(line, sizeof(line), "Whirlwind hit intervals worked out: %llu (last: attack rate %d, diminished IAS %d, rate %d, %d frames)",
+		static_cast<unsigned long long>(g_hitIntervals.load(std::memory_order_relaxed)),
+		g_lastAttackRate.load(std::memory_order_relaxed), g_lastIasBonus.load(std::memory_order_relaxed),
+		g_lastRate.load(std::memory_order_relaxed), g_lastFrames.load(std::memory_order_relaxed));
 	context->WriteConsoleMessage(line);
 	return D2RL::ConsoleCommandResult::Handled;
 }
@@ -2433,9 +2784,9 @@ constexpr D2RL::PluginInfo WhirlwindInfo {
 	.abiVersion  = D2RL_PLUGIN_ABI_VERSION,
 	.id          = "celestialrayone.whirlwind",
 	.name        = "Whirlwind",
-	.version     = "0.7.1",
+	.version     = "0.9.1",
 	.author      = "CelestialRayOne",
-	.description = "Whirlwind rework: procs while Uninterruptible, proc start fix, dual wield same target, cyclone steering (cursor and controller stick), death and potions while Whirlwinding, Whirlwind with bows, movement speed sync, pets follow during Whirlwind, Auto Gold Pickup during Whirlwind.",
+	.description = "Whirlwind rework: procs while Uninterruptible, proc start fix, dual wield same target, cyclone steering (cursor and controller stick), death and potions while Whirlwinding, Whirlwind with bows, movement speed sync, pets follow during Whirlwind, Auto Gold Pickup during Whirlwind, optional Whirlwind hit interval formula.",
 	.flags       = D2RL::PluginFlags::Shared | D2RL::PluginFlags::NativeHooks,
 };
 
@@ -2476,9 +2827,13 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
 		InstallCyclone(context);
 		InstallDeathFix(context);
 		InstallPotions(context);
+		if (g_potionServerActive) {
+			PublishPotionScope(context);
+		}
 		InstallSequenceFallback(context);
 		InstallPetTrail(context);
 		InstallGold(context);
+		InstallHitInterval(context);
 	} else {
 		SetPart(Part::ProcStartFix, PartState::InstallFailed);
 		SetPart(Part::DualWield, PartState::InstallFailed);
@@ -2494,6 +2849,7 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
 		SetPart(Part::PetsFollowWhirlwind, PartState::InstallFailed);
 		SetPart(Part::GoldWhileWhirlwindingServer, PartState::InstallFailed);
 		SetPart(Part::GoldWhileWhirlwindingClient, PartState::InstallFailed);
+		SetPart(Part::WhirlwindHitInterval, g_config.hitIntervalEnabled ? PartState::InstallFailed : PartState::DisabledByConfig);
 	}
 	for (std::size_t i = 0; i < g_parts.size(); ++i) {
 		D2RL::LogInfoF(context, "%s: %s", PartNames[i], StateText(g_parts[i]));

@@ -1,23 +1,28 @@
 #include <D2RLPlugin/resource.h>
 #include <D2RLPlugin/version.h>
+#include "resource_ids.h"
 
 D2RL_PLUGIN_MANIFEST_RESOURCE_ID RCDATA { D2RL_PLUGIN_RESOURCE_DWORD(D2RL_PLUGIN_ABI_VERSION) }
 
+// Controller button art: 4 frames each (normal, pressed, disabled, hovered).
+AUTOSTORE_BUTTON_CONTROLLER_SPRITE_ID        RCDATA "autostorebuttoncontroller.sprite"
+AUTOSTORE_BUTTON_CONTROLLER_LOWEND_SPRITE_ID RCDATA "autostorebuttoncontroller.lowend.sprite"
+
 1 VERSIONINFO
-FILEVERSION 1,3,1,0
-PRODUCTVERSION 1,3,1,0
+FILEVERSION 1,5,0,0
+PRODUCTVERSION 1,5,0,0
 BEGIN
   BLOCK "StringFileInfo"
   BEGIN
     BLOCK "040904B0"
     BEGIN
       VALUE "CompanyName", "CelestialRayOne"
-      VALUE "FileDescription", "Rerolling Orb Storing: a launcher hotkey that transmutes matching items into a Rerolling Orb."
-      VALUE "FileVersion", "1.3.1"
+      VALUE "FileDescription", "Rerolling Orb Storing: a launcher hotkey, and an Autostore button on controller, that transmute matching items into a Rerolling Orb."
+      VALUE "FileVersion", "1.5.0"
       VALUE "InternalName", "celestialrayone.reroll-orb-storing"
       VALUE "OriginalFilename", "d2rl-celestialrayone-reroll-orb-storing.dll"
       VALUE "ProductName", "Rerolling Orb Storing"
-      VALUE "ProductVersion", "1.3.1"
+      VALUE "ProductVersion", "1.5.0"
     END
   END
   BLOCK "VarFileInfo"

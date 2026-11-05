@@ -1,14 +1,14 @@
 // Evil Urn
 //
-// Three evil urn features in one plugin. Each one is switched on and off in
+// Four evil urn features in one plugin. Each one is switched on and off in
 // its own section of celestialrayone.evil-urn.toml, and each one is checked
 // against the game on its own: a feature whose checks fail is left out and
-// reported in the log and by the console command, the other two still
-// install.
+// reported in the log and by the console command, the others still install.
 //
 //   [spawn_chance]  per-room chance of a random urn, by difficulty
 //   [boss_affixes]  extra random affixes for the boss an urn spawns
 //   [blocklist]     monster types an urn must never spawn
+//   [monster_roll]  a weighted roll of the urn's monster on every opening
 //
 // Built against D2R 3.3 in the D2RLoader 1.3.1 process image (base
 // 0x140000000), PluginSDK 0.3.0. Everything below was read out of the live
@@ -173,12 +173,67 @@
 //   counters exact.
 //
 // ===========================================================================
-// How the three fit together
+// [monster_roll]: a weighted roll of the urn's monster on every opening
+// ===========================================================================
+//   Vanilla has no roll. The loop above spawns the FIRST type in the level's
+//   monster region list that has a walk mode, and that list is built once
+//   per level when the game is created (D2MOO MONSTERREGION_InitializeAll:
+//   levels.txt NumMon types drawn from Mon1-Mon25 on Normal or NMon1-NMon25
+//   on Nightmare and Hell, keeping monstats.txt isSpawn monsters). Every urn
+//   in a level therefore spawns the same type for the whole game.
+//
+//   The urn fetches the list with one call:
+//
+//     590A24  48 8B 0F              mov  rcx, [rdi]             ; game
+//     590A27  8B D0                 mov  edx, eax               ; level id
+//     590A29  48 8B 89 D0 01 00 00  mov  rcx, [rcx+1D0h]        ; region table
+//     590A30  E8 0B 7D F7 FF        call 508740                 ; table[level id]
+//
+//   0x508740 is movsxd rax, edx / mov rax, [rcx+rax*8] / ret (Ruff's corpus:
+//   MonsterRegionGetter). After it returns, the urn reads only the type
+//   count byte at +10h and the entries from +14h (stride 34h, the monstats
+//   id in each entry's first word), nothing else of the region.
+//
+//   The call at 590A30 is pointed at a thunk in a private page next to the
+//   image:
+//
+//     +00  4C 8B C7                 mov  r8, rdi                ; operate args
+//     +03  FF 25 07 00 00 00        jmp  qword ptr [rip+7]
+//     +10  dq                       RegionHook, or 508740 once retargeted
+//
+//   rdi holds the urn's operate arguments for the whole function (set at
+//   590966 and never written again: game at +0, the seed holder at +18h).
+//   r8 is volatile, and the urn writes it before any later read. The thunk
+//   jumps rather than calls, so RegionHook returns straight to 590A35 on
+//   exactly the stack the game built for 508740.
+//
+//   RegionHook calls 508740 itself, then rolls over the real list:
+//     - a type takes part when the game's own walk test passes for it:
+//       0x975B0 (the MonStats2 getter the loop calls at 590A5E), mode byte
+//       +F0h AND gdwBitMasks[2] (0x1D996D8, which holds 4);
+//     - with [blocklist] enabled, blocked ids never take part;
+//     - each type left weighs default_weight or its monster_weights entry;
+//     - one SEED_RollLimitedRandomNumber (0x153B00) on the seed holder the
+//       urn rolled Parm4 with (operate +18h, game +21D0h) picks among them.
+//   It hands the urn a copy of the region header whose count is 1, followed
+//   by the picked entry, or 0 when nothing is left. The urn's own loop, walk
+//   test, [blocklist] stub and boss pack spawn then run unchanged on that
+//   list of one. The copy is thread_local, and the urn is done reading it at
+//   590A97, before anything on that thread can reach the hook again.
+//
+//   Retargeted (the state it is put in on unload) the thunk is mov r8, rdi /
+//   jmp 508740, which is the original call: 508740 never reads r8.
+//
+// ===========================================================================
+// How the four fit together
 // ===========================================================================
 //   [boss_affixes] owns OperateFn slot 68 and the entry of 0x49E160;
 //   [blocklist] owns the 15 bytes at 590A79 inside the urn; [spawn_chance]
-//   owns PopulateFn slot 9. None of them touches what another one owns, and
-//   none of the checks one feature makes reads bytes another one changes.
+//   owns PopulateFn slot 9; [monster_roll] owns the call at 590A30. None of
+//   them touches what another one owns. The checks never read bytes another
+//   feature changes, with one exception: [monster_roll] needs the walk test
+//   at 590A79 and accepts it either untouched or holding the [blocklist]
+//   jump, which runs the same test.
 
 #include <D2RLPlugin/api.h>
 
@@ -199,6 +254,7 @@
 #include <map>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace CelestialRayOne::EvilUrn {
@@ -212,8 +268,12 @@ std::uintptr_t             Base{};
 // ---------------------------------------------------------------------------
 
 constexpr std::uint64_t OperateFunction68Rva = 0x590960;
+constexpr std::uint64_t UrnBodyRva           = 0x590991;
 constexpr std::uint64_t SpawnChanceRva       = 0x5909F4;
-constexpr std::uint64_t RegionWalkRva        = 0x590A24;
+constexpr std::uint64_t UrnLevelRva          = 0x590A0E;
+constexpr std::uint64_t RegionFetchRva       = 0x590A24;
+constexpr std::uint64_t RegionCallRva        = 0x590A30;
+constexpr std::uint64_t TypeLoopRva          = 0x590A35;
 constexpr std::uint64_t WalkTestRva          = 0x590A79;
 constexpr std::uint64_t NextTypeRva          = 0x590A88;
 constexpr std::uint64_t SpawnRva             = 0x590A93;
@@ -240,19 +300,47 @@ constexpr std::uint8_t SpawnChanceWitness[]{
     0x00, 0x00,
 };
 
-// 590A24: the monster region of the urn's level and the whole type loop,
-// with the walk test window at +55h.
-constexpr std::uint8_t RegionWalkWitness[]{
+// 590991: the rest of the urn's setup up to its spawn chance roll (operating
+// mode, objects.txt record, ENDANIM event). Nothing in it writes rdi, which
+// holds the operate arguments from 590966 to the end of the function.
+constexpr std::uint8_t UrnBodyWitness[]{
+    0x48, 0x8B, 0x4F, 0x08, 0xBA, 0x01, 0x00, 0x00, 0x00, 0x48, 0x89, 0x5C,
+    0x24, 0x68, 0x48, 0x89, 0x6C, 0x24, 0x70, 0xE8, 0x47, 0xDC, 0xDB, 0xFF,
+    0x48, 0x8B, 0x07, 0x8B, 0x57, 0x20, 0x0F, 0xB6, 0x88, 0x06, 0x01, 0x00,
+    0x00, 0xE8, 0x45, 0xF3, 0xDF, 0xFF, 0x48, 0x8B, 0x0F, 0x33, 0xED, 0x48,
+    0x8B, 0x57, 0x08, 0x48, 0x8B, 0xD8, 0x89, 0x6C, 0x24, 0x30, 0x44, 0x8B,
+    0x80, 0x9C, 0x00, 0x00, 0x00, 0x44, 0x8B, 0x89, 0x70, 0x01, 0x00, 0x00,
+    0x41, 0xC1, 0xE8, 0x08, 0x41, 0xFF, 0xC1, 0x45, 0x03, 0xC8, 0x89, 0x6C,
+    0x24, 0x28, 0x44, 0x8D, 0x45, 0x01, 0x89, 0x6C, 0x24, 0x20, 0xE8, 0x2C,
+    0xAD, 0xEF, 0xFF,
+};
+
+// 590A0E: the urn's room (34B440 UNITS_GetRoom) and its level id (2EFC10
+// DUNGEON_GetLevelIdFromRoom), left in eax for the region fetch.
+constexpr std::uint8_t UrnLevelWitness[]{
+    0x48, 0x8B, 0x4F, 0x08, 0x48, 0x89, 0x74, 0x24, 0x78, 0xE8, 0x24, 0xAA,
+    0xDB, 0xFF, 0x48, 0x8B, 0xC8, 0xE8, 0xEC, 0xF1, 0xD5, 0xFF,
+};
+
+// 590A24: the monster region of the urn's level: mov rcx,[rdi] /
+// mov edx,eax / mov rcx,[rcx+1D0h] / call 508740. [monster_roll] owns the
+// call at +0Ch.
+constexpr std::uint8_t RegionCallWitness[]{
     0x48, 0x8B, 0x0F, 0x8B, 0xD0, 0x48, 0x8B, 0x89, 0xD0, 0x01, 0x00, 0x00,
-    0xE8, 0x0B, 0x7D, 0xF7, 0xFF, 0x0F, 0xB6, 0x48, 0x10, 0x48, 0x8D, 0x70,
-    0x14, 0x48, 0x6B, 0xD1, 0x34, 0x48, 0x8D, 0x58, 0x14, 0x48, 0x03, 0xF2,
-    0x48, 0x3B, 0xDE, 0x0F, 0x84, 0x7E, 0x00, 0x00, 0x00, 0x48, 0x8B, 0x07,
-    0x0F, 0xBF, 0x13, 0x0F, 0xB6, 0x88, 0x06, 0x01, 0x00, 0x00, 0xE8, 0x4D,
-    0x6B, 0xB0, 0xFF, 0x48, 0x85, 0xC0, 0x75, 0x11, 0x48, 0x8D, 0x4C, 0x24,
-    0x60, 0xE8, 0x7E, 0x8B, 0xB6, 0xFF, 0x84, 0xC0, 0x74, 0x12, 0xCC, 0xEB,
-    0x0F, 0x0F, 0xB6, 0x80, 0xF0, 0x00, 0x00, 0x00, 0x23, 0x05, 0x52, 0x8C,
-    0x80, 0x01, 0x75, 0x0B, 0x48, 0x83, 0xC3, 0x34, 0x48, 0x3B, 0xDE, 0x75,
-    0xC0, 0xEB, 0x3C,
+    0xE8, 0x0B, 0x7D, 0xF7, 0xFF,
+};
+
+// 590A35: the whole type loop, with the walk test window at +44h, which
+// [blocklist] owns.
+constexpr std::uint8_t TypeLoopWitness[]{
+    0x0F, 0xB6, 0x48, 0x10, 0x48, 0x8D, 0x70, 0x14, 0x48, 0x6B, 0xD1, 0x34,
+    0x48, 0x8D, 0x58, 0x14, 0x48, 0x03, 0xF2, 0x48, 0x3B, 0xDE, 0x0F, 0x84,
+    0x7E, 0x00, 0x00, 0x00, 0x48, 0x8B, 0x07, 0x0F, 0xBF, 0x13, 0x0F, 0xB6,
+    0x88, 0x06, 0x01, 0x00, 0x00, 0xE8, 0x4D, 0x6B, 0xB0, 0xFF, 0x48, 0x85,
+    0xC0, 0x75, 0x11, 0x48, 0x8D, 0x4C, 0x24, 0x60, 0xE8, 0x7E, 0x8B, 0xB6,
+    0xFF, 0x84, 0xC0, 0x74, 0x12, 0xCC, 0xEB, 0x0F, 0x0F, 0xB6, 0x80, 0xF0,
+    0x00, 0x00, 0x00, 0x23, 0x05, 0x52, 0x8C, 0x80, 0x01, 0x75, 0x0B, 0x48,
+    0x83, 0xC3, 0x34, 0x48, 0x3B, 0xDE, 0x75, 0xC0, 0xEB, 0x3C,
 };
 
 // 590A93: the spawn path reads the id back from [rbx] and calls 499880.
@@ -264,19 +352,28 @@ constexpr std::uint8_t SpawnCallWitness[]{
     0x44, 0x24, 0x20, 0x01, 0x00, 0x00, 0x00, 0xE8, 0xB1, 0x8D, 0xF0, 0xFF,
 };
 
-constexpr std::size_t WalkTestOffsetInWitness = WalkTestRva - RegionWalkRva;
-constexpr const std::uint8_t* WalkTestOriginal = RegionWalkWitness + WalkTestOffsetInWitness;
+constexpr std::size_t RegionCallOffsetInWitness = RegionCallRva - RegionFetchRva;
+constexpr std::size_t WalkTestOffsetInLoop      = WalkTestRva - TypeLoopRva;
+constexpr std::size_t NextTypeOffsetInLoop      = NextTypeRva - TypeLoopRva;
+constexpr const std::uint8_t* RegionCallOriginal = RegionCallWitness + RegionCallOffsetInWitness;
+constexpr const std::uint8_t* WalkTestOriginal   = TypeLoopWitness + WalkTestOffsetInLoop;
 
-static_assert(WalkTestOffsetInWitness == 0x55);
-static_assert(sizeof(RegionWalkWitness) == SpawnRva - RegionWalkRva);
-static_assert(SpawnChanceRva + sizeof(SpawnChanceWitness) <= RegionWalkRva);
-static_assert(OperateFunction68Rva + sizeof(OperateEntryWitness) <= SpawnChanceRva);
-static_assert(RegionWalkWitness[WalkTestOffsetInWitness] == 0x0F
-    && RegionWalkWitness[WalkTestOffsetInWitness + 1] == 0xB6
-    && RegionWalkWitness[WalkTestOffsetInWitness + 7] == 0x23
-    && RegionWalkWitness[WalkTestOffsetInWitness + 13] == 0x75
-    && RegionWalkWitness[WalkTestOffsetInWitness + 14] == 0x0B);
+static_assert(OperateFunction68Rva + sizeof(OperateEntryWitness) == UrnBodyRva);
+static_assert(UrnBodyRva + sizeof(UrnBodyWitness) == SpawnChanceRva);
+static_assert(SpawnChanceRva + sizeof(SpawnChanceWitness) == UrnLevelRva);
+static_assert(UrnLevelRva + sizeof(UrnLevelWitness) == RegionFetchRva);
+static_assert(RegionFetchRva + sizeof(RegionCallWitness) == TypeLoopRva);
+static_assert(TypeLoopRva + sizeof(TypeLoopWitness) == SpawnRva);
+static_assert(RegionCallOffsetInWitness == 0x0C && RegionCallWitness[RegionCallOffsetInWitness] == 0xE8);
+static_assert(RegionCallRva + JumpSize == TypeLoopRva);
+static_assert(WalkTestOffsetInLoop == 0x44);
+static_assert(TypeLoopWitness[WalkTestOffsetInLoop] == 0x0F
+    && TypeLoopWitness[WalkTestOffsetInLoop + 1] == 0xB6
+    && TypeLoopWitness[WalkTestOffsetInLoop + 7] == 0x23
+    && TypeLoopWitness[WalkTestOffsetInLoop + 13] == 0x75
+    && TypeLoopWitness[WalkTestOffsetInLoop + 14] == 0x0B);
 static_assert(NextTypeRva == WalkTestRva + WalkTestSize);
+static_assert(NextTypeOffsetInLoop + 0x0B == sizeof(TypeLoopWitness));
 static_assert(SpawnRva == NextTypeRva + 0x0B);
 
 // ---------------------------------------------------------------------------
@@ -363,6 +460,80 @@ using AffixRollFn = std::int64_t(__fastcall*)(void* game, void* monster, std::in
                                               std::int32_t minimum, std::int32_t maximum, void* list);
 
 constexpr std::int32_t MaximumAffixes = 9;   // the game's own cap per monster
+
+// ---------------------------------------------------------------------------
+// [monster_roll] anchors
+// ---------------------------------------------------------------------------
+
+constexpr std::uint64_t RegionGetterRva    = 0x508740;
+constexpr std::uint64_t SeedRollRva        = 0x153B00;
+constexpr std::uint64_t MonStats2GetterRva = 0x975B0;
+constexpr std::uint64_t SeedRollCallRva    = 0x5909FD;    // the urn's Parm4 roll
+constexpr std::uint64_t MonStats2CallRva   = 0x590A5E;    // the loop's MonStats2 lookup
+constexpr std::uint64_t BitMasksRva        = 0x1D996D0;   // gdwBitMasks[0..3]
+
+// 508740: movsxd rax, edx / mov rax, [rcx+rax*8] / ret. The whole function.
+constexpr std::uint8_t RegionGetterWitness[]{
+    0x48, 0x63, 0xC2, 0x48, 0x8B, 0x04, 0xC1, 0xC3,
+};
+
+// 153B00: SEED_RollLimitedRandomNumber(seed, bound), the whole function. For
+// bound > 0 it steps the seed (lo * 6AC690C5h + hi, stored back as lo, hi)
+// and returns the low 32 bits mod bound; 0 or less returns 0 and leaves the
+// seed alone.
+constexpr std::uint8_t SeedRollWitness[]{
+    0x44, 0x8B, 0xCA, 0x48, 0x8B, 0xD1, 0x45, 0x85, 0xC9, 0x7F, 0x03, 0x33,
+    0xC0, 0xC3, 0x8B, 0x01, 0x8B, 0x49, 0x04, 0x4C, 0x69, 0xC0, 0xC5, 0x90,
+    0xC6, 0x6A, 0x4C, 0x03, 0xC1, 0x41, 0x8D, 0x49, 0xFF, 0x44, 0x89, 0x02,
+    0x41, 0x85, 0xC9, 0x74, 0x15, 0x49, 0x8B, 0xC8, 0x41, 0x8B, 0xC0, 0x48,
+    0xC1, 0xE9, 0x20, 0x89, 0x4A, 0x04, 0x33, 0xD2, 0x41, 0xF7, 0xF1, 0x8B,
+    0xC2, 0xC3, 0x49, 0x8B, 0xC0, 0x48, 0xC1, 0xE8, 0x20, 0x89, 0x42, 0x04,
+    0x41, 0x8D, 0x41, 0xFF, 0x41, 0x23, 0xC0, 0xC3,
+};
+
+// 975B0: the MonStats2 record of a monstats id (data context in cl, id in
+// edx), up to its monstats bounds check. It returns null for an id out of
+// range.
+constexpr std::uint8_t MonStats2Witness[]{
+    0x48, 0x89, 0x5C, 0x24, 0x08, 0x55, 0x56, 0x57, 0x48, 0x83, 0xEC, 0x30,
+    0x48, 0x63, 0xF2, 0x0F, 0xB6, 0xE9, 0xE8, 0xC9, 0x94, 0x26, 0x00, 0x48,
+    0x8B, 0xF8, 0x48, 0x8B, 0xDE, 0x85, 0xF6, 0x78, 0x09, 0x48, 0x3B, 0x98,
+    0x60, 0x0F, 0x00, 0x00, 0x72, 0x1C,
+};
+
+// gdwBitMasks[0..3] = 1, 2, 4, 8. The urn's walk test ANDs [1D996D8], the
+// third one, so 4 is the walk mode bit of a MonStats2 mode byte.
+constexpr std::uint8_t BitMasksWitness[]{
+    0x01, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00,
+    0x08, 0x00, 0x00, 0x00,
+};
+static_assert(BitMasksRva + 8 == WalkModeMaskRva);
+
+constexpr std::size_t OperateGameSlot          = 0;       // operate +00h
+constexpr std::size_t OperateSeedSlot          = 3;       // operate +18h
+constexpr std::size_t GameDataContextOffset    = 0x106;
+constexpr std::size_t RegionCountOffset        = 0x10;
+constexpr std::size_t RegionEntriesOffset      = 0x14;
+constexpr std::size_t RegionEntryStride        = 0x34;
+constexpr std::size_t MonStats2ModeFlagsOffset = 0xF0;
+constexpr std::size_t MaximumRegionTypes       = 0xFF;    // the count is a byte
+
+using RegionGetterFn = void*(__fastcall*)(void* regionTable, std::int32_t levelId);
+using MonStats2Fn    = const std::uint8_t*(__fastcall*)(std::uint8_t dataContext, std::int32_t monsterId);
+using SeedRollFn     = std::uint32_t(__fastcall*)(void* seed, std::int32_t bound);
+
+// The thunk the call at 590A30 is pointed at, alone in its own page:
+//   +00  4C 8B C7                 mov  r8, rdi             ; operate arguments
+//   +03  FF 25 07 00 00 00        jmp  qword ptr [rip+7]   ; the qword at +10h
+//   +09  CC x 7                   padding, so the target is 8-aligned
+//   +10  dq                       RegionHook, or 508740 once retargeted
+constexpr std::uint8_t RegionThunk[]{
+    0x4C, 0x8B, 0xC7, 0xFF, 0x25, 0x07, 0x00, 0x00, 0x00, 0xCC, 0xCC, 0xCC,
+    0xCC, 0xCC, 0xCC, 0xCC, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+};
+constexpr std::size_t ThunkTargetSlot = 0x10;
+static_assert(sizeof(RegionThunk) == ThunkTargetSlot + 8);
+static_assert(RegionThunk[3] == 0xFF && RegionThunk[4] == 0x25 && 9 + RegionThunk[5] == ThunkTargetSlot);
 
 // ---------------------------------------------------------------------------
 // Hook region
@@ -474,25 +645,33 @@ constexpr std::size_t  MaximumObjectIds   = 64;
 constexpr std::size_t  InitialConfigBytes = 16'384;
 constexpr std::size_t  MaximumConfigBytes = 1'048'576;
 constexpr std::size_t  RejectedSampleSize = 5;
+constexpr std::size_t   MonsterIdCount       = static_cast<std::size_t>(MaximumMonsterId) + 1;
+constexpr std::uint32_t MaximumWeight        = 1'000'000;
+constexpr std::uint32_t DefaultMonsterWeight = 100;
+
+// A level holds at most 255 types, so the total weight always fits the
+// seed roll's positive 32-bit bound.
+static_assert(static_cast<std::uint64_t>(MaximumWeight) * MaximumRegionTypes <= 0x7FFF'FFFFULL);
 
 static_assert(static_cast<std::size_t>(MaximumMonsterId) < BitmapBytes * 8);
 
 constexpr char DefaultConfigToml[] =
     "# Evil Urn\n"
     "#\n"
-    "# Three evil urn features in one plugin. Each section below switches one on\n"
+    "# Four evil urn features in one plugin. Each section below switches one on\n"
     "# or off on its own. A feature whose checks against the game fail is left\n"
-    "# out and reported in the log and by the console command; the other two\n"
+    "# out and reported in the log and by the console command; the others\n"
     "# still install.\n"
     "#\n"
     "#   [spawn_chance]  per-room chance of a random urn, by difficulty\n"
     "#   [boss_affixes]  extra random affixes for the boss an urn spawns\n"
     "#   [blocklist]     monster types an urn must never spawn\n"
+    "#   [monster_roll]  a weighted roll of the urn's monster on every opening\n"
     "#\n"
     "# Server side only. In single player the game hosts its own server, so it\n"
     "# applies there too.\n"
     "#\n"
-    "# Console command: evilurn (status, settings and counters of all three)\n"
+    "# Console command: evilurn (status, settings and counters of all four)\n"
     "#\n"
     "# Read when the plugin loads. Restart the game after editing.\n"
     "\n"
@@ -577,6 +756,9 @@ constexpr char DefaultConfigToml[] =
     "# the urn spawns nothing, the same as vanilla.\n"
     "#\n"
     "# Only urn spawns change. Blocked monsters still spawn everywhere else.\n"
+    "#\n"
+    "# With [monster_roll] on, the urn rolls among the level's types instead of\n"
+    "# taking the first one, and blocked types are left out of that roll.\n"
     "\n"
     "# false installs nothing for the blocklist.\n"
     "enabled = true\n"
@@ -600,7 +782,60 @@ constexpr char DefaultConfigToml[] =
     "    1123,   # corruptedzakarumtrickster\n"
     "    1124,   # corruptedzakarumfanatic\n"
     "    1125,   # corruptedzakarumvenomancer\n"
-    "]\n";
+    "]\n"
+    "\n"
+    "[monster_roll]\n"
+    "\n"
+    "# HOW AN URN PICKS ITS MONSTER IN VANILLA\n"
+    "#   When a game is created, every zone gets its list of monster types:\n"
+    "#   levels.txt NumMon types drawn from Mon1-Mon25 (Normal) or NMon1-NMon25\n"
+    "#   (Nightmare and Hell), keeping monsters with monstats.txt isSpawn. An\n"
+    "#   opened urn spawns the FIRST type in that list that has a walk mode\n"
+    "#   (monstats2.txt mWL). So every urn in a zone spawns the same monster for\n"
+    "#   the whole game; it only changes in the next game.\n"
+    "#\n"
+    "# WHAT THIS DOES\n"
+    "#   Every opened urn rolls one of its zone's types instead:\n"
+    "#   - only types with a walk mode take part, as in vanilla;\n"
+    "#   - with [blocklist] on, its blocked_monster_ids never take part;\n"
+    "#   - a type's chance is its weight divided by the total weight of the\n"
+    "#     types taking part.\n"
+    "#   Example: a zone with three types, all at the default 100, gives each\n"
+    "#   one a third. Set one of them to 50 and the odds become 40%, 40% and\n"
+    "#   20%: half the weight, half as often as each of the others.\n"
+    "#\n"
+    "#   - Weights only change the odds between the types a zone already has.\n"
+    "#     They never add a monster to a zone.\n"
+    "#   - When no type is left, or every one left weighs 0, the urn spawns\n"
+    "#     nothing, the same as vanilla when no type can walk.\n"
+    "#   - The pack itself is spawned by the game as before: champion or unique\n"
+    "#     leader, minions, affixes and [boss_affixes] are unchanged.\n"
+    "#   - The roll uses the game's own random seed, the one the urn already\n"
+    "#     rolls its spawn chance with.\n"
+    "#   - The console command shows how often each monster id was picked.\n"
+    "\n"
+    "# false keeps the vanilla pick: the first type that can walk.\n"
+    "enabled = true\n"
+    "\n"
+    "# Weight of every type not listed in monster_weights, 0 to 1000000.\n"
+    "default_weight = 100\n"
+    "\n"
+    "# [monster id, weight] pairs. The monster id is the monstats.txt hcIdx, 0 to\n"
+    "# 32767. The weight is 0 to 1000000, and 0 means never from an urn. With\n"
+    "# the default weight of 100, a type at 50 is twice as rare as an unlisted\n"
+    "# one and a type at 200 is twice as common.\n"
+    "#\n"
+    "#   monster_weights = [[1234, 50], [1235, 200]]\n"
+    "#\n"
+    "#   monster_weights = [\n"
+    "#       [1234, 50],    # twice as rare\n"
+    "#       [1235, 200],   # twice as common\n"
+    "#   ]\n"
+    "#\n"
+    "# A single pair can also be written flat: monster_weights = [1234, 50]\n"
+    "# A pair that is not two valid numbers is named in the log and skipped;\n"
+    "# the rest still load. An id listed twice keeps its last weight.\n"
+    "monster_weights = []\n";
 
 struct SpawnChanceSettings {
     bool                                       enabled    = true;
@@ -616,6 +851,11 @@ struct BossAffixSettings {
 
 struct BlocklistSettings {
     bool enabled = true;
+};
+
+struct MonsterRollSettings {
+    bool          enabled       = true;
+    std::uint32_t defaultWeight = DefaultMonsterWeight;
 };
 
 struct ListReport {
@@ -669,6 +909,26 @@ std::array<std::uint8_t, BitmapBytes> BlockedBits{};
 std::int32_t                          BlockedCount{};
 void*                                 HookRegion{};
 bool                                  SitePatched{};
+
+// [monster_roll]
+MonsterRollSettings                                    RollConfig{};
+std::atomic<FeatureState>                              RollState{ FeatureState::NotAttempted };
+std::array<std::uint32_t, MonsterIdCount>              MonsterWeights{};   // by monstats id
+std::vector<std::pair<std::int32_t, std::uint32_t>>    ListedWeights;      // monster_weights, file order
+bool                                                   RollHonoursBlocklist{};
+std::atomic<bool>                                      RollArmed{};
+void*                                                  RollRegion{};
+bool                                                   RollSitePatched{};
+MonStats2Fn                                            MonStats2Getter{};
+SeedRollFn                                             SeedRoll{};
+const std::uint32_t*                                   WalkMask{};
+std::atomic<std::uint64_t>                             RollsMade{};
+std::atomic<std::uint64_t>                             RollsEmpty{};
+std::atomic<std::uint64_t>                             RollBlockedLeftOut{};
+std::atomic<std::int32_t>                              LastRollId{ -1 };
+std::atomic<std::uint32_t>                             LastRollTypes{};
+std::atomic<std::uint32_t>                             LastRollWeight{};
+std::array<std::atomic<std::uint32_t>, MonsterIdCount> PickCounts{};
 
 auto IsBlocked(std::int32_t monsterId) noexcept -> bool {
     if (monsterId < MinimumMonsterId || monsterId > MaximumMonsterId) return false;
@@ -773,11 +1033,50 @@ struct ConfigValue {
 };
 using ConfigMap = std::map<std::string, ConfigValue>;   // "section.key", the last assignment wins
 
+// Scans `text` for the ']' that closes a list `depth` brackets deep, counting
+// nested brackets on the way. Returns its index, or npos when the text ends
+// first, with `depth` left at the count still open.
+auto FindListClose(std::string_view text, std::size_t& depth) noexcept -> std::size_t {
+    for (std::size_t index = 0; index < text.size(); ++index) {
+        if (text[index] == '[') {
+            ++depth;
+        } else if (text[index] == ']') {
+            if (depth <= 1) {
+                depth = 0;
+                return index;
+            }
+            --depth;
+        }
+    }
+    return std::string_view::npos;
+}
+
+// A [section] header, as opposed to a line inside a list that starts with a
+// nested pair such as [1234, 50]: a section name starts with a letter or '_'.
+auto IsTableHeader(std::string_view line) noexcept -> bool {
+    if (line.size() < 3 || line.front() != '[' || line.back() != ']') return false;
+    const std::string_view name = Trim(line.substr(1, line.size() - 2));
+    if (name.empty()) return false;
+    const auto isLetter = [](char character) noexcept {
+        return (character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z')
+            || character == '_';
+    };
+    if (!isLetter(name.front())) return false;
+    for (const char character : name) {
+        if (!isLetter(character) && !(character >= '0' && character <= '9') && character != '-'
+                && character != '.') {
+            return false;
+        }
+    }
+    return true;
+}
+
 auto ReadToml(std::string_view text) -> ConfigMap {
     ConfigMap   values;
     std::string section;
     std::string pendingKey;
     std::string listText;
+    std::size_t listDepth = 0;
     bool        capturing = false;
 
     std::size_t cursor = 0;
@@ -788,13 +1087,13 @@ auto ReadToml(std::string_view text) -> ConfigMap {
         cursor = end + 1;
 
         if (capturing) {
-            if (!line.empty() && line.front() == '[') {
+            if (IsTableHeader(line)) {
                 // A table header before the closing bracket: the list was
                 // never closed. Record that and read the header normally.
                 values[pendingKey] = ConfigValue{ listText, true, true };
                 capturing = false;
             } else {
-                const std::size_t close = line.find(']');
+                const std::size_t close = FindListClose(line, listDepth);
                 listText.append(line.substr(0, close));
                 listText.push_back(',');
                 if (close != std::string_view::npos) {
@@ -819,13 +1118,15 @@ auto ReadToml(std::string_view text) -> ConfigMap {
 
         if (!value.empty() && value.front() == '[') {
             const std::string_view inside = value.substr(1);
-            const std::size_t      close  = inside.find(']');
+            std::size_t            depth  = 1;
+            const std::size_t      close  = FindListClose(inside, depth);
             if (close != std::string_view::npos) {
                 values[key] = ConfigValue{ std::string(inside.substr(0, close)), true, false };
             } else {
                 pendingKey = std::move(key);
                 listText.assign(inside);
                 listText.push_back(',');
+                listDepth = depth;
                 capturing = true;
             }
         } else {
@@ -982,6 +1283,175 @@ auto ReadBlocklist(const ConfigMap& values, BlocklistSettings& out) noexcept -> 
     return true;
 }
 
+// One [monster id, weight] entry of monster_weights. An entry that is not a
+// valid pair is named in the log and skipped; the rest of the list loads.
+void AddWeightPair(const std::vector<std::uint32_t>& numbers, bool unreadable, std::string_view text) noexcept {
+    const char* problem = nullptr;
+    if (unreadable || numbers.size() != 2) {
+        problem = "a pair is [monster id, weight], two whole numbers";
+    } else if (numbers[0] > static_cast<std::uint32_t>(MaximumMonsterId)) {
+        problem = "the monster id must be a monstats.txt hcIdx from 0 to 32767";
+    } else if (numbers[1] > MaximumWeight) {
+        problem = "the weight must be from 0 to 1000000";
+    }
+    if (problem != nullptr) {
+        const int shown = static_cast<int>(text.size() < 48 ? text.size() : 48);
+        D2RL::LogWarnF(Context, "EvilUrn [monster_roll]: monster_weights entry %.*s ignored: %s.",
+            shown, text.data(), problem);
+        return;
+    }
+    const auto monsterId = static_cast<std::int32_t>(numbers[0]);
+    const std::uint32_t weight = numbers[1];
+    for (auto& listed : ListedWeights) {
+        if (listed.first == monsterId) {
+            D2RL::LogWarnF(Context, "EvilUrn [monster_roll]: monster id %d is listed more than once in "
+                "monster_weights; its last weight, %u, is used.", monsterId, weight);
+            listed.second = weight;
+            return;
+        }
+    }
+    ListedWeights.emplace_back(monsterId, weight);
+}
+
+// Reads the text between the outer brackets of monster_weights: pairs such
+// as [1234, 50], [1235, 200] (the lines of a multi-line list arrive joined
+// with commas), or one pair written flat, 1234, 50.
+void ParseWeightPairs(std::string_view text) noexcept {
+    std::vector<std::uint32_t> pairNumbers;
+    std::vector<std::uint32_t> flatNumbers;
+    bool        pairUnreadable = false;
+    bool        flatUnreadable = false;
+    bool        misplaced      = false;
+    std::size_t depth          = 0;
+    std::size_t pairStart      = 0;
+    std::size_t pairs          = 0;
+    std::size_t tokenStart     = 0;
+
+    const auto takeToken = [&](std::size_t end) noexcept {
+        const std::string_view token = Trim(text.substr(tokenStart, end - tokenStart));
+        tokenStart = end + 1;
+        if (token.empty()) return;
+        std::uint32_t number = 0;
+        const bool readable = ParseNumber(token, UINT32_MAX, number);
+        if (depth == 1) {
+            if (readable) pairNumbers.push_back(number); else pairUnreadable = true;
+        } else if (depth == 0) {
+            if (readable) flatNumbers.push_back(number); else flatUnreadable = true;
+        } else {
+            misplaced = true;
+        }
+    };
+
+    for (std::size_t index = 0; index < text.size(); ++index) {
+        const char character = text[index];
+        if (character != ',' && character != '[' && character != ']') continue;
+        takeToken(index);
+        if (character == '[') {
+            ++depth;
+            if (depth == 1) {
+                pairStart = index;
+                pairNumbers.clear();
+                pairUnreadable = false;
+            } else {
+                misplaced = true;
+            }
+        } else if (character == ']') {
+            if (depth == 0) {
+                misplaced = true;
+                continue;
+            }
+            if (depth == 1) {
+                ++pairs;
+                AddWeightPair(pairNumbers, pairUnreadable, text.substr(pairStart, index + 1 - pairStart));
+            }
+            --depth;
+        }
+    }
+    takeToken(text.size());
+
+    if (!flatNumbers.empty() || flatUnreadable) {
+        if (pairs == 0 && !flatUnreadable && flatNumbers.size() == 2) {
+            AddWeightPair(flatNumbers, false, Trim(text));
+        } else {
+            misplaced = true;
+        }
+    }
+    if (misplaced) {
+        Context->LogWarn("EvilUrn [monster_roll]: monster_weights holds numbers outside [monster id, weight] "
+                         "pairs; they were ignored. Write one pair as [1234, 50] or [[1234, 50]], several "
+                         "as [[1234, 50], [1235, 200]].");
+    }
+}
+
+auto ReadMonsterRoll(const ConfigMap& values, MonsterRollSettings& out) noexcept -> bool {
+    ListedWeights.clear();
+    if (Find(values, "monster_roll.enabled") == nullptr && Find(values, "monster_roll.default_weight") == nullptr
+            && Find(values, "monster_roll.monster_weights") == nullptr) {
+        Context->LogInfo("EvilUrn [monster_roll]: the config file has no [monster_roll] settings, so the "
+                         "defaults apply: on, every type weighs 100.");
+    }
+    ReadEnabled(values, "monster_roll.enabled", "monster_roll", out.enabled);
+    if (!ReadNumber(values, "monster_roll.default_weight", MaximumWeight, out.defaultWeight)) {
+        Context->LogError("EvilUrn [monster_roll]: default_weight must be a whole number from 0 to 1000000. "
+                          "Not installed.");
+        return false;
+    }
+    const ConfigValue* weights = Find(values, "monster_roll.monster_weights");
+    if (weights != nullptr) {
+        if (!weights->list) {
+            Context->LogError("EvilUrn [monster_roll]: monster_weights must be a list in square brackets, for "
+                              "example [[1234, 50]]. Not installed.");
+            return false;
+        }
+        if (weights->unterminated) {
+            Context->LogError("EvilUrn [monster_roll]: monster_weights is missing its closing ']'. "
+                              "Not installed.");
+            return false;
+        }
+        ParseWeightPairs(weights->text);
+    }
+    MonsterWeights.fill(out.defaultWeight);
+    for (const auto& [monsterId, weight] : ListedWeights) {
+        MonsterWeights[static_cast<std::size_t>(monsterId)] = weight;
+    }
+    return true;
+}
+
+// Appends " id=weight" for every monster_weights entry, in file order,
+// stopping before `limit` characters.
+void AppendListedWeights(std::string& out, std::size_t limit) noexcept {
+    char item[32]{};
+    for (const auto& [monsterId, weight] : ListedWeights) {
+        const int length = std::snprintf(item, sizeof(item), " %d=%u", monsterId, weight);
+        if (length <= 0) continue;
+        if (out.size() + static_cast<std::size_t>(length) + 4 > limit) {
+            out += " ...";
+            return;
+        }
+        out.append(item, static_cast<std::size_t>(length));
+    }
+}
+
+// Appends " id xN" for every monster id an urn roll picked, ascending,
+// stopping before `limit` characters. Returns whether anything was picked.
+auto AppendPickCounts(std::string& out, std::size_t limit) noexcept -> bool {
+    char item[32]{};
+    bool any = false;
+    for (std::size_t monsterId = 0; monsterId < MonsterIdCount; ++monsterId) {
+        const std::uint32_t picks = PickCounts[monsterId].load(std::memory_order_relaxed);
+        if (picks == 0) continue;
+        any = true;
+        const int length = std::snprintf(item, sizeof(item), " %u x%u", static_cast<unsigned>(monsterId), picks);
+        if (length <= 0) continue;
+        if (out.size() + static_cast<std::size_t>(length) + 4 > limit) {
+            out += " ...";
+            return any;
+        }
+        out.append(item, static_cast<std::size_t>(length));
+    }
+    return any;
+}
+
 auto ReadConfigText(std::string& out) noexcept -> bool {
     std::string buffer(InitialConfigBytes, '\0');
     std::uint32_t required = 0;
@@ -1001,6 +1471,7 @@ struct ConfigOutcome {
     bool spawnUsable = false;
     bool affixUsable = false;
     bool blockUsable = false;
+    bool rollUsable  = false;
 };
 
 auto ReadConfiguration() noexcept -> ConfigOutcome {
@@ -1020,9 +1491,11 @@ auto ReadConfiguration() noexcept -> ConfigOutcome {
     SpawnConfig = SpawnChanceSettings{};
     AffixConfig = BossAffixSettings{};
     BlockConfig = BlocklistSettings{};
+    RollConfig  = MonsterRollSettings{};
     outcome.spawnUsable = ReadSpawnChance(values, SpawnConfig);
     outcome.affixUsable = ReadBossAffixes(values, AffixConfig);
     outcome.blockUsable = ReadBlocklist(values, BlockConfig);
+    outcome.rollUsable  = ReadMonsterRoll(values, RollConfig);
     return outcome;
 }
 
@@ -1397,7 +1870,7 @@ auto VerifyNativeContract() noexcept -> bool {
                "The evil urn (OperateFn 68) entry")
         && Verify(SpawnChanceRva, SpawnChanceWitness, sizeof(SpawnChanceWitness), Section,
                "The urn's Parm4 spawn roll")
-        && Verify(RegionWalkRva, RegionWalkWitness, sizeof(RegionWalkWitness), Section,
+        && Verify(TypeLoopRva, TypeLoopWitness, sizeof(TypeLoopWitness), Section,
                "The urn's monster type loop")
         && Verify(SpawnRva, SpawnCallWitness, sizeof(SpawnCallWitness), Section,
                "The urn's boss pack spawn");
@@ -1446,6 +1919,291 @@ void InstallBlocklist(bool configUsable) noexcept {
 }
 
 // ---------------------------------------------------------------------------
+// [monster_roll]: the roll, the hook and its install
+// ---------------------------------------------------------------------------
+
+// The part of a monster region the urn reads after 590A30: the type count at
+// +10h and the entries from +14h. RegionHook hands the urn this copy, holding
+// the picked entry alone.
+struct RegionView {
+    std::uint8_t header[RegionEntriesOffset];
+    std::uint8_t entry[RegionEntryStride];
+};
+static_assert(sizeof(RegionView) == RegionEntriesOffset + RegionEntryStride);
+
+thread_local RegionView RollView{};
+
+struct RollOutcome {
+    std::int32_t  index          = -1;   // the picked entry, -1 for none
+    std::uint32_t types          = 0;    // types taking part
+    std::uint32_t totalWeight    = 0;
+    std::uint32_t blockedLeftOut = 0;    // walking types left out as blocked
+};
+
+auto WeightOf(std::int32_t monsterId) noexcept -> std::uint32_t {
+    if (monsterId < MinimumMonsterId || monsterId > MaximumMonsterId) return RollConfig.defaultWeight;
+    return MonsterWeights[static_cast<std::size_t>(monsterId)];
+}
+
+// The entry's monstats id, sign-extended the way the urn reads it (movsx).
+auto EntryMonsterId(const std::uint8_t* entry) noexcept -> std::int32_t {
+    std::int16_t monsterId = 0;
+    std::memcpy(&monsterId, entry, sizeof(monsterId));
+    return monsterId;
+}
+
+// The weighted roll over one monster region. Apart from the game functions
+// it is handed it touches nothing, so it can be checked outside the game.
+auto RollRegionType(const std::uint8_t* region, std::uint8_t dataContext, std::uint32_t walkMask,
+        MonStats2Fn monStats2, SeedRollFn seedRoll, void* seed, bool honourBlocklist) noexcept -> RollOutcome {
+    RollOutcome outcome{};
+    const auto count = static_cast<std::size_t>(region[RegionCountOffset]);
+    std::array<std::uint32_t, MaximumRegionTypes> weights{};
+    std::uint64_t total = 0;
+    for (std::size_t index = 0; index < count; ++index) {
+        const std::int32_t monsterId = EntryMonsterId(region + RegionEntriesOffset + index * RegionEntryStride);
+        const std::uint8_t* const record = monStats2(dataContext, monsterId);
+        if (record == nullptr
+                || (static_cast<std::uint32_t>(record[MonStats2ModeFlagsOffset]) & walkMask) == 0) {
+            continue;
+        }
+        if (honourBlocklist && IsBlocked(monsterId)) {
+            ++outcome.blockedLeftOut;
+            continue;
+        }
+        const std::uint32_t weight = WeightOf(monsterId);
+        if (weight == 0) continue;
+        weights[index] = weight;
+        total += weight;
+        ++outcome.types;
+    }
+    if (total == 0) return outcome;
+
+    outcome.totalWeight = static_cast<std::uint32_t>(total);
+    std::uint32_t roll = outcome.types > 1
+        ? seedRoll(seed, static_cast<std::int32_t>(total)) % outcome.totalWeight
+        : 0U;
+    for (std::size_t index = 0; index < count; ++index) {
+        if (weights[index] == 0) continue;
+        if (roll < weights[index]) {
+            outcome.index = static_cast<std::int32_t>(index);
+            break;
+        }
+        roll -= weights[index];
+    }
+    return outcome;
+}
+
+// Reached from the urn's call at 590A30 through the thunk, with the call's
+// own arguments in rcx and edx and the urn's operate arguments in r8.
+auto __fastcall RegionHook(void* regionTable, std::int32_t levelId, void* operate) noexcept -> void* {
+    const auto getter = reinterpret_cast<RegionGetterFn>(Base + RegionGetterRva);
+    void* const region = getter(regionTable, levelId);
+    if (region == nullptr || operate == nullptr || !RollArmed.load(std::memory_order_acquire)) return region;
+
+    void* const* const arguments = static_cast<void* const*>(operate);
+    const auto* const game = static_cast<const std::uint8_t*>(arguments[OperateGameSlot]);
+    void* const seed = arguments[OperateSeedSlot];
+    if (game == nullptr || seed == nullptr) return region;
+
+    const auto* const source = static_cast<const std::uint8_t*>(region);
+    const RollOutcome outcome = RollRegionType(source, game[GameDataContextOffset], *WalkMask, MonStats2Getter,
+        SeedRoll, seed, RollHonoursBlocklist);
+
+    RegionView& view = RollView;
+    std::memcpy(view.header, source, sizeof(view.header));
+    std::int32_t picked = -1;
+    if (outcome.index < 0) {
+        view.header[RegionCountOffset] = 0;
+        RollsEmpty.fetch_add(1, std::memory_order_relaxed);
+    } else {
+        const std::uint8_t* const entry =
+            source + RegionEntriesOffset + static_cast<std::size_t>(outcome.index) * RegionEntryStride;
+        std::memcpy(view.entry, entry, sizeof(view.entry));
+        view.header[RegionCountOffset] = 1;
+        picked = EntryMonsterId(entry);
+        if (picked >= MinimumMonsterId && picked <= MaximumMonsterId) {
+            PickCounts[static_cast<std::size_t>(picked)].fetch_add(1, std::memory_order_relaxed);
+        }
+    }
+    RollsMade.fetch_add(1, std::memory_order_relaxed);
+    if (outcome.blockedLeftOut > 0) {
+        RollBlockedLeftOut.fetch_add(outcome.blockedLeftOut, std::memory_order_relaxed);
+    }
+    LastRollId.store(picked, std::memory_order_relaxed);
+    LastRollTypes.store(outcome.types, std::memory_order_relaxed);
+    LastRollWeight.store(outcome.totalWeight, std::memory_order_relaxed);
+    return &view;
+}
+
+// E8 rel32 from 590A30 to the thunk.
+void EncodeRollCall(std::uint8_t* out) noexcept {
+    const std::uintptr_t site = Base + RegionCallRva;
+    const auto target = reinterpret_cast<std::uintptr_t>(RollRegion);
+    out[0] = 0xE8;
+    const auto displacement = static_cast<std::int32_t>(
+        static_cast<std::int64_t>(target) - static_cast<std::int64_t>(site + JumpSize));
+    std::memcpy(out + 1, &displacement, sizeof(displacement));
+}
+
+auto BuildRollThunk() noexcept -> bool {
+    RollRegion = AllocateNear(Base + RegionCallRva, PageBytes);
+    if (RollRegion == nullptr) {
+        Context->LogError("EvilUrn [monster_roll]: NOT installed. No page for the thunk was available within "
+                          "rel32 reach of the urn.");
+        return false;
+    }
+    auto* const code = static_cast<std::uint8_t*>(RollRegion);
+    std::memset(code, 0xCC, PageBytes);
+    std::memcpy(code, RegionThunk, sizeof(RegionThunk));
+    WriteQword(code + ThunkTargetSlot, reinterpret_cast<std::uintptr_t>(&RegionHook));
+
+    DWORD previous = 0;
+    if (!VirtualProtect(code, PageBytes, PAGE_EXECUTE_READ, &previous)
+            || !CanEncodeRel32(Base + RegionCallRva, reinterpret_cast<std::uintptr_t>(code))) {
+        Context->LogError("EvilUrn [monster_roll]: NOT installed. The thunk page could not be finalized.");
+        VirtualFree(RollRegion, 0, MEM_RELEASE);
+        RollRegion = nullptr;
+        return false;
+    }
+    FlushInstructionCache(GetCurrentProcess(), code, PageBytes);
+    return true;
+}
+
+// Points the thunk at the game's own getter, so the patched call behaves
+// exactly like the original one. The qword is 8-aligned, so the store is a
+// single atomic write even while a game thread runs the thunk.
+auto RetargetThunkToGetter() noexcept -> bool {
+    if (RollRegion == nullptr) return true;
+    auto* const code = static_cast<std::uint8_t*>(RollRegion);
+    DWORD previous = 0;
+    if (!VirtualProtect(code, PageBytes, PAGE_EXECUTE_READWRITE, &previous)) return false;
+    InterlockedExchange64(reinterpret_cast<volatile LONG64*>(code + ThunkTargetSlot),
+        static_cast<LONG64>(Base + RegionGetterRva));
+    DWORD ignored = 0;
+    VirtualProtect(code, PageBytes, previous, &ignored);
+    FlushInstructionCache(GetCurrentProcess(), code, PageBytes);
+    return true;
+}
+
+auto RestoreRollSite() noexcept -> bool {
+    if (!RollSitePatched) return true;
+    std::uint8_t current[JumpSize]{};
+    EncodeRollCall(current);
+    if (!Context->PatchBytes(RegionCallRva, current, JumpSize, RegionCallOriginal, JumpSize)) return false;
+    RollSitePatched = false;
+    return true;
+}
+
+// Everything the roll relies on: the whole urn up to its spawn call except
+// the bytes [blocklist] owns, and the three game functions the hook calls.
+auto VerifyRollContract() noexcept -> bool {
+    constexpr const char* Section = "monster_roll";
+    if (!Verify(OperateFunction68Rva, OperateEntryWitness, sizeof(OperateEntryWitness), Section,
+               "The evil urn (OperateFn 68) entry")
+            || !Verify(UrnBodyRva, UrnBodyWitness, sizeof(UrnBodyWitness), Section,
+                   "The urn's setup before its spawn roll")
+            || !Verify(SpawnChanceRva, SpawnChanceWitness, sizeof(SpawnChanceWitness), Section,
+                   "The urn's Parm4 spawn roll")
+            || !Verify(UrnLevelRva, UrnLevelWitness, sizeof(UrnLevelWitness), Section,
+                   "The urn's level id")
+            || !Verify(RegionFetchRva, RegionCallWitness, sizeof(RegionCallWitness), Section,
+                   "The urn's monster region call")
+            || !Verify(TypeLoopRva, TypeLoopWitness, WalkTestOffsetInLoop, Section,
+                   "The urn's monster type loop")
+            || !Verify(NextTypeRva, TypeLoopWitness + NextTypeOffsetInLoop,
+                   sizeof(TypeLoopWitness) - NextTypeOffsetInLoop, Section,
+                   "The end of the urn's monster type loop")
+            || !Verify(SpawnRva, SpawnCallWitness, sizeof(SpawnCallWitness), Section,
+                   "The urn's boss pack spawn")
+            || !Verify(RegionGetterRva, RegionGetterWitness, sizeof(RegionGetterWitness), Section,
+                   "The monster region getter")
+            || !Verify(SeedRollRva, SeedRollWitness, sizeof(SeedRollWitness), Section,
+                   "The seed roll")
+            || !Verify(MonStats2GetterRva, MonStats2Witness, sizeof(MonStats2Witness), Section,
+                   "The MonStats2 getter")
+            || !Verify(BitMasksRva, BitMasksWitness, sizeof(BitMasksWitness), Section,
+                   "The mode bit masks")) {
+        return false;
+    }
+
+    // The walk test window: untouched, or holding the blocklist's own jump,
+    // which runs the same test.
+    if (SitePatched) {
+        std::uint8_t jump[WalkTestSize]{};
+        EncodeSiteJump(jump);
+        if (!Context->CheckExpectedBytes(WalkTestRva, jump, WalkTestSize)) {
+            Context->LogError("EvilUrn [monster_roll]: NOT installed. The urn's walk test at 0x590A79 holds "
+                              "neither the game's code nor the blocklist's jump. Nothing was patched.");
+            return false;
+        }
+    } else if (!Verify(WalkTestRva, WalkTestOriginal, WalkTestSize, Section, "The urn's walk test")) {
+        return false;
+    }
+
+    if (CallTarget(SeedRollCallRva) != SeedRollRva || CallTarget(RegionCallRva) != RegionGetterRva
+            || CallTarget(MonStats2CallRva) != MonStats2GetterRva) {
+        Context->LogError("EvilUrn [monster_roll]: NOT installed. A call inside the urn goes somewhere else in "
+                          "this build. Nothing was patched.");
+        return false;
+    }
+    return true;
+}
+
+void InstallMonsterRoll(bool configUsable) noexcept {
+    if (!RollConfig.enabled) {
+        RollState.store(FeatureState::DisabledByConfig, std::memory_order_release);
+        Context->LogInfo("EvilUrn [monster_roll]: not installed, turned off in the config file. Urns keep the "
+                         "vanilla pick.");
+        return;
+    }
+    if (!configUsable) {
+        RollState.store(FeatureState::ConfigError, std::memory_order_release);
+        return;
+    }
+    if (!VerifyRollContract()) {
+        RollState.store(FeatureState::UnsupportedBuild, std::memory_order_release);
+        return;
+    }
+    if (!BuildRollThunk()) {
+        RollState.store(FeatureState::InstallFailed, std::memory_order_release);
+        return;
+    }
+
+    MonStats2Getter      = reinterpret_cast<MonStats2Fn>(Base + MonStats2GetterRva);
+    SeedRoll             = reinterpret_cast<SeedRollFn>(Base + SeedRollRva);
+    WalkMask             = reinterpret_cast<const std::uint32_t*>(Base + WalkModeMaskRva);
+    RollHonoursBlocklist = BlockConfig.enabled && BlockedCount > 0;
+    RollArmed.store(true, std::memory_order_release);
+
+    std::uint8_t call[JumpSize]{};
+    EncodeRollCall(call);
+    if (!Context->PatchBytes(RegionCallRva, RegionCallOriginal, JumpSize, call, JumpSize)) {
+        // Nothing points at the thunk, and the thunk page stays unused.
+        RollArmed.store(false, std::memory_order_release);
+        RollState.store(FeatureState::InstallFailed, std::memory_order_release);
+        Context->LogError("EvilUrn [monster_roll]: NOT installed. The urn's monster region call at 0x590A30 "
+                          "could not be redirected.");
+        return;
+    }
+    RollSitePatched = true;
+    RollState.store(FeatureState::Installed, std::memory_order_release);
+
+    std::string weights;
+    AppendListedWeights(weights, 700);
+    D2RL::LogInfoF(Context, "EvilUrn [monster_roll]: installed. Each opened urn rolls among its level's types "
+        "that can walk%s. Default weight %u; monster_weights:%s",
+        RollHonoursBlocklist ? ", leaving out blocked_monster_ids" : "", RollConfig.defaultWeight,
+        ListedWeights.empty() ? " none" : weights.c_str());
+
+    bool anyWeight = RollConfig.defaultWeight > 0;
+    for (const auto& listed : ListedWeights) anyWeight = anyWeight || listed.second > 0;
+    if (!anyWeight) {
+        Context->LogWarn("EvilUrn [monster_roll]: every weight is 0, so opened urns spawn no monster at all.");
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Console command
 // ---------------------------------------------------------------------------
 
@@ -1468,7 +2226,7 @@ auto __cdecl StatusCommand(D2R::Game::Client*, const D2RL::ConsoleCommandContext
     const D2RL::PluginContext* plugin = command->plugin;
 
     char line[512]{};
-    std::snprintf(line, sizeof(line), "Evil Urn 1.0.0 | config %s",
+    std::snprintf(line, sizeof(line), "Evil Urn 1.1.0 | config %s",
         ConfigFileWasRead ? "loaded" : "NOT READ (embedded defaults)");
     plugin->WriteConsoleMessage(line);
 
@@ -1517,6 +2275,35 @@ auto __cdecl StatusCommand(D2R::Game::Client*, const D2RL::ConsoleCommandContext
     std::string ids = "Blocked ids:";
     AppendBlockedIds(ids, 380);
     plugin->WriteConsoleMessage(BlockedCount == 0 ? "Blocked ids: none" : ids.c_str());
+
+    const std::uint64_t  rolls  = RollsMade.load(std::memory_order_relaxed);
+    const std::int32_t   lastId = LastRollId.load(std::memory_order_relaxed);
+    char last[96]{};
+    if (rolls == 0) {
+        std::snprintf(last, sizeof(last), "none yet");
+    } else if (lastId < 0) {
+        std::snprintf(last, sizeof(last), "nothing, no type could take part");
+    } else {
+        std::snprintf(last, sizeof(last), "id %d, one of %u types, total weight %u", lastId,
+            LastRollTypes.load(std::memory_order_relaxed), LastRollWeight.load(std::memory_order_relaxed));
+    }
+    std::snprintf(line, sizeof(line),
+        "Monster roll: %s | default weight %u, %u listed | urns rolled %llu, nothing to roll %llu, blocked "
+        "types left out %llu | last pick: %s",
+        StateText(RollState.load(std::memory_order_acquire), "off"), RollConfig.defaultWeight,
+        static_cast<unsigned>(ListedWeights.size()), static_cast<unsigned long long>(rolls),
+        static_cast<unsigned long long>(RollsEmpty.load(std::memory_order_relaxed)),
+        static_cast<unsigned long long>(RollBlockedLeftOut.load(std::memory_order_relaxed)), last);
+    plugin->WriteConsoleMessage(line);
+
+    std::string weights = "Weights:";
+    AppendListedWeights(weights, 380);
+    plugin->WriteConsoleMessage(ListedWeights.empty() ? "Weights: none listed, every type uses the default"
+                                                      : weights.c_str());
+
+    std::string picks = "Urn picks (id xcount):";
+    const bool anyPick = AppendPickCounts(picks, 380);
+    plugin->WriteConsoleMessage(anyPick ? picks.c_str() : "Urn picks: none yet");
     return D2RL::ConsoleCommandResult::Handled;
 }
 
@@ -1525,10 +2312,10 @@ constexpr D2RL::PluginInfo Info{
     .abiVersion  = D2RL_PLUGIN_ABI_VERSION,
     .id          = "celestialrayone.evil-urn",
     .name        = "Evil Urn",
-    .version     = "1.0.0",
+    .version     = "1.1.0",
     .author      = "CelestialRayOne",
-    .description = "Evil urn spawn chance by difficulty, extra affixes for urn bosses and a monster "
-                   "blocklist for urn spawns.",
+    .description = "Evil urn spawn chance by difficulty, extra affixes for urn bosses, a monster "
+                   "blocklist and a weighted monster roll for urn spawns.",
     // Server: object populate and operate functions only run on the server.
     .flags       = D2RL::PluginFlags::Server | D2RL::PluginFlags::NativeHooks,
 };
@@ -1551,7 +2338,7 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
     // unload the DLL and take the command with it, leaving no in-game way to
     // see why a feature is off.
     if (!Context->RegisterConsoleCommand("evilurn", &StatusCommand,
-            "Reports the status, settings and counters of the three Evil Urn features.")) {
+            "Reports the status, settings and counters of the four Evil Urn features.")) {
         Context->LogWarn("EvilUrn: the status console command was refused.");
     }
 
@@ -1559,6 +2346,7 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
     InstallBlocklist(outcome.blockUsable);
     InstallBossAffixes(outcome.affixUsable);
     InstallSpawnChance(outcome.spawnUsable);
+    InstallMonsterRoll(outcome.rollUsable);
     return true;
 }
 
@@ -1583,6 +2371,19 @@ D2RL_PLUGIN_EXPORT void D2RLoaderUnloadPlugin() noexcept {
         PopulateSlot = nullptr;
     }
     OriginalPopulate.store(nullptr);
+
+    if (RollSitePatched) {
+        RollArmed.store(false, std::memory_order_release);
+        const bool retargeted = RetargetThunkToGetter();
+        if (!RestoreRollSite()) {
+            Context->LogError(retargeted
+                ? "EvilUrn [monster_roll]: the urn's monster region call could not be restored; it keeps "
+                  "reaching the game's own getter through the thunk, without the roll."
+                : "EvilUrn [monster_roll]: the urn's monster region call could not be restored and the "
+                  "thunk could not be retargeted.");
+        }
+        // The thunk page is deliberately kept, like the blocklist's region.
+    }
 
     if (SitePatched) {
         const bool retargeted = RetargetStubToVanilla();

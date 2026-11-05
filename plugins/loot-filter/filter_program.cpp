@@ -65,11 +65,12 @@ void Actions::FillFrom(const Actions& other) {
     if (!soundVolume) soundVolume = other.soundVolume;
     if (!icon) icon = other.icon;
     if (!droplight) droplight = other.droplight;
+    if (!show) show = other.show;
 }
 
 auto Actions::Empty() const noexcept -> bool {
     return !hide && !hideIfOtherConditionsFail && !replaceName && !namePrefix && !nameSuffix && !chatMessage
-        && !chatMessageWhenHidden && !sound && !labelBackground && !labelBorder && !notify && !soundVolume && !icon && !droplight;
+        && !chatMessageWhenHidden && !sound && !labelBackground && !labelBorder && !notify && !soundVolume && !icon && !droplight && !show;
 }
 
 auto FilterProgram::FindLevel(int id) const noexcept -> const Level* {
@@ -112,6 +113,10 @@ auto Problem::ToString() const -> std::string {
     text += ": ";
     text += message;
     return text;
+}
+
+auto IsPreIdentifyStat(int stat) noexcept -> bool {
+    return stat == 14 || stat == 31 || stat == 70 || stat == 72 || stat == 73 || stat == 194;
 }
 
 auto PackItemCode(std::string_view code) noexcept -> std::uint32_t {
@@ -177,16 +182,16 @@ constexpr std::array<const char*, 16> D2rlanColorTags{
     "dark green", "turquoise", "pink", "lilac",
 };
 
-constexpr std::array<const char*, 24> ConditionKeys{
+constexpr std::array<const char*, 25> ConditionKeys{
     "itemCodes", "excludeItemCodes", "itemTypes", "excludeItemTypes", "quality", "baseTier", "itemLevel",
     "sockets", "maxSockets", "isFullySocketed", "isEthereal", "isIdentified", "isRuneword", "uniqueOrSetIds",
     "excludeUniqueOrSetIds", "itemStats", "itemStatsAnyOf", "playerStats", "playerStatsAnyOf", "location",
-    "difficulty", "areas", "excludeAreas", "activeInLevels",
+    "difficulty", "areas", "excludeAreas", "activeInLevels", "formula",
 };
 
-constexpr std::array<const char*, 14> ActionKeys{
+constexpr std::array<const char*, 15> ActionKeys{
     "hide", "hideIfOtherConditionsFail", "replaceName", "namePrefix", "nameSuffix", "chatMessage",
-    "chatMessageWhenHidden", "sound", "labelBackground", "labelBorder", "notify", "soundVolume", "icon", "droplight",
+    "chatMessageWhenHidden", "sound", "labelBackground", "labelBorder", "notify", "soundVolume", "icon", "droplight", "show",
 };
 
 // Where a text is used decides which {placeholders} it may hold.
@@ -245,7 +250,7 @@ public:
             if (key == "formatVersion" || key == "title" || key == "author" || key == "version" || key == "description"
                 || key == "updateUrl" || key == "filterLevels" || key == "defaultLevel" || key == "hideUnmatchedItems"
                 || key == "styles" || key == "rules" || key == "notifications" || key == "soundVolume"
-                || key == "qualityColors") {
+                || key == "qualityColors" || key == "chatNotifications") {
                 continue;
             }
             WarnUnknownTopLevel(key, member.value.line);
@@ -268,6 +273,10 @@ public:
         if (const Value* v = root.Find("hideUnmatchedItems")) {
             if (!v->IsBool()) Report(Problem::Severity::Error, "hideUnmatchedItems", v->line, "expected true or false");
             else program_.hideUnmatchedItems = v->boolean;
+        }
+        if (const Value* v = root.Find("chatNotifications")) {
+            if (!v->IsBool()) Report(Problem::Severity::Error, "chatNotifications", v->line, "expected true or false");
+            else program_.chatNotifications = v->boolean;
         }
 
         if (const Value* v = root.Find("soundVolume")) {
@@ -619,6 +628,23 @@ private:
         return true;
     }
 
+    auto ReadFormula(const Value& value, const std::string& where, std::optional<Formula>& out) -> bool {
+        out.reset();
+        if (!value.IsString() || value.string.empty()) {
+            Fail(where, value.line, "expected a formula text, e.g. \"(stat('item_fastercastrate')>=10)\"");
+            return false;
+        }
+        Formula formula;
+        std::string error;
+        std::uint32_t column = 0;
+        if (!CompileFormula(value.string, formula, error, column)) {
+            Fail(where, value.line, "at character " + std::to_string(column) + ": " + error);
+            return false;
+        }
+        out = std::move(formula);
+        return true;
+    }
+
     auto ReadStatChecks(const Value& value, const std::string& where, std::vector<StatCheck>& out) -> bool {
         out.clear();
         const auto take = [&](const Value& element, const std::string& at) -> bool {
@@ -794,6 +820,8 @@ private:
                 if (!ReadBool(value, at, out.hide)) return false;
             } else if (key == "hideIfOtherConditionsFail") {
                 if (!ReadBool(value, at, out.hideIfOtherConditionsFail)) return false;
+            } else if (key == "show") {
+                if (!ReadBool(value, at, out.show)) return false;
             } else if (key == "replaceName" || key == "namePrefix" || key == "nameSuffix" || key == "chatMessage"
                        || key == "chatMessageWhenHidden") {
                 Text text;
@@ -1108,6 +1136,7 @@ private:
             else if (key == "itemStatsAnyOf") ReadStatChecks(value, at, when.itemStatsAnyOf);
             else if (key == "playerStats") ReadStatChecks(value, at, when.playerStats);
             else if (key == "playerStatsAnyOf") ReadStatChecks(value, at, when.playerStatsAnyOf);
+            else if (key == "formula") ReadFormula(value, at, when.formula);
             else if (key == "location") ReadLocations(value, at, when.locations);
             else if (key == "areas") ReadIntList(value, at, when.areas, 0, 65535);
             else if (key == "excludeAreas") ReadIntList(value, at, when.excludeAreas, 0, 65535);
@@ -1142,6 +1171,9 @@ private:
                 if (found == styles_.end()) Fail(where + ", useStyle", style->line, "there is no style \"" + style->string + "\"");
                 else rule.then.FillFrom(found->second);
             }
+        }
+        if (rule.then.show.value_or(false) && rule.then.hide.value_or(false)) {
+            Fail(where + ", show", entry.line, "a rule cannot both show and hide an item");
         }
         if (rule.then.hideIfOtherConditionsFail.value_or(false) && rule.when.itemCodes.empty()) {
             Report(Problem::Severity::Warning, where + ", hideIfOtherConditionsFail", entry.line,
@@ -1188,6 +1220,38 @@ void ResolveNames(FilterProgram& program, NameResolver& resolver, std::vector<Pr
                 check.stat = resolver.StatId(check.name);
                 if (check.stat < 0) fail("stat \"" + check.name + "\" is not in itemstatcost.txt");
             }
+        }
+        if (rule.when.formula) {
+            for (FormulaStat& call : rule.when.formula->stats) {
+                if (call.stat < 0) {
+                    call.stat = resolver.StatId(call.statName);
+                    if (call.stat < 0) {
+                        fail("formula: stat \"" + call.statName + "\" is not in itemstatcost.txt");
+                        continue;
+                    }
+                }
+                if (!call.skillName.empty()) {
+                    const int skill = resolver.SkillRow(call.skillName);
+                    if (skill < 0) {
+                        fail("formula: skill \"" + call.skillName + "\" is not in skills.txt");
+                        continue;
+                    }
+                    call.param = skill;
+                    if (resolver.StatPacksSkillLevel(call.stat)) call.mode = FormulaStat::Mode::SkillAnyLevel;
+                }
+            }
+        }
+        if (rule.enabled) {
+            bool readsMods = false;
+            for (const auto* list : { &rule.when.itemStats, &rule.when.itemStatsAnyOf }) {
+                for (const StatCheck& check : *list) readsMods = readsMods || !IsPreIdentifyStat(check.stat);
+            }
+            if (rule.when.formula) {
+                for (const FormulaStat& call : rule.when.formula->stats) {
+                    readsMods = readsMods || (call.source == FormulaStat::Source::Item && !IsPreIdentifyStat(call.stat));
+                }
+            }
+            rule.skipsUnidentified = readsMods;
         }
         if (rule.then.sound) {
             SoundRef& sound = *rule.then.sound;

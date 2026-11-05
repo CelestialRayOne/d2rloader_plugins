@@ -10,6 +10,8 @@
 // Names that need the game's data (item type codes, stat names, sound names,
 // sound files) are resolved afterwards by ResolveNames, on the game thread.
 //
+#include "formula.h"
+
 #include <array>
 #include <cstdint>
 #include <optional>
@@ -135,6 +137,7 @@ struct Conditions {
     std::vector<int>           areas;
     std::vector<int>           excludeAreas;
     std::vector<int>           activeInLevels;  // empty = every level
+    std::optional<Formula>     formula;         // the "formula" condition
 };
 
 struct Actions {
@@ -152,6 +155,7 @@ struct Actions {
     std::optional<int>    soundVolume;   // 0-100, percent of full volume
     std::optional<IconSpec> icon;        // minimap icon
     std::optional<DroplightSpec> droplight;
+    std::optional<bool>   show;          // later rules cannot hide the item
 
     // Fills every action this one leaves out from the other (a rule over its style).
     void FillFrom(const Actions& other);
@@ -162,6 +166,7 @@ struct Rule {
     int         number{};   // 1-based position in the file
     std::uint32_t line{};
     bool        enabled{ true };
+    bool        skipsUnidentified{};  // checks an item stat the client only gets once the item is identified
     std::string comment;
     Conditions  when;
     Actions     then;
@@ -207,6 +212,7 @@ struct FilterProgram {
     std::vector<Level> levels;
     int                defaultLevel{};
     bool               hideUnmatchedItems{};
+    bool               chatNotifications{ true };  // false: items print no chat lines (notify, chatMessage, chatMessageWhenHidden)
     std::optional<int> soundVolume;   // 0-100, for rules without their own
     Notifications      notifications;
     QualityColors      qualityColors;
@@ -245,11 +251,22 @@ public:
     virtual auto SoundFile(std::string_view fileName, std::wstring& fullPath) -> bool = 0;
     // Prepares the icon file for the game: sets spriteName, width and height.
     virtual auto IconFile(IconSpec& icon) -> bool = 0;
+    // skills.txt row of a skill name ("skill" column).
+    virtual auto SkillRow(std::string_view name) -> int = 0;
+    // True when the stat's param holds a skill and its level (itemstatcost Encode 2 or 3).
+    virtual auto StatPacksSkillLevel(int stat) -> bool = 0;
 };
 
 // Resolves names in place. A rule that refers to something missing is switched off,
-// except a missing sound or icon, which only drops that sound or icon.
+// except a missing sound or icon, which only drops that sound or icon. Also marks
+// the rules that skip unidentified items.
 void ResolveNames(FilterProgram& program, NameResolver& resolver, std::vector<Problem>& problems);
+
+// The item stats the client has before an item is identified (the item packet
+// carries them for every item): gold, armorclass, quantity, durability,
+// maxdurability and item_numsockets. A rule checking any other item stat skips
+// unidentified items.
+auto IsPreIdentifyStat(int stat) noexcept -> bool;
 
 // Item codes are compared as the packed four bytes the game uses, padded with spaces.
 auto PackItemCode(std::string_view code) noexcept -> std::uint32_t;

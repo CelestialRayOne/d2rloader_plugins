@@ -2,9 +2,10 @@
 //
 // A hotkey that feeds matching rings, amulets, jewels, charms and quivers into
 // a Rerolling Orb through the Horadric Cube, one transmute per item. 3.3 port
-// of the ESR-utils 2.4 rerolling orb pass. Nothing is clicked: the plugin
-// sends the game's own item and transmute requests, and the server checks
-// every one of them.
+// of the ESR-utils 2.4 rerolling orb pass. On a controller, an Autostore
+// button on the inventory panel starts the same run. Nothing is clicked: the
+// plugin sends the game's own item and transmute requests, and the server
+// checks every one of them.
 //
 // Everything below was read out of the D2RLoader 1.3.1 process image (D2R
 // 3.3, base 0x140000000) and every function used is checked byte for byte at
@@ -69,9 +70,28 @@
 //   ESR-utils did in 2.4) and only queues work. Item type rows are looked up on
 //   the game thread (the data-table service requires it), then the run itself
 //   steps once per UI update on the UI thread, where the client units and the
-//   request builders live.
+//   request builders live. The controller button's click (section 5) queues
+//   the same work as the hotkey.
+//
+// ---------------------------------------------------------------------------
+// 5. The controller button
+// ---------------------------------------------------------------------------
+//   An Autostore button in the controller inventory. The button itself is
+//   part of the mod's controller inventory layout (autostore_button), so its
+//   place, size and d-pad links are set there. The plugin hands D2RCore the
+//   button's art as plugin resources: the Rerolling Orb (ESR's reroll1
+//   inventory art) in the frame of the Transfer to Stash controller button,
+//   4 frames of 82x82 (41x41 lowend), frame 0 normal, 1 pressed, 2 disabled,
+//   3 hovered.
+//
+//   A press. A on the focused button sends its click message; the plugin's
+//   UI message listener consumes it and starts the same run as the hotkey.
+//   When a service is missing or a registration fails, the hotkey still
+//   works.
 
 #include <D2RLPlugin/api.h>
+
+#include "resource_ids.h"
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -104,7 +124,7 @@
 namespace {
 
 constexpr char PluginIdText[]  = "celestialrayone.reroll-orb-storing";
-constexpr char PluginVersion[] = "1.3.1";
+constexpr char PluginVersion[] = "1.5.0";
 constexpr char SourceFile[]    = "reroll-orb-storing";
 
 const D2RL::PluginContext* Context{};
@@ -164,6 +184,20 @@ constexpr std::size_t   MaxItemsWalked   = 65536;   // safety stops only; real l
 constexpr std::size_t   MaxOwnersWalked  = 4096;
 constexpr std::int32_t  ChatUiState      = 5;       // ChatPanel (0C7AA0): the chat input is open
 constexpr std::uint64_t StepTimeoutMs    = 3000;
+
+// ---------------------------------------------------------------------------
+// The controller button (section 5)
+// ---------------------------------------------------------------------------
+
+constexpr char ButtonSpritePath[] = "data/hd/global/ui/d2rloader/celestialrayone.reroll-orb-storing/"
+                                    "autostorebuttoncontroller.sprite";
+constexpr char ButtonLowendPath[] = "data/hd/global/ui/d2rloader/celestialrayone.reroll-orb-storing/"
+                                    "autostorebuttoncontroller.lowend.sprite";
+
+constexpr std::string_view ClickTarget  = "PanelManager";
+constexpr std::string_view ClickCommand = "OpenPanel";
+constexpr std::string_view ClickText    = "CelestialRayOneRerollOrbStoringAutostore";
+
 
 // ---------------------------------------------------------------------------
 // Byte witnesses
@@ -351,7 +385,8 @@ constexpr char DefaultConfigToml[] =
     "#\n"
     "# A hotkey that feeds rings, amulets, jewels, charms and quivers into a\n"
     "# Rerolling Orb through the Horadric Cube, one transmute per item, the same\n"
-    "# way you would do it by hand.\n"
+    "# way you would do it by hand. On a controller, the Autostore button on the\n"
+    "# inventory starts the same run (see Controller below).\n"
     "#\n"
     "# Player settings live in ESRLauncher, not here\n"
     "#   The Rerolling Orb tab in ESRLauncher sets the hotkey and the checkboxes,\n"
@@ -363,8 +398,9 @@ constexpr char DefaultConfigToml[] =
     "#   does nothing while the chat input is open.\n"
     "#\n"
     "# How a run works\n"
-    "#   1. Press the hotkey. The cube must be empty and nothing may be on the\n"
-    "#      cursor, otherwise nothing happens (the reason goes to the plugin log).\n"
+    "#   1. Press the hotkey, or the Autostore button on a controller. The cube\n"
+    "#      must be empty and nothing may be on the cursor, otherwise nothing\n"
+    "#      happens (the reason goes to the plugin log).\n"
     "#   2. The plugin finds your Horadric Cube (inventory or personal stash) and a\n"
     "#      Rerolling Orb (any item of the orb_types below). Inventory is searched\n"
     "#      first, then the personal stash, then the shared stash tabs.\n"
@@ -387,9 +423,22 @@ constexpr char DefaultConfigToml[] =
     "#   type listed here also matches every item type that has it as an\n"
     "#   Equiv1/Equiv2 parent.\n"
     "#\n"
+    "# Controller\n"
+    "#   An Autostore button on the controller inventory, showing the Rerolling\n"
+    "#   Orb. Reach it with the d-pad and press A: it starts the same run as the\n"
+    "#   hotkey, with the same launcher checkboxes.\n"
+    "#   - The button is part of the mod's controller inventory layout, named\n"
+    "#     autostore_button; its place, size and d-pad links are set there. This\n"
+    "#     plugin gives it its art and its click:\n"
+    "#       \"filename\": \"d2rloader/celestialrayone.reroll-orb-storing/autostorebuttoncontroller\"\n"
+    "#       \"onClickMessage\": \"PanelManager:OpenPanel:CelestialRayOneRerollOrbStoringAutostore\"\n"
+    "#   - The art is 4 frames of 82x82 (41x41 for lowend): normal, pressed,\n"
+    "#     disabled, hovered. A mod can replace it with its own files under\n"
+    "#       data/hd/global/ui/d2rloader/celestialrayone.reroll-orb-storing/\n"
+    "#\n"
     "# Console command\n"
     "#   rerollorbstoring   status, the launcher settings it read, the resolved item\n"
-    "#                      types, and what the last run did\n"
+    "#                      types, the controller button, and what the last run did\n"
     "#\n"
     "[reroll_orb_storing]\n"
     "\n"
@@ -1435,13 +1484,14 @@ auto KeypadKey(WPARAM vk, LPARAM lParam) noexcept -> std::uint32_t {
     }
 }
 
-void StartRun() {
+// source names the press in the log: the hotkey or the controller button.
+void StartRun(const char* source) {
     Presses.fetch_add(1, std::memory_order_relaxed);
     if (RunQueued.exchange(true)) {
-        Context->LogInfo("RerollOrbStoring: key pressed while a run is going; ignored.");
+        D2RL::LogInfoF(Context, "RerollOrbStoring: %s pressed while a run is going; ignored.", source);
         return;
     }
-    Context->LogInfo("RerollOrbStoring: key pressed, starting a run.");
+    D2RL::LogInfoF(Context, "RerollOrbStoring: %s pressed, starting a run.", source);
     if (ThreadSvc->runOnGameThread(Context, &ResolveTypes, nullptr) != D2RL::Threads::Result::Success) {
         RunQueued.store(false);
         Context->LogWarn("RerollOrbStoring: no local game thread (a remote TCP/IP client cannot run this).");
@@ -1460,7 +1510,7 @@ LRESULT CALLBACK HookedWndProc(HWND window, UINT message, WPARAM wParam, LPARAM 
             if ((vk == wanted || static_cast<std::uint32_t>(wParam) == wanted)
                     && ModifiersHeld() == HotkeyModifier.load(std::memory_order_relaxed)) {
                 if (UiStateOpen(ChatUiState) != 0) ChatBlocked.fetch_add(1, std::memory_order_relaxed);
-                else StartRun();
+                else StartRun("key");
             }
         }
     }
@@ -1561,6 +1611,116 @@ void RemoveWindowHook() {
         SetWindowLongPtrW(GameWindow, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(OriginalWndProc));
         GameWindow = nullptr;
         OriginalWndProc = nullptr;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The controller button (section 5): resources, click listener, child layout
+// ---------------------------------------------------------------------------
+
+const D2RL::ResourceService*    ResourceSvc{};
+const D2RL::SharedEventService* EventSvc{};
+
+D2RL::Resources::RegistrationHandle ButtonSpriteHandle = D2RL::Resources::InvalidHandle;
+D2RL::Resources::RegistrationHandle ButtonLowendHandle = D2RL::Resources::InvalidHandle;
+D2RL::SharedEvents::ListenerHandle  ClickListener      = D2RL::SharedEvents::InvalidHandle;
+const char*                         ButtonProblem      = "the plugin is not active";   // null once the button is in
+std::atomic<std::uint64_t>          ButtonPresses{};
+
+// The button's click. The message is private to this plugin, so it never goes
+// on to PanelManager.
+auto __cdecl OnUiMessage(const D2RL::PluginContext*, const D2RL::SharedEvents::UiMessageEvent* event, void*) noexcept
+        -> D2RL::SharedEvents::UiMessageAction {
+    if (event == nullptr || event->structSize < D2RL::SharedEvents::UiMessageEventRequiredSize
+            || event->target == nullptr || event->command == nullptr || event->text == nullptr
+            || ClickTarget != event->target || ClickCommand != event->command || ClickText != event->text) {
+        return D2RL::SharedEvents::UiMessageAction::Continue;
+    }
+    ButtonPresses.fetch_add(1, std::memory_order_relaxed);
+    if (Active.load(std::memory_order_relaxed)) StartRun("controller button");
+    return D2RL::SharedEvents::UiMessageAction::Consume;
+}
+
+void RemoveControllerButton() {
+    if (ClickListener != D2RL::SharedEvents::InvalidHandle && EventSvc != nullptr) {
+        (void)EventSvc->unregisterUiMessageListener(Context, ClickListener);
+    }
+    ClickListener = D2RL::SharedEvents::InvalidHandle;
+    for (auto* handle : { &ButtonSpriteHandle, &ButtonLowendHandle }) {
+        if (*handle != D2RL::Resources::InvalidHandle && ResourceSvc != nullptr) {
+            (void)ResourceSvc->unregisterResource(Context, *handle);
+        }
+        *handle = D2RL::Resources::InvalidHandle;
+    }
+}
+
+// An RCDATA resource of this DLL (plugin.rc), checked to be a sprite.
+auto EmbeddedSprite(int id, const void*& bytes, std::uint64_t& size) -> bool {
+    HMODULE module{};
+    if (!GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+            reinterpret_cast<LPCWSTR>(&EmbeddedSprite), &module)) {
+        return false;
+    }
+    HRSRC found = FindResourceW(module, MAKEINTRESOURCEW(id), MAKEINTRESOURCEW(10));   // RT_RCDATA
+    HGLOBAL loaded = found != nullptr ? LoadResource(module, found) : nullptr;
+    bytes = loaded != nullptr ? LockResource(loaded) : nullptr;
+    size  = found != nullptr ? SizeofResource(module, found) : 0;
+    return bytes != nullptr && size > 40 && std::memcmp(bytes, "SpA1", 4) == 0;
+}
+
+auto RegisterResource(const char* path, const void* bytes, std::uint64_t size,
+                      D2RL::Resources::RegistrationHandle& handle) -> bool {
+    const D2RL::Resources::ResourceRegistration resource{
+        .structSize = D2RL::Resources::ResourceRegistrationSize,
+        .flags      = 0,
+        .path       = path,
+        .bytes      = bytes,
+        .byteCount  = size,
+    };
+    return ResourceSvc->registerResource(Context, &resource, &handle) == D2RL::Resources::Result::Success;
+}
+
+// Runs at load: the art and the click listener for the layout's
+// autostore_button. On any failure nothing stays registered and the hotkey
+// still works.
+void AddControllerButton() {
+    ButtonProblem = nullptr;
+    if (Context->QueryService(&ResourceSvc) != D2RL::ServiceQueryResult::Success
+            || !D2RL::HasResourceServiceField(ResourceSvc, D2RL::ResourceServiceRequiredSize)) {
+        ButtonProblem = "D2RLoader has no resource service";
+    } else if (Context->QueryService(&EventSvc) != D2RL::ServiceQueryResult::Success
+            || !D2RL::HasSharedEventServiceField(EventSvc, D2RL::SharedEventServiceRequiredSize)) {
+        ButtonProblem = "D2RLoader has no shared event service";
+    }
+    if (ButtonProblem == nullptr) {
+        const void*   sprite{};
+        const void*   lowend{};
+        std::uint64_t spriteSize{};
+        std::uint64_t lowendSize{};
+        if (!EmbeddedSprite(AUTOSTORE_BUTTON_CONTROLLER_SPRITE_ID, sprite, spriteSize)
+                || !EmbeddedSprite(AUTOSTORE_BUTTON_CONTROLLER_LOWEND_SPRITE_ID, lowend, lowendSize)) {
+            ButtonProblem = "the button art is missing from the DLL";
+        } else if (!RegisterResource(ButtonSpritePath, sprite, spriteSize, ButtonSpriteHandle)
+                || !RegisterResource(ButtonLowendPath, lowend, lowendSize, ButtonLowendHandle)) {
+            ButtonProblem = "the button art could not be registered";
+        }
+    }
+    if (ButtonProblem == nullptr) {
+        const D2RL::SharedEvents::UiMessageListener listener{
+            .structSize = D2RL::SharedEvents::UiMessageListenerSize,
+            .flags      = 0,
+            .priority   = 10000,
+            .reserved   = 0,
+            .callback   = &OnUiMessage,
+            .userData   = nullptr,
+        };
+        if (EventSvc->registerUiMessageListener(Context, &listener, &ClickListener) != D2RL::SharedEvents::Result::Success) {
+            ButtonProblem = "the button click listener could not be registered";
+        }
+    }
+    if (ButtonProblem != nullptr) {
+        RemoveControllerButton();
+        D2RL::LogWarnF(Context, "RerollOrbStoring: no controller button, %s; the hotkey still works.", ButtonProblem);
     }
 }
 
@@ -1681,7 +1841,11 @@ auto __cdecl StatusCommand(D2R::Game::Client*, const D2RL::ConsoleCommandContext
         static_cast<unsigned long long>(HookAttempts.load()), static_cast<unsigned long long>(KeyChecks.load()),
         static_cast<unsigned long long>(ChatBlocked.load()));
     say(line);
-    std::snprintf(line, sizeof(line), "  totals: %llu presses, %llu runs, %llu items stored.",
+    std::snprintf(line, sizeof(line), "  controller button: %s%s; %llu presses.",
+        ButtonProblem == nullptr ? "art and click listener ready for autostore_button" : "not available, ",
+        ButtonProblem == nullptr ? "" : ButtonProblem, static_cast<unsigned long long>(ButtonPresses.load()));
+    say(line);
+    std::snprintf(line, sizeof(line), "  totals: %llu presses (hotkey and controller button), %llu runs, %llu items stored.",
         static_cast<unsigned long long>(Presses.load()), static_cast<unsigned long long>(Runs.load()),
         static_cast<unsigned long long>(ItemsStored.load()));
     say(line);
@@ -1696,7 +1860,8 @@ constexpr D2RL::PluginInfo PluginInfoData{
     .version     = PluginVersion,
     .author      = "CelestialRayOne",
     .description = "A hotkey, set in ESRLauncher, that transmutes matching rings, amulets, jewels, charms and "
-                   "quivers into a Rerolling Orb, one item at a time, without clicking.",
+                   "quivers into a Rerolling Orb, one item at a time, without clicking. On a controller, an "
+                   "Autostore button on the inventory does the same.",
     .flags       = D2RL::PluginFlags::Client | D2RL::PluginFlags::NativeHooks,
 };
 
@@ -1735,9 +1900,10 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
     Active.store(true);
     RefreshHotkey(true);
     (void)RegisterGameEvents();
+    AddControllerButton();
     State = PluginState::Active;
-    D2RL::LogInfoF(Context, "RerollOrbStoring %s: active; hotkey %s, set in ESRLauncher's Rerolling Orb tab.",
-        PluginVersion, HotkeyText().c_str());
+    D2RL::LogInfoF(Context, "RerollOrbStoring %s: active; hotkey %s, set in ESRLauncher's Rerolling Orb tab; "
+        "controller button %s.", PluginVersion, HotkeyText().c_str(), ButtonProblem == nullptr ? "ready" : "not available");
     return true;
 }
 
@@ -1745,4 +1911,5 @@ D2RL_PLUGIN_EXPORT void D2RLoaderUnloadPlugin() noexcept {
     Active.store(false);
     if (Context == nullptr) return;
     RemoveWindowHook();
+    RemoveControllerButton();
 }

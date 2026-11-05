@@ -16,6 +16,11 @@
 // plugin allocates within rel32 reach of the image, and the game sites jump
 // into it. Relays never move rsp, so each relay reuses the unwind data of the
 // game function it was entered from and stack walks pass through it cleanly.
+//
+// The cast gate reads the cast animation per unit type. Players and monsters
+// number their modes separately: a player casts in mode 10 and a monster,
+// hirelings included, in mode 7. The 2.4 gate only knew the player number, so
+// a mercenary's cast was never recognised as one.
 
 #define NOMINMAX
 #define WIN32_LEAN_AND_MEAN
@@ -51,10 +56,14 @@ constexpr const char DefaultToml[] = R"TOML(# celestialrayone.cast-on-cast
 # skill to cast, the chance and the level.
 #
 # A cast triggers doactive only when all of these hold:
-#   - the caster is in the cast animation (mode 10)
+#   - the caster is in its cast animation: mode 10 for players, mode 7 for
+#     mercenaries and other monsters (both are the SC animation)
 #   - the skill is not an aura
 #   - it is a real cast that pays its cost, so item procs and aura pulses
 #     never trigger it and a proc cannot chain into itself
+# A mercenary skill counts when its Mode column in hireling.txt is 7. Skills
+# a mercenary uses in an attack animation (Mode 4 or 5) do not count, the
+# same way a player's attack skills do not.
 # The proc aims at the unit the cast was aimed at, or at the ground point
 # when there is no unit.
 #
@@ -99,7 +108,47 @@ constexpr std::size_t UnitPathOffset = 0x38;
 constexpr std::uint32_t PlayerUnitType = 0;
 constexpr std::uint32_t MonsterUnitType = 1;
 constexpr std::uint32_t MissileUnitType = 3;
-constexpr std::uint32_t CastMode = 10;
+
+// Cast animation per unit type. Player SC is mode 10, monster SC is mode 7
+// (monster 10 is S3). Hirelings are monsters (type 1) and take the mode of
+// each skill from the Mode columns of hireling.txt.
+constexpr std::uint32_t PlayerCastMode = 10;
+constexpr std::uint32_t MonsterCastMode = 7;
+
+// Monster mode callback table: 16 records {start, update, end, flag} of 0x20
+// bytes, indexed by monster mode. A1 (4), A2 (5), SC (7), S1 (8) and S2 (9)
+// share the attack-or-skill pair, start sub_140445F10 and update
+// sub_140446000, whose action frame runs the used skill through
+// sub_140436B10, the do-handler call with consumeResources 1. BL (6) has the
+// block pair, and S3 (10) has its own update sub_140445C00, which runs no
+// skill. That is the DT..RN order of monmode.txt, so the table proves
+// MonsterCastMode. It holds absolute pointers, so records 4..10 are compared
+// against image base + RVA at load. On a mismatch only mercenary and monster
+// casts stay off; players are unaffected.
+struct MonsterModeRecord {
+    std::uint64_t startRva;
+    std::uint64_t updateRva;
+    std::uint64_t endRva;
+    std::uint32_t flag;
+    const char* name;
+};
+constexpr std::uint64_t MonsterModeTableRva = 0x1D1A200;
+constexpr std::size_t MonsterModeRecordSize = 0x20;
+constexpr std::uint32_t MonsterModeFirstWitnessed = 4;
+constexpr std::array<MonsterModeRecord, 7> MonsterModeWitness{{
+    {0x445F10, 0x446000, 0x4449E0, 1, "A1"},
+    {0x445F10, 0x446000, 0x4449E0, 1, "A2"},
+    {0x4462F0, 0x444F30, 0x4449E0, 1, "BL"},
+    {0x445F10, 0x446000, 0x4449E0, 1, "SC"},
+    {0x445F10, 0x446000, 0x4449E0, 1, "S1"},
+    {0x445F10, 0x446000, 0x4449E0, 1, "S2"},
+    {0x445BE0, 0x445C00, 0x078D20, 0, "S3"},
+}};
+static_assert(MonsterCastMode >= MonsterModeFirstWitnessed
+    && MonsterCastMode < MonsterModeFirstWitnessed + MonsterModeWitness.size(),
+    "The monster SC record must be among the witnessed records.");
+static_assert(std::string_view(MonsterModeWitness[MonsterCastMode - MonsterModeFirstWitnessed].name) == "SC",
+    "MonsterCastMode must index the witnessed SC record.");
 
 // DynamicPath: precision X/Y dwords at +0x00/+0x04 (PATH_GetX/GetY return
 // their high words), first point words at +0x10/+0x12 and target unit at +0x70
@@ -337,7 +386,11 @@ std::uint8_t* g_relayPage = nullptr;
 std::array<RUNTIME_FUNCTION, 3> g_relayUnwind{};
 bool g_unwindRegistered = false;
 
-std::atomic<std::uint64_t> g_triggersFired{0};
+enum class CheckState : std::uint8_t { NotChecked, Verified, Mismatch };
+CheckState g_monsterCastMode = CheckState::NotChecked;
+
+std::atomic<std::uint64_t> g_playerTriggersFired{0};
+std::atomic<std::uint64_t> g_monsterTriggersFired{0};
 std::atomic<std::uint64_t> g_targetsReasserted{0};
 std::atomic<std::uint64_t> g_missilesRewound{0};
 
@@ -370,19 +423,32 @@ bool HasDynamicPath(const void* unit) noexcept {
     return type == PlayerUnitType || type == MonsterUnitType || type == MissileUnitType;
 }
 
+// True when the unit is in the SC animation of its own unit type.
+bool IsInCastAnimation(const void* unit) noexcept {
+    const auto mode = Read<std::uint32_t>(unit, UnitModeOffset);
+    switch (Read<std::uint32_t>(unit, UnitTypeOffset)) {
+    case PlayerUnitType: return mode == PlayerCastMode;
+    case MonsterUnitType: return g_monsterCastMode == CheckState::Verified && mode == MonsterCastMode;
+    default: return false;
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Handlers called from the relays
 // ---------------------------------------------------------------------------
 
-// 2.4 cave 2C0810: fire doactive for a real cast. Gate is unchanged from 2.4:
-// cast mode, not an aura, and a cast that pays its cost (item procs call the
-// do-handler with consumeResources 0, which is what stops recursion). The other
-// unit is the caster's path target, so EventFunc20 casts on that unit, or at
-// the path's first point when there is none.
+// 2.4 cave 2C0810: fire doactive for a real cast. Gate as in 2.4: cast
+// animation, not an aura, and a cast that pays its cost (item procs call the
+// do-handler with consumeResources 0, which is what stops recursion). The cast
+// animation is read per unit type, so a mercenary qualifies in monster SC.
+// Monster casts reach this site through the monster attack-or-skill updater,
+// the same used-skill executor as players. The other unit is the caster's
+// path target, so EventFunc20 casts on that unit, or at the path's first
+// point when there is none.
 void OnServerSkillDo(void* game, void* caster, const std::uint8_t* skillRow, std::int32_t consumeResources) noexcept {
     if (!game || !caster || !skillRow || !g_dispatchUnitEvent) return;
     if (consumeResources == 0) return;
-    if (Read<std::uint32_t>(caster, UnitModeOffset) != CastMode) return;
+    if (!IsInCastAnimation(caster)) return;
     if ((skillRow[SkillRowFlagsOffset] & SkillRowAuraBit) != 0) return;
     void* target = nullptr;
     if (HasDynamicPath(caster)) {
@@ -390,7 +456,8 @@ void OnServerSkillDo(void* game, void* caster, const std::uint8_t* skillRow, std
             target = Read<void*>(path, PathTargetUnitOffset);
         }
     }
-    g_triggersFired.fetch_add(1, std::memory_order_relaxed);
+    auto& counter = Read<std::uint32_t>(caster, UnitTypeOffset) == PlayerUnitType ? g_playerTriggersFired : g_monsterTriggersFired;
+    counter.fetch_add(1, std::memory_order_relaxed);
     g_dispatchUnitEvent(game, DoActiveEvent, caster, target, nullptr);
 }
 
@@ -618,6 +685,43 @@ bool ValidateBuild() noexcept {
     return ok;
 }
 
+bool IsReadableRange(std::uintptr_t address, std::size_t size) noexcept {
+    MEMORY_BASIC_INFORMATION info{};
+    if (VirtualQuery(reinterpret_cast<LPCVOID>(address), &info, sizeof(info)) == 0) return false;
+    constexpr DWORD readable = PAGE_READONLY | PAGE_READWRITE | PAGE_WRITECOPY
+        | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY;
+    if (info.State != MEM_COMMIT || (info.Protect & readable) == 0 || (info.Protect & PAGE_GUARD) != 0) return false;
+    return address + size <= reinterpret_cast<std::uintptr_t>(info.BaseAddress) + info.RegionSize;
+}
+
+// Proves MonsterCastMode from the monster mode callback table (see the layout
+// facts). The records hold absolute pointers, so each field is compared with
+// image base + RVA rather than with fixed bytes.
+bool VerifyMonsterCastMode() noexcept {
+    const std::uint64_t firstRva = MonsterModeTableRva + MonsterModeFirstWitnessed * MonsterModeRecordSize;
+    const std::uintptr_t first = g_base + firstRva;
+    if (!IsReadableRange(first, MonsterModeWitness.size() * MonsterModeRecordSize)) {
+        Log(1, "cast-on-cast: the monster mode table at RVA 0x%llX is not readable.", static_cast<unsigned long long>(firstRva));
+        return false;
+    }
+    const auto pointer = [](std::uint64_t rva) noexcept -> std::uint64_t { return rva != 0 ? g_base + rva : 0; };
+    bool ok = true;
+    for (std::size_t index = 0; index < MonsterModeWitness.size(); ++index) {
+        const auto& expected = MonsterModeWitness[index];
+        const auto* record = reinterpret_cast<const std::uint8_t*>(first + index * MonsterModeRecordSize);
+        if (Read<std::uint64_t>(record, 0x00) != pointer(expected.startRva)
+            || Read<std::uint64_t>(record, 0x08) != pointer(expected.updateRva)
+            || Read<std::uint64_t>(record, 0x10) != pointer(expected.endRva)
+            || Read<std::uint32_t>(record, 0x18) != expected.flag) {
+            Log(1, "cast-on-cast: monster mode %zu (%s) record does not match at RVA 0x%llX.",
+                MonsterModeFirstWitnessed + index, expected.name,
+                static_cast<unsigned long long>(firstRva + index * MonsterModeRecordSize));
+            ok = false;
+        }
+    }
+    return ok;
+}
+
 PartState Result(bool installed, const char* part) noexcept {
     if (!installed) Log(2, "cast-on-cast: %s could not be installed.", part);
     return installed ? PartState::Installed : PartState::Failed;
@@ -709,8 +813,15 @@ D2RL::ConsoleCommandResult StatusCommand(D2R::Game::Client*, const D2RL::Console
     char line[256];
     std::snprintf(line, sizeof(line), "cast-on-cast: %s", StateName(g_state));
     command->plugin->WriteConsoleMessage(line);
-    std::snprintf(line, sizeof(line), "  cast_trigger: %s, fired %llu", PartName(g_castTrigger),
-        static_cast<unsigned long long>(g_triggersFired.load(std::memory_order_relaxed)));
+    std::snprintf(line, sizeof(line), "  cast_trigger: %s, fired by players %llu, by mercenaries and monsters %llu",
+        PartName(g_castTrigger),
+        static_cast<unsigned long long>(g_playerTriggersFired.load(std::memory_order_relaxed)),
+        static_cast<unsigned long long>(g_monsterTriggersFired.load(std::memory_order_relaxed)));
+    command->plugin->WriteConsoleMessage(line);
+    const char* monsterCastMode = "not checked";
+    if (g_monsterCastMode == CheckState::Verified) monsterCastMode = "verified, mercenary casts on";
+    else if (g_monsterCastMode == CheckState::Mismatch) monsterCastMode = "does not match this build, mercenary casts off (see the plugin log)";
+    std::snprintf(line, sizeof(line), "  monster cast mode %u: %s", MonsterCastMode, monsterCastMode);
     command->plugin->WriteConsoleMessage(line);
     std::snprintf(line, sizeof(line), "  server_proc_aim: %s", PartName(g_serverProcAim));
     command->plugin->WriteConsoleMessage(line);
@@ -730,9 +841,9 @@ constexpr D2RL::PluginInfo PluginInfoData{
     .abiVersion = D2RL_PLUGIN_ABI_VERSION,
     .id = "celestialrayone.cast-on-cast",
     .name = "Cast on Cast",
-    .version = "1.0.1",
+    .version = "1.0.2",
     .author = "CelestialRayOne",
-    .description = "Fires doactive when a skill is cast, so items can cast skills on cast. Port of the ESR 2.4 patch set.",
+    .description = "Fires doactive when a player or mercenary casts a skill, so items can cast skills on cast. Port of the ESR 2.4 patch set.",
     .flags = D2RL::PluginFlags::Shared | D2RL::PluginFlags::NativeHooks,
 };
 
@@ -763,6 +874,10 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
         return true;
     }
     g_dispatchUnitEvent = reinterpret_cast<DispatchUnitEventFn>(g_base + DispatchUnitEventRva);
+    g_monsterCastMode = VerifyMonsterCastMode() ? CheckState::Verified : CheckState::Mismatch;
+    if (g_monsterCastMode != CheckState::Verified) {
+        Log(1, "cast-on-cast: monster cast mode not proven on this build, mercenary and monster casts stay off.");
+    }
     InstallParts();
     Log(0, "cast-on-cast: %s (%s id %s).", StateName(g_state), "plugin", PluginIdText);
     return true;

@@ -4,8 +4,8 @@
 D2RL_PLUGIN_MANIFEST_RESOURCE_ID RCDATA { D2RL_PLUGIN_RESOURCE_DWORD(D2RL_PLUGIN_ABI_VERSION) }
 
 1 VERSIONINFO
-FILEVERSION 1,5,1,0
-PRODUCTVERSION 1,5,1,0
+FILEVERSION 1,8,2,0
+PRODUCTVERSION 1,8,2,0
 BEGIN
   BLOCK "StringFileInfo"
   BEGIN
@@ -13,11 +13,11 @@ BEGIN
     BEGIN
       VALUE "CompanyName", "CelestialRayOne"
       VALUE "FileDescription", "Loot Filter: D2RLAN-style loot filters in JSON."
-      VALUE "FileVersion", "1.5.1"
+      VALUE "FileVersion", "1.8.2"
       VALUE "InternalName", "celestialrayone.loot-filter"
       VALUE "OriginalFilename", "d2rl-celestialrayone-loot-filter.dll"
       VALUE "ProductName", "Loot Filter"
-      VALUE "ProductVersion", "1.5.1"
+      VALUE "ProductVersion", "1.8.2"
     END
   END
   BLOCK "VarFileInfo"

@@ -7,7 +7,9 @@
 // once a millisecond for a few microseconds, reads where it is, walks its
 // call stack, and lets it continue. It does the same for the busiest other
 // threads (the renderer, when the renderer is what holds a frame back).
-// When the recording ends it writes to this plugin's log:
+// When the recording ends it writes the report in one go to its own file,
+// d2rloader/logs/celestialrayone.sampling-profiler.report.txt (replaced on
+// every recording), and puts one line in this plugin's log saying so:
 //   * CPU time per thread during the recording, with the thread names;
 //   * per sampled thread: the functions found on the stack most often
 //     ("inclusive", i.e. that function plus everything it called), the
@@ -26,6 +28,11 @@
 //     profile <seconds>    record for that many seconds (1 to 120)
 //     profile stop         stop early and write the report
 //     profile last         the headline of the last report
+//
+// The report used to go to the plugin log line by line. D2RLoader's logger
+// takes about 13 ms per line, so a 10 s recording kept the log growing for
+// another 40 s while its 3,000 lines trickled in. One file write instead
+// makes the report complete a moment after the recording ends.
 //
 // Runtime settings live in
 // d2rloader/config/celestialrayone.sampling-profiler.toml, created with
@@ -46,6 +53,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <cwchar>
 #include <new>
 #include <string>
 #include <unordered_map>
@@ -408,9 +416,83 @@ volatile LONG g_mainSamples = 0;
 SRWLOCK                  g_summaryLock = SRWLOCK_INIT;
 std::vector<std::string> g_summary; // headline of the last report, for the console
 
+constexpr const wchar_t* kReportFileName = L"celestialrayone.sampling-profiler.report.txt";
+
+// The report being built. Sampler thread only; written out in one go when the
+// recording ends.
+std::string g_report;
+
 void Log(const char* line) {
-	if (g_context != nullptr) {
-		g_context->LogInfo(line);
+	g_report.append(line);
+	g_report.append("\r\n");
+}
+
+// Full path of the report file: the folder of this plugin's log plus
+// kReportFileName. False when D2RLoader gave no log path.
+auto ReportPath(wchar_t* out, std::size_t capacity) noexcept -> bool {
+	if (g_context == nullptr || g_context->pluginLogPath == nullptr) {
+		return false;
+	}
+	const wchar_t* logPath = g_context->pluginLogPath;
+	std::size_t    folder  = 0; // length up to and including the last separator
+	for (std::size_t index = 0; logPath[index] != L'\0'; ++index) {
+		if (logPath[index] == L'\\' || logPath[index] == L'/') {
+			folder = index + 1;
+		}
+	}
+	const std::size_t nameLength = std::wcslen(kReportFileName);
+	if (folder + nameLength + 1 > capacity) {
+		return false;
+	}
+	std::wmemcpy(out, logPath, folder);
+	std::wmemcpy(out + folder, kReportFileName, nameLength + 1);
+	return true;
+}
+
+auto WriteReportFile(const wchar_t* path) noexcept -> bool {
+	HANDLE file = ::CreateFileW(path, GENERIC_WRITE, FILE_SHARE_READ, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+	if (file == INVALID_HANDLE_VALUE) {
+		return false;
+	}
+	bool        ok     = true;
+	std::size_t offset = 0;
+	while (ok && offset < g_report.size()) {
+		const std::size_t left    = g_report.size() - offset;
+		const DWORD       chunk   = static_cast<DWORD>(left < 0x10000000u ? left : 0x10000000u);
+		DWORD             written = 0;
+		ok = ::WriteFile(file, g_report.data() + offset, chunk, &written, nullptr) != FALSE && written == chunk;
+		offset += written;
+	}
+	::CloseHandle(file);
+	return ok;
+}
+
+// Hands the finished report over: one file write, plus one line in the plugin
+// log pointing at it. If the file cannot be written, the report goes to the
+// plugin log line by line instead (slow, but nothing is lost).
+void PublishReport() {
+	if (g_context == nullptr) {
+		return;
+	}
+	wchar_t path[1024]{};
+	if (ReportPath(path, sizeof(path) / sizeof(path[0])) && WriteReportFile(path)) {
+		char narrow[1200]{};
+		::WideCharToMultiByte(CP_UTF8, 0, path, -1, narrow, static_cast<int>(sizeof(narrow)) - 1, nullptr, nullptr);
+		std::string line = "profile: report written to ";
+		line += narrow;
+		g_context->LogInfo(line.c_str());
+		return;
+	}
+	g_context->LogWarn("profile: could not write the report file, writing the report to this log instead.");
+	std::size_t start = 0;
+	while (start < g_report.size()) {
+		std::size_t end = g_report.find("\r\n", start);
+		if (end == std::string::npos) {
+			end = g_report.size();
+		}
+		const std::string line = g_report.substr(start, end - start);
+		g_context->LogInfo(line.c_str());
+		start = end + 2;
 	}
 }
 
@@ -609,10 +691,13 @@ DWORD WINAPI SamplerMain(void*) {
 			info.cpuEnd = CpuTime(info.handle);
 		}
 
+		g_report.clear();
+		g_report.reserve(256 * 1024);
+
 		char line[512];
 		Log("===================== sampling profile =====================");
-		std::snprintf(line, sizeof(line), "recorded %.1f s, target interval %d us, main thread %lu%s",
-		              seconds, settings.sampleIntervalUs, static_cast<unsigned long>(g_mainThread),
+		std::snprintf(line, sizeof(line), "recorded %.1f s of %d s requested, target interval %d us, main thread %lu%s",
+		              seconds, g_seconds, settings.sampleIntervalUs, static_cast<unsigned long>(g_mainThread),
 		              outOfMemory ? " (stopped early: out of memory)" : "");
 		Log(line);
 
@@ -643,7 +728,7 @@ DWORD WINAPI SamplerMain(void*) {
 		{
 			AcquireSRWLockExclusive(&g_summaryLock);
 			g_summary.clear();
-			std::snprintf(line, sizeof(line), "profile: %.1f s recorded, report written to the plugin log.", seconds);
+			std::snprintf(line, sizeof(line), "profile: %.1f s recorded, report in d2rloader/logs/celestialrayone.sampling-profiler.report.txt", seconds);
 			g_summary.emplace_back(line);
 			const auto mainProfile = profiles.find(g_mainThread);
 			if (mainProfile != profiles.end() && mainProfile->second.samples != 0) {
@@ -683,9 +768,13 @@ DWORD WINAPI SamplerMain(void*) {
 			Log(line);
 		}
 		Log("=================== end of sampling profile ===================");
+		PublishReport();
 	} catch (const std::bad_alloc&) {
-		Log("profile: out of memory while writing the report.");
+		if (g_context != nullptr) {
+			g_context->LogError("profile: out of memory while writing the report.");
+		}
 	}
+	std::string().swap(g_report);
 
 	for (ThreadInfo& info : threads) {
 		::CloseHandle(info.handle);
@@ -730,8 +819,10 @@ constexpr const char* kDefaultConfigToml =
 	"# Shows where the game's time goes, without any external tool. While a\n"
 	"# recording runs, the game's main thread is paused about once a\n"
 	"# millisecond for a few microseconds so its call stack can be read; the\n"
-	"# busiest other threads get the same treatment. The report goes to this\n"
-	"# plugin's log file (d2rloader/logs/celestialrayone.sampling-profiler.log).\n"
+	"# busiest other threads get the same treatment. When the recording ends the\n"
+	"# report is written in one go to\n"
+	"# d2rloader/logs/celestialrayone.sampling-profiler.report.txt (replaced on\n"
+	"# every recording); the plugin log gets one line pointing at it.\n"
 	"# Nothing in the game is patched or hooked, and nothing runs while no\n"
 	"# recording is in progress.\n"
 	"#\n"
@@ -743,7 +834,7 @@ constexpr const char* kDefaultConfigToml =
 	"#   profile last         the top of the last report\n"
 	"#\n"
 	"# Type `profile` in the console, close it, reproduce the lag, and send the\n"
-	"# log file once the time is up. The game's own \"Main-Thread\" is the main\n"
+	"# report file once the time is up. The game's own \"Main-Thread\" is the main\n"
 	"# thread sampled; the thread that ran the command stands in if it has no\n"
 	"# such name.\n"
 	"\n"
@@ -865,7 +956,7 @@ auto __cdecl ProfileCommand(D2R::Game::Client*                 client,
 			command->plugin->WriteConsoleMessage("profile: nothing is recording.");
 		} else {
 			InterlockedExchange(&g_stopRequest, 1);
-			command->plugin->WriteConsoleMessage("profile: stopping; the report is being written to the plugin log.");
+			command->plugin->WriteConsoleMessage("profile: stopping; the report goes to d2rloader/logs/celestialrayone.sampling-profiler.report.txt.");
 		}
 		return D2RL::ConsoleCommandResult::Handled;
 	}
@@ -915,7 +1006,7 @@ auto __cdecl ProfileCommand(D2R::Game::Client*                 client,
 		return D2RL::ConsoleCommandResult::Failed;
 	}
 	std::snprintf(message, sizeof(message),
-	              "profile: recording %d s. Close the console and reproduce the lag; the report goes to the plugin log.",
+	              "profile: recording %d s. Close the console and reproduce the lag; the report goes to d2rloader/logs/celestialrayone.sampling-profiler.report.txt.",
 	              seconds);
 	command->plugin->WriteConsoleMessage(message);
 	return D2RL::ConsoleCommandResult::Handled;
@@ -930,9 +1021,9 @@ constexpr D2RL::PluginInfo kPluginInfo{
 	.abiVersion  = D2RL_PLUGIN_ABI_VERSION,
 	.id          = "celestialrayone.sampling-profiler",
 	.name        = "Sampling Profiler",
-	.version     = "1.0.0",
+	.version     = "1.1.0",
 	.author      = "CelestialRayOne",
-	.description = "Console-driven sampling profiler: records where the game's threads spend their time and writes the report to the plugin log.",
+	.description = "Console-driven sampling profiler: records where the game's threads spend their time and writes the report to its own file in the logs folder.",
 	.flags       = D2RL::PluginFlags::Client,
 };
 

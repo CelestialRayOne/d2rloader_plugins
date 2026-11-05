@@ -1,0 +1,31 @@
+#include <D2RLPlugin/resource.h>
+#include <D2RLPlugin/version.h>
+#include "resource_ids.h"
+
+D2RL_PLUGIN_MANIFEST_RESOURCE_ID RCDATA { D2RL_PLUGIN_RESOURCE_DWORD(D2RL_PLUGIN_ABI_VERSION) }
+
+// The string file, registered under data/local/lng/strings/d2rloader/<plugin id>/.
+CHRONICLE_TRACKER_STRINGS_ID RCDATA "strings.json"
+
+1 VERSIONINFO
+FILEVERSION 1,0,0,0
+PRODUCTVERSION 1,0,0,0
+BEGIN
+  BLOCK "StringFileInfo"
+  BEGIN
+    BLOCK "040904B0"
+    BEGIN
+      VALUE "CompanyName", "CelestialRayOne"
+      VALUE "FileDescription", "Chronicle Tracker: completes Chronicle entries on pickup and from the Horadric Cube, and marks ground items missing from the Chronicle."
+      VALUE "FileVersion", "1.0.0"
+      VALUE "InternalName", "celestialrayone.chronicle-tracker"
+      VALUE "OriginalFilename", "d2rl-celestialrayone-chronicle-tracker.dll"
+      VALUE "ProductName", "Chronicle Tracker"
+      VALUE "ProductVersion", "1.0.0"
+    END
+  END
+  BLOCK "VarFileInfo"
+  BEGIN
+    VALUE "Translation", 0x0409, 1200
+  END
+END

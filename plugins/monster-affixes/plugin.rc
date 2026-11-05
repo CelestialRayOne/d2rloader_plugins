@@ -4,8 +4,8 @@
 D2RL_PLUGIN_MANIFEST_RESOURCE_ID RCDATA { D2RL_PLUGIN_RESOURCE_DWORD(D2RL_PLUGIN_ABI_VERSION) }
 
 1 VERSIONINFO
-FILEVERSION 1,4,0,0
-PRODUCTVERSION 1,4,0,0
+FILEVERSION 1,6,0,0
+PRODUCTVERSION 1,6,0,0
 BEGIN
   BLOCK "StringFileInfo"
   BEGIN
@@ -13,11 +13,11 @@ BEGIN
     BEGIN
       VALUE "CompanyName", "CelestialRayOne"
       VALUE "FileDescription", "Monster affix rework: skill casts on hit and on attack, reworked affix bonuses, resist rules."
-      VALUE "FileVersion", "1.4.0"
+      VALUE "FileVersion", "1.6.0"
       VALUE "InternalName", "celestialrayone.monster-affixes"
       VALUE "OriginalFilename", "d2rl-celestialrayone-monster-affixes.dll"
       VALUE "ProductName", "Monster Affixes"
-      VALUE "ProductVersion", "1.4.0"
+      VALUE "ProductVersion", "1.6.0"
     END
   END
   BLOCK "VarFileInfo"

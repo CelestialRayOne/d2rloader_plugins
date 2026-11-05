@@ -29,6 +29,63 @@
 //  23B980 ? 46D9C0 : 46DA50. The request (player, owner and stack unit ids,
 //  item code, one or all) goes to the host over the plugin's network channel.
 //
+//  CTRL + LEFT CLICK, BELT FIRST. Natively Ctrl + Left Click moves one unit to
+//  the inventory (2CF833 15A2F0, then vtable +0xD8 mode 0 at 2CF84E, which
+//  sends 159B30(item, owner, 1)), or with Shift to the cube when 23BAC0
+//  allows (2CF802). The left-click hook takes the inventory case first: for an
+//  item the game can put in the belt right now (23B820 and 15A110, the test of
+//  the game's own Shift + Left Click belt move at 2CF872 / 2CF882) it sends
+//  that same belt request, 159B30(item, owner, 3), then plays the item's sound
+//  (1C3420), as 2CF8E2..2CF8F8 do. Not beltable, or a full belt: the game's
+//  inventory move runs. The host handles the request in its own withdraw
+//  (4C4AF0 operation 1 -> 4FB350, destination 3 = belt), so nothing is added
+//  on the host and a host without the plugin accepts it too.
+//  The hint lines follow the clicks. While Ctrl + Left Click goes to the belt,
+//  the game's "Ctrl + Left Click to Move to Inventory" (2CED01: sprintf of
+//  InventoryItemTooltipAppenderMoveInventory with
+//  InventoryItemTooltipKeyComboCtrlLC) is rewritten with the string
+//  MaterialUpgradeMoveToBelt. The count the game adds to that line for a
+//  stack of 2 or more (2CED0A: InventoryItemTooltipAppenderBulkMovePostfix
+//  with min(count, 3), the Ctrl + Right Click move) stays, since that click
+//  goes to the belt first as well (below). When the game shows no such line
+//  (15A2F0 says no), that text is added as the first line, with that same
+//  count added the same way. On an item whose Shift + Left Click is the
+//  plugin's (any item in an upgrade chain), the game's Shift belt hint
+//  InventoryItemTooltipAppenderEquip (2CEE0E, added when 15A110 allows) is
+//  removed. A line that cannot be matched is left as the game wrote it.
+//
+//  CTRL + RIGHT CLICK, BELT FIRST. Natively Ctrl + Right Click (2CE2C0) moves
+//  n = min(count, 3) units (2CE2E9) to the inventory when 15A2F0 allows
+//  (2CF590 mode 0 -> 1599A0(item, owner, 1, n): packet 0x63 operation 2), or
+//  with Shift to the cube when 23BAC0 allows (1599A0(item, owner, 2, n) at
+//  2CE392). The right-click hook takes the inventory case first, on the same
+//  test as Ctrl + Left Click: of the n units, the k the belt takes go there,
+//  1599A0(item, owner, 3, k), and the other n - k go to the inventory,
+//  1599A0(item, owner, 1, n - k), when 15A2F0 allows; then the item's sound,
+//  once, as 2CF643 plays it. The host runs its one-unit withdraw once per unit
+//  (4C4AF0 operation 2 -> 4F6250 -> 4FB350) and stops at the first that
+//  fails, and a unit the belt has no cell for fails there with a sound
+//  (491960(player, 20)) and a log line, so k is counted before sending, with
+//  the belt search of 3862D0 (INVENTORY_GetFreeBeltSlot, which 4FB350 runs
+//  for each unit at 4FBB8F) run on a copy of the belt's cells, one unit after
+//  another:
+//    belt size   the belts.txt record (3C8400) of the belt in body cell 8
+//                (349720), row 2 without a belt; its box count at +4
+//    cells       grid 1 of the player's inventory (38B070 with the belt grid
+//                info at 237B638): width +10h, height +11h, cells +18h
+//    each unit   the first column whose bottom cell holds an item of the same
+//                type (36A8D0) and that starts below the box count: its lowest
+//                empty cell below that count; else the first column whose
+//                bottom cell is empty; else the belt is full
+//  Each unit counted is written into the copy, so the next one sees it, the
+//  way the host's next withdraw sees the unit before it. The first cell must
+//  be the one 3862D0 itself gives for the item; when it is not, only that one
+//  unit goes to the belt and the console counts a mismatch. Both requests are
+//  the game's own, so a host without the plugin accepts them too. The game
+//  code only this click relies on is checked on its own (BatchWitnesses):
+//  when it does not match, Ctrl + Right Click keeps the game's own move and
+//  the rest of the plugin runs.
+//
 // -----------------------------------------------------------------------------
 //  HOST (game thread)
 // -----------------------------------------------------------------------------
@@ -125,7 +182,7 @@
 namespace {
 
 constexpr char PluginIdText[]  = "celestialrayone.material-upgrade";
-constexpr char PluginVersion[] = "1.2.2";
+constexpr char PluginVersion[] = "1.3.2";
 constexpr char SourceTag[]     = "material-upgrade";
 constexpr char StringsPath[]   = "data/local/lng/strings/d2rloader/celestialrayone.material-upgrade/strings.json";
 
@@ -184,6 +241,26 @@ constexpr std::uint64_t SelectPromptRva     = 0x2A8380;   // controller: select 
 constexpr std::uint64_t StashSlotVtableRva  = 0x1CF4678;  // AdvancedStashSlotWidget vtable
 constexpr std::uint64_t TakeOneWidthRva     = 0x46DCF9;   // count fix
 constexpr std::uint64_t CountReaderRva      = 0x46D9A0;   // count fix
+constexpr std::uint64_t StackTabViewRva     = 0x23B820;   // the stash shows the stack tab
+constexpr std::uint64_t CubeRouteRva        = 0x23BAC0;   // Ctrl + Shift + Left Click goes to the cube
+constexpr std::uint64_t BeltAcceptsRva      = 0x15A110;   // (item) beltable, and the belt has room
+constexpr std::uint64_t InventoryAcceptsRva = 0x15A2F0;   // (item) Ctrl + Left Click can go to the inventory
+constexpr std::uint64_t WithdrawRequestRva  = 0x159B30;   // (item, owner, destination): packet 0x63 operation 1
+constexpr std::uint64_t ItemSoundRva        = 0x1C3420;   // (item) -> the sound the game plays for it
+constexpr std::uint64_t CtrlBranchRva       = 0x2CF7EA;   // 2CF760's Ctrl branch
+constexpr std::uint64_t BeltTestRva         = 0x2CF865;   // 2CF760's Shift belt test
+constexpr std::uint64_t BeltRequestRva      = 0x2CF8E2;   // 2CF760's belt request
+constexpr std::uint64_t BatchWithdrawRva    = 0x1599A0;   // (item, owner, destination, count): packet 0x63 operation 2
+constexpr std::uint64_t FreeBeltSlotRva     = 0x3862D0;   // (inventory, item, &cell, 1): INVENTORY_GetFreeBeltSlot
+constexpr std::uint64_t InventoryGridRva    = 0x38B070;   // (inventory, grid, grid info) -> the grid
+constexpr std::uint64_t BeltTypeRva         = 0x349720;   // (belt item) -> its belts.txt row
+constexpr std::uint64_t BeltRecordRva       = 0x3C8400;   // (bank, row, 0, out) copies the belts.txt record
+constexpr std::uint64_t SameBeltItemRva     = 0x36A8D0;   // (item, item): same item type, the belt column test
+constexpr std::uint64_t RightClickBodyRva   = 0x2CE2D6;   // 2CE2C0 after the hook bytes
+constexpr std::uint64_t BeltSearchRva       = 0x38643D;   // 3862D0's belt size and search
+constexpr std::uint64_t GridLayoutRva       = 0x38B101;   // 38B070's new grid: width, height, cells
+constexpr std::uint64_t BeltTypeReadRva     = 0x349795;   // 349720's items.txt read
+constexpr std::uint64_t HostBeltSearchRva   = 0x4FBB60;   // 4FB350's belt search before each unit
 
 // Data, proven by the instructions inside RegistryResetBytes and ClientPlayerBytes.
 constexpr std::uint64_t RegistryRva          = 0x2AAECA0;
@@ -194,15 +271,37 @@ constexpr std::size_t   ClientUnitTypeOffset = 0x26C;
 constexpr std::size_t   ClientUnitIdOffset   = 0x270;
 constexpr std::size_t   ClientGameOffset     = 0x2B0;
 
+// Data: the grid infos 3862D0 passes to 38B070 (its lea at 38643D and 3864A7).
+constexpr std::uint64_t BodyGridInfoRva = 0x237B620;
+constexpr std::uint64_t BeltGridInfoRva = 0x237B638;
+
 constexpr std::size_t SlotItemOffset   = 0x608;   // stack-tab slot widget -> its stack item
 constexpr std::size_t ItemDataOffset   = 0x10;    // unit -> ItemData
 constexpr std::size_t StackCountOffset = 0x9C;    // ItemData -> stack-tab count (DWORD)
 constexpr std::size_t RecordCodeOffset = 0x80;    // ItemsTxt record -> packed item code
 
+// The belt, as 3862D0 reads it.
+constexpr std::size_t   InventoryOwnerOffset = 0x08;    // inventory -> its owner unit
+constexpr std::size_t   GridWidthOffset      = 0x10;    // inventory grid -> width (byte)
+constexpr std::size_t   GridHeightOffset     = 0x11;    // inventory grid -> height (byte)
+constexpr std::size_t   GridCellsOffset      = 0x18;    // inventory grid -> its cells (item pointers)
+constexpr std::size_t   BeltRecordSize       = 0x120;   // 3C8400 copies this many bytes
+constexpr std::size_t   BeltBoxesOffset      = 0x04;    // belts.txt record -> box count (byte)
+constexpr std::uint64_t BodyGrid             = 0;
+constexpr std::uint64_t BeltGrid             = 1;
+constexpr std::size_t   BeltBodyCell         = 8;       // the body grid cell of the belt
+constexpr std::int32_t  NoBeltRow            = 2;       // the belts.txt row without a belt
+constexpr std::uint32_t BeltColumns          = 4;
+constexpr std::size_t   MaxBeltCells         = 64;      // room in the copy; a bigger belt grid counts as a mismatch
+
 constexpr std::uint32_t UnitTypePlayer = 0;
 constexpr std::uint32_t UnitTypeItem   = 4;
 constexpr std::int32_t  StashState     = 209;
 constexpr std::int32_t  RefusalSound   = 3;
+constexpr std::uint8_t  BeltDestination = 3;   // 159B30: 0 cursor, 1 inventory, 2 cube, 3 belt
+
+constexpr std::uint8_t  InventoryDestination = 1;   // the same values for 1599A0
+constexpr std::uint32_t BatchMoveLimit       = 3;   // 2CE2E9: the game's Ctrl + Right Click moves at most 3
 
 // ---------------------------------------------------------------------------
 // Expected bytes
@@ -382,6 +481,179 @@ constexpr std::uint8_t ClientPlayerBytes[]{
     0x44,0x8B,0x83,0x70,0x02,0x00,0x00,0x8B,0x93,0x6C,0x02,0x00,0x00,0x48,0x8B,0x8B,
     0xB0,0x02,0x00,0x00,0xE8,0x8C,0xB1,0x00,0x00 };
 
+// 2CF7EA..2CF854, the native left click's Ctrl branch: GetKeyState wrapper
+// 120A100 with 11h (Ctrl), then 10h (Shift); Shift and 23BAC0 -> vtable +0xD8
+// mode 3 (cube); else 15A2F0(item) -> vtable +0xD8 mode 0 (inventory).
+constexpr std::uint8_t CtrlBranchBytes[]{
+    0x8D,0x48,0x11,0xE8,0x0E,0xA9,0xF3,0x00,0x8D,0x4D,0x10,0x85,0xC0,0x74,0x6C,0xE8,
+    0x02,0xA9,0xF3,0x00,0x85,0xC0,0x74,0x2E,0xE8,0xB9,0xC2,0xF6,0xFF,0x84,0xC0,0x74,
+    0x25,0x48,0x8B,0x03,0x48,0x8D,0x54,0x24,0x68,0x41,0xB0,0x03,0x48,0x8B,0xCB,0xFF,
+    0x90,0xD8,0x00,0x00,0x00,0x48,0x8B,0x5C,0x24,0x70,0x48,0x83,0xC4,0x30,0x41,0x5F,
+    0x41,0x5E,0x5F,0x5E,0x5D,0xC3,0x49,0x8B,0xCE,0xE8,0xB8,0xAA,0xE8,0xFF,0x84,0xC0,
+    0x0F,0x84,0xBF,0x00,0x00,0x00,0x48,0x8B,0x03,0x48,0x8D,0x54,0x24,0x68,0x45,0x33,
+    0xC0,0x48,0x8B,0xCB,0xFF,0x90,0xD8,0x00,0x00,0x00 };
+// 2CF865..2CF88B, its Shift belt test: 120A100(10h), then 23B820(), then
+// 15A110(item); a no from either plays sound 3.
+constexpr std::uint8_t BeltTestBytes[]{
+    0xE8,0x96,0xA8,0xF3,0x00,0x85,0xC0,0x0F,0x84,0x99,0x00,0x00,0x00,0xE8,0xA9,0xBF,
+    0xF6,0xFF,0x84,0xC0,0x0F,0x84,0x80,0x00,0x00,0x00,0x49,0x8B,0xCE,0xE8,0x89,0xA8,
+    0xE8,0xFF,0x84,0xC0,0x74,0x74 };
+// 2CF8E2..2CF8F8, its belt request: mov r8b,3 / mov rdx,rsi (owner) /
+// mov rcx,rdi (item) / call 159B30 / mov rcx,rdi / call 1C3420 (the sound,
+// played through 1A0780 at 2CF975).
+constexpr std::uint8_t BeltRequestBytes[]{
+    0x41,0xB0,0x03,0x48,0x8B,0xD6,0x48,0x8B,0xCF,0xE8,0x40,0xA2,0xE8,0xFF,0x48,0x8B,
+    0xCF,0xE8,0x28,0x3B,0xEF,0xFF };
+
+// 3862D0 (inventory, item, &cell, any), INVENTORY_GetFreeBeltSlot: push rbx,
+// rbp, rsi, rdi, r12, r14, r15 / sub rsp,170h / mov rax,[security cookie] /
+// xor rax,rsp / mov [rsp+160h],rax / movzx r12d,r9b (any) / mov r15,r8
+// (&cell) / mov rbp,rdx (item)
+constexpr std::uint8_t FreeBeltSlotBytes[]{
+    0x40,0x53,0x55,0x56,0x57,0x41,0x54,0x41,0x56,0x41,0x57,0x48,0x81,0xEC,0x70,0x01,
+    0x00,0x00,0x48,0x8B,0x05,0xDF,0x4F,0x64,0x02,0x48,0x33,0xC4,0x48,0x89,0x84,0x24,
+    0x60,0x01,0x00,0x00,0x45,0x0F,0xB6,0xE1,0x4D,0x8B,0xF8,0x48,0x8B,0xEA };
+
+// 3862D0's belt size and search (38643D..3865A6): grid 0 of the inventory
+// (38B070 with the body grid info at 237B620), the belt in its cell 8
+// ([cells+40h]) -> 349720, row 2 without one / [inventory+8] -> 34A0E0 ->
+// 3C8400(bank, row, 0, rsp+40h), the box count at rsp+44h / grid 1 (38B070
+// with the belt grid info at 237B638) / for columns 0..3: bottom cell
+// [cells+column*8] set, 36A8D0(item, bottom) and column < boxes: the first
+// empty cell of column, column+4, ... below boxes / any == 0 only: items.txt
+// +141h / else the first empty bottom cell 0..3
+constexpr std::uint8_t BeltSearchBytes[]{
+    0x4C,0x8D,0x05,0xDC,0x51,0xFF,0x01,0x33,0xD2,0x48,0x8B,0xCF,0xE8,0x22,0x4C,0x00,
+    0x00,0x48,0x85,0xC0,0x75,0x05,0x8D,0x58,0x02,0xEB,0x19,0x48,0x8B,0x40,0x18,0x48,
+    0x8B,0x48,0x40,0x48,0x85,0xC9,0x75,0x05,0x8D,0x59,0x02,0xEB,0x07,0xE8,0xB1,0x32,
+    0xFC,0xFF,0x8B,0xD8,0x48,0x83,0x7F,0x08,0x00,0x75,0x14,0x48,0x8D,0x4C,0x24,0x30,
+    0xC6,0x44,0x24,0x30,0x00,0xE8,0x09,0xE2,0xFF,0xFF,0x84,0xC0,0x74,0x01,0xCC,0x48,
+    0x8B,0x4F,0x08,0xE8,0x4B,0x3C,0xFC,0xFF,0x0F,0xB6,0xC8,0x4C,0x8D,0x4C,0x24,0x40,
+    0x45,0x33,0xC0,0x8B,0xD3,0xE8,0x59,0x1F,0x04,0x00,0x4C,0x8D,0x05,0x8A,0x51,0xFF,
+    0x01,0xBA,0x01,0x00,0x00,0x00,0x48,0x8B,0xCF,0xE8,0xB5,0x4B,0x00,0x00,0x4C,0x8B,
+    0xF0,0x48,0x85,0xC0,0x0F,0x84,0x52,0xFE,0xFF,0xFF,0x33,0xF6,0x8B,0xDE,0x8B,0xFE,
+    0x0F,0x1F,0x00,0x49,0x8B,0x4E,0x18,0x48,0x8B,0x14,0xF9,0x48,0x85,0xD2,0x74,0x40,
+    0x48,0x8B,0xCD,0xE8,0xEB,0x43,0xFE,0xFF,0x85,0xC0,0x74,0x34,0x0F,0xB6,0x44,0x24,
+    0x44,0x44,0x8B,0xC3,0x48,0x8B,0xD7,0x3B,0xD8,0x73,0x25,0x44,0x8B,0xC8,0x49,0x8B,
+    0x46,0x18,0x48,0x8D,0x0C,0xF8,0x48,0x39,0x31,0x0F,0x84,0x80,0x00,0x00,0x00,0x41,
+    0x83,0xC0,0x04,0x48,0x83,0xC2,0x04,0x48,0x83,0xC1,0x20,0x49,0x3B,0xD1,0x7C,0xE6,
+    0xFF,0xC3,0x48,0xFF,0xC7,0x83,0xFB,0x04,0x7C,0xA9,0x45,0x84,0xE4,0x75,0x3F,0x41,
+    0xB8,0xBD,0x0B,0x00,0x00,0x48,0x8D,0x15,0x57,0xEB,0x97,0x01,0x48,0x8B,0xCD,0xE8,
+    0x1F,0x33,0xFC,0xFF,0x48,0x8B,0xCD,0x8B,0xD8,0xE8,0x95,0x3B,0xFC,0xFF,0x8B,0xD3,
+    0x0F,0xB6,0xC8,0xE8,0xBB,0xDB,0xF8,0xFF,0x48,0x85,0xC0,0x0F,0x84,0xBB,0xFD,0xFF,
+    0xFF,0x40,0x38,0xB0,0x41,0x01,0x00,0x00,0x0F,0x84,0xAE,0xFD,0xFF,0xFF,0x49,0x8B,
+    0x46,0x18,0x48,0x8B,0xCE,0x48,0x83,0x38,0x00,0x74,0x21,0xFF,0xC6,0x48,0xFF,0xC1,
+    0x48,0x83,0xC0,0x08,0x48,0x83,0xF9,0x04,0x7C,0xEB,0xE9,0x8D,0xFD,0xFF,0xFF,0x45,
+    0x89,0x07,0xB8,0x01,0x00,0x00,0x00,0xE9,0x82,0xFD,0xFF,0xFF,0x41,0x89,0x37,0xB8,
+    0x01,0x00,0x00,0x00,0xE9,0x75,0xFD,0xFF,0xFF };
+
+// 2CE2C0 after the hook bytes (2CE2D6..2CE3CF): n = 46D9A0(item), at most 3
+// (mov ebp,3 / cmova) / a cursor item (15F100) or n == 0: return / no Ctrl
+// (120A100(17)): sound 3 / Shift (120A100(16)) and 23BAC0: the owner (23B980
+// ? 46D9C0 : 46DA50), 1599A0(item, owner, 2, n) at 2CE392, the item's sound /
+// else 15A2F0(item): jmp 2CF590(widget, &tmp, 0, n), else sound 3
+constexpr std::uint8_t RightClickBodyBytes[]{
+    0x48,0x8B,0xCE,0xE8,0xC2,0xF6,0x19,0x00,0xBD,0x03,0x00,0x00,0x00,0x0F,0xB6,0xF8,
+    0x40,0x3A,0xC5,0x0F,0x47,0xFD,0xE8,0x0F,0x0E,0xE9,0xFF,0x48,0x85,0xC0,0x0F,0x85,
+    0xE9,0x00,0x00,0x00,0x40,0x84,0xFF,0x0F,0x84,0xE0,0x00,0x00,0x00,0x8D,0x4D,0x0E,
+    0xE8,0xF5,0xBD,0xF3,0x00,0x85,0xC0,0x0F,0x84,0xBC,0x00,0x00,0x00,0x8D,0x4D,0x0D,
+    0xE8,0xE5,0xBD,0xF3,0x00,0x85,0xC0,0x0F,0x84,0x80,0x00,0x00,0x00,0xE8,0x98,0xD7,
+    0xF6,0xFF,0x84,0xC0,0x74,0x77,0x48,0x8B,0xB3,0x08,0x06,0x00,0x00,0xE8,0x98,0xCF,
+    0xDB,0xFF,0x8B,0xC8,0xE8,0x41,0xC1,0xDC,0xFF,0x48,0x8B,0xD8,0x48,0x85,0xC0,0x75,
+    0x17,0x48,0x8D,0x4C,0x24,0x50,0x88,0x44,0x24,0x50,0xE8,0x4B,0xFD,0xFF,0xFF,0x84,
+    0xC0,0x74,0x01,0xCC,0x33,0xDB,0xEB,0x1B,0xE8,0x1D,0xD6,0xF6,0xFF,0x48,0x8B,0xCB,
+    0x84,0xC0,0x74,0x07,0xE8,0x51,0xF6,0x19,0x00,0xEB,0x05,0xE8,0xDA,0xF6,0x19,0x00,
+    0x48,0x8B,0xD8,0x48,0x8B,0xCE,0xE8,0x1F,0xF6,0x19,0x00,0x84,0xC0,0x74,0x5E,0x44,
+    0x0F,0xB6,0xCF,0x41,0xB0,0x02,0x48,0x8B,0xD3,0x48,0x8B,0xCE,0xE8,0x09,0xB6,0xE8,
+    0xFF,0x48,0x8B,0xCE,0xE8,0x81,0x50,0xEF,0xFF,0x8B,0xC8,0xEB,0x2E,0x48,0x8B,0xCE,
+    0xE8,0x45,0xBF,0xE8,0xFF,0x84,0xC0,0x74,0x20,0x44,0x0F,0xB6,0xCF,0x48,0x8D,0x54,
+    0x24,0x58,0x45,0x33,0xC0,0x48,0x8B,0xCB,0x48,0x8B,0x5C,0x24,0x60,0x48,0x83,0xC4,
+    0x30,0x5F,0x5E,0x5D,0xE9,0xC1,0x11,0x00,0x00 };
+
+// 1599A0 (item, owner, destination, count), the whole function: 34A330 of
+// both, then 0EC880(0x63, 2, item id, owner id, destination, count, 0)
+constexpr std::uint8_t BatchWithdrawBytes[]{
+    0x48,0x89,0x5C,0x24,0x08,0x48,0x89,0x6C,0x24,0x10,0x48,0x89,0x74,0x24,0x18,0x57,
+    0x48,0x83,0xEC,0x40,0x48,0x8B,0xC2,0x41,0x0F,0xB6,0xE8,0x48,0x8B,0xD9,0x41,0x0F,
+    0xB6,0xF1,0x48,0x8B,0xC8,0x48,0x8D,0x15,0x64,0x38,0xB7,0x01,0x41,0xB8,0xFD,0x06,
+    0x00,0x00,0xE8,0x59,0x09,0x1F,0x00,0x41,0xB8,0xFD,0x06,0x00,0x00,0x48,0x8D,0x15,
+    0x4C,0x38,0xB7,0x01,0x48,0x8B,0xCB,0x8B,0xF8,0xE8,0x42,0x09,0x1F,0x00,0xC7,0x44,
+    0x24,0x30,0x00,0x00,0x00,0x00,0x44,0x8B,0xCF,0x89,0x74,0x24,0x28,0x44,0x8B,0xC0,
+    0xBA,0x02,0x00,0x00,0x00,0x89,0x6C,0x24,0x20,0xB1,0x63,0xE8,0x70,0x2E,0xF9,0xFF,
+    0x48,0x8B,0x5C,0x24,0x50,0x48,0x8B,0x6C,0x24,0x58,0x48,0x8B,0x74,0x24,0x60,0x48,
+    0x83,0xC4,0x40,0x5F,0xC3 };
+
+// 38B070 (inventory, grid, grid info): the index below [inventory+28h], the
+// grids at [inventory+20h], 20h bytes each
+constexpr std::uint8_t InventoryGridEntryBytes[]{
+    0x4C,0x8B,0xDC,0x49,0x89,0x5B,0x20,0x57,0x48,0x83,0xEC,0x30,0x49,0x8B,0xF8,0x48,
+    0x39,0x51,0x28,0x0F,0x86,0x01,0x01,0x00,0x00,0x49,0x89,0x73,0x18,0x48,0x8D,0x71,
+    0x20,0x49,0x89,0x53,0x10,0x48,0x3B,0x56,0x08,0x72,0x1A,0x49,0x8D,0x43,0x10,0x49,
+    0x89,0x73,0xF0,0x49,0x8D,0x4B,0xE8,0x49,0x89,0x43,0xE8,0xE8,0xA0,0x83,0xFF,0xFF,
+    0x84,0xC0,0x74,0x01,0xCC,0x48,0x8B,0x5C,0x24,0x48,0x48,0xC1,0xE3,0x05,0x48,0x03,
+    0x1E };
+
+// 38B070 on a grid without cells (38B101..38B132): width +10h and height +11h
+// from the grid info's first two bytes, cells +18h, width * height of them
+constexpr std::uint8_t InventoryGridLayoutBytes[]{
+    0x48,0x83,0x7B,0x18,0x00,0x75,0x2A,0x0F,0xB6,0x07,0x88,0x43,0x10,0x0F,0xB6,0x47,
+    0x01,0x88,0x43,0x11,0xE8,0x96,0x5A,0x69,0x00,0x0F,0xB6,0x4B,0x10,0x0F,0xB6,0x53,
+    0x11,0x48,0x0F,0xAF,0xD1,0x48,0x8B,0xC8,0xE8,0x72,0x7B,0xFF,0xFF,0x48,0x89,0x43,
+    0x18 };
+
+// 349720 (belt item) -> its belts.txt row: the entry, then (349795..3497DA)
+// the items.txt record (314110 with the bank at +1BDh and the class at +4)
+// and its byte +140h
+constexpr std::uint8_t BeltTypeEntryBytes[]{
+    0x48,0x89,0x5C,0x24,0x10,0x57,0x48,0x83,0xEC,0x20,0x48,0x8B,0xD9 };
+constexpr std::uint8_t BeltTypeReadBytes[]{
+    0x8B,0x7B,0x04,0x0F,0xB6,0x8B,0xBD,0x01,0x00,0x00,0x8B,0xD7,0xE8,0x6A,0xA9,0xFC,
+    0xFF,0x48,0x8B,0xD8,0x48,0x85,0xC0,0x75,0x25,0x48,0x8D,0x4C,0x24,0x30,0x88,0x44,
+    0x24,0x30,0xE8,0xB4,0xC4,0xFF,0xFF,0x84,0xC0,0x74,0x01,0xCC,0x0F,0xB6,0x83,0x40,
+    0x01,0x00,0x00,0x48,0x8B,0x5C,0x24,0x38,0x48,0x83,0xC4,0x20,0x5F,0xC3,0x0F,0xB6,
+    0x80,0x40,0x01,0x00,0x00 };
+
+// 3C8400 (bank, row, layout, out), the whole function: record row + 7 *
+// layout of the table at +1558h of 300A90(bank), 120h bytes each, copied to
+// out with movups
+constexpr std::uint8_t BeltRecordBytes[]{
+    0x48,0x89,0x5C,0x24,0x08,0x48,0x89,0x74,0x24,0x10,0x48,0x89,0x7C,0x24,0x18,0x41,
+    0x56,0x48,0x83,0xEC,0x30,0x49,0x8B,0xF1,0x41,0x8B,0xD8,0x8B,0xFA,0xE8,0x6E,0x86,
+    0xF3,0xFF,0x4C,0x8D,0xB0,0x58,0x15,0x00,0x00,0x6B,0xC3,0x07,0x03,0xC7,0x48,0x63,
+    0xC8,0x48,0x89,0x4C,0x24,0x58,0x49,0x3B,0x4E,0x08,0x72,0x1E,0x48,0x8D,0x44,0x24,
+    0x58,0x4C,0x89,0x74,0x24,0x28,0x48,0x8D,0x4C,0x24,0x20,0x48,0x89,0x44,0x24,0x20,
+    0xE8,0x9B,0xFB,0xFF,0xFF,0x84,0xC0,0x74,0x01,0xCC,0x48,0x8B,0x44,0x24,0x58,0x48,
+    0x8D,0x0C,0xC0,0x49,0x8B,0x06,0x48,0xC1,0xE1,0x05,0x48,0x03,0xC1,0xB9,0x02,0x00,
+    0x00,0x00,0x48,0x8D,0xB6,0x80,0x00,0x00,0x00,0x0F,0x10,0x00,0x48,0x8D,0x80,0x80,
+    0x00,0x00,0x00,0x0F,0x11,0x46,0x80,0x0F,0x10,0x48,0x90,0x0F,0x11,0x4E,0x90,0x0F,
+    0x10,0x40,0xA0,0x0F,0x11,0x46,0xA0,0x0F,0x10,0x48,0xB0,0x0F,0x11,0x4E,0xB0,0x0F,
+    0x10,0x40,0xC0,0x0F,0x11,0x46,0xC0,0x0F,0x10,0x48,0xD0,0x0F,0x11,0x4E,0xD0,0x0F,
+    0x10,0x40,0xE0,0x0F,0x11,0x46,0xE0,0x0F,0x10,0x48,0xF0,0x0F,0x11,0x4E,0xF0,0x48,
+    0x83,0xE9,0x01,0x75,0xAD,0x0F,0x10,0x00,0x48,0x8B,0x5C,0x24,0x40,0x48,0x8B,0x7C,
+    0x24,0x50,0x0F,0x11,0x06,0x0F,0x10,0x48,0x10,0x0F,0x11,0x4E,0x10,0x48,0x8B,0x74,
+    0x24,0x48,0x48,0x83,0xC4,0x30,0x41,0x5E,0xC3 };
+
+// 36A8D0 (item, other): both set, then their item types (372C90) equal; types
+// 18 and 22 compare one more field
+constexpr std::uint8_t SameBeltItemBytes[]{
+    0x48,0x89,0x74,0x24,0x20,0x57,0x48,0x83,0xEC,0x20,0x48,0x8B,0xF2,0x48,0x8B,0xF9,
+    0x48,0x85,0xC9,0x0F,0x84,0x06,0x01,0x00,0x00,0x48,0x85,0xD2,0x0F,0x84,0xFD,0x00,
+    0x00,0x00,0x48,0x89,0x5C,0x24,0x38,0x48,0x89,0x6C,0x24,0x40,0xE8,0x8F,0x83,0x00,
+    0x00,0x48,0x8B,0xCE,0x8B,0xE8,0xE8,0x85,0x83,0x00,0x00,0x8D,0x55,0xEE,0x33,0xDB,
+    0xF7,0xC2,0xFB,0xFF,0xFF,0xFF,0x74,0x1C,0x3B,0xE8,0x0F,0x94,0xC3,0x48,0x8B,0x6C,
+    0x24,0x40,0x8B,0xC3,0x48,0x8B,0x5C,0x24,0x38,0x48,0x8B,0x74,0x24,0x48,0x48,0x83,
+    0xC4,0x20,0x5F,0xC3 };
+
+// 4FB350's belt destination (4FBB60..4FBBA1), run before each unit: cell = 0,
+// 3862D0(the player's inventory (34A360), the stash item, &cell, 1), then the
+// cell's position (382D00)
+constexpr std::uint8_t HostBeltSearchBytes[]{
+    0x80,0xF9,0x03,0x0F,0x85,0x11,0x02,0x00,0x00,0x41,0xB8,0xC4,0x0C,0x00,0x00,0x44,
+    0x89,0x75,0x9F,0x48,0x8D,0x15,0x46,0x7F,0x83,0x01,0x49,0x8B,0xCD,0xE8,0xDE,0xE7,
+    0xE4,0xFF,0x48,0x8B,0xC8,0x4C,0x8D,0x45,0x9F,0x41,0xB1,0x01,0x48,0x8B,0xD3,0xE8,
+    0x3C,0xA7,0xE8,0xFF,0x0F,0xB7,0x55,0x9F,0x48,0x8D,0x4D,0xC7,0xE8,0x5F,0x71,0xE8,
+    0xFF };
+
 // Count fix: the native bytes and what the plugin writes over them.
 // 46DCF9: movzx ecx,byte [rax+9Ch] / test cl,cl / je 46DD1A / dec cl / mov [rax+9Ch],cl
 //      -> mov ecx,[rax+9Ch] / test ecx,ecx / je 46DD1A / dec ecx / mov [rax+9Ch],ecx / nop
@@ -430,7 +702,7 @@ constexpr auto W(std::uint64_t rva, const std::uint8_t (&bytes)[N], const char* 
     return { rva, bytes, static_cast<std::uint32_t>(N), name };
 }
 
-const std::array<Witness, 40> Witnesses{
+const std::array<Witness, 43> Witnesses{
     W(SlotLeftClickRva, SlotLeftClickBytes, "stack slot left click"),
     W(SlotRightClickRva, SlotRightClickBytes, "stack slot right click"),
     W(SlotHintLinesRva, SlotHintLinesBytes, "stack slot hint lines"),
@@ -471,6 +743,24 @@ const std::array<Witness, 40> Witnesses{
     W(MarkDirtyRva, MarkDirtyBytes, "mark for saving"),
     W(RegistryResetRva, RegistryResetBytes, "client registry reset"),
     W(ClientPlayerRva, ClientPlayerBytes, "client player fields"),
+    W(CtrlBranchRva, CtrlBranchBytes, "left click Ctrl branch"),
+    W(BeltTestRva, BeltTestBytes, "left click belt test"),
+    W(BeltRequestRva, BeltRequestBytes, "left click belt request"),
+};
+
+// Checked on their own: only Ctrl + Right Click belt first relies on these.
+const std::array<Witness, 11> BatchWitnesses{
+    W(FreeBeltSlotRva, FreeBeltSlotBytes, "belt search entry"),
+    W(BeltSearchRva, BeltSearchBytes, "belt search"),
+    W(RightClickBodyRva, RightClickBodyBytes, "right click body"),
+    W(BatchWithdrawRva, BatchWithdrawBytes, "batch withdraw request"),
+    W(InventoryGridRva, InventoryGridEntryBytes, "inventory grid entry"),
+    W(GridLayoutRva, InventoryGridLayoutBytes, "inventory grid layout"),
+    W(BeltTypeRva, BeltTypeEntryBytes, "belt type entry"),
+    W(BeltTypeReadRva, BeltTypeReadBytes, "belt type read"),
+    W(BeltRecordRva, BeltRecordBytes, "belts.txt record"),
+    W(SameBeltItemRva, SameBeltItemBytes, "belt column test"),
+    W(HostBeltSearchRva, HostBeltSearchBytes, "host belt search"),
 };
 
 // ---------------------------------------------------------------------------
@@ -531,6 +821,15 @@ using SendUpdateFn     = void(__fastcall*)(void* game, void* owner, void* item, 
 using UnitFlagFn       = void(__fastcall*)(void* unit, std::int32_t on);
 using ItemFlagFn       = void(__fastcall*)(void* item, std::uint32_t flag, std::int32_t on);
 using ItemPageFn       = void(__fastcall*)(void* item, std::uint8_t page);
+using ItemTestFn       = std::uint8_t(__fastcall*)(void* item);
+using WithdrawFn       = void(__fastcall*)(void* item, void* owner, std::uint8_t destination);
+using ItemSoundFn      = std::int32_t(__fastcall*)(void* item);
+using BatchWithdrawFn  = void(__fastcall*)(void* item, void* owner, std::uint8_t destination, std::uint8_t count);
+using FreeBeltSlotFn   = std::int32_t(__fastcall*)(void* inventory, void* item, std::int32_t* cell, std::uint8_t any);
+using InventoryGridFn  = const std::uint8_t*(__fastcall*)(void* inventory, std::uint64_t grid, const void* info);
+using BeltTypeFn       = std::int32_t(__fastcall*)(void* belt);
+using BeltRecordFn     = void*(__fastcall*)(std::uint8_t bank, std::int32_t row, std::int32_t layout, void* out);
+using SameBeltItemFn   = std::int32_t(__fastcall*)(void* item, void* other);
 
 SlotLeftClickFn  OriginalLeftClick{};
 SlotRightClickFn OriginalRightClick{};
@@ -573,6 +872,18 @@ UnitFlagFn       UpdateFlag{};
 ItemFlagFn       ItemFlag{};
 ItemPageFn       ItemPage{};
 UnitFlagFn       MarkDirty{};
+StashViewFn      StackTabView{};
+StashViewFn      CubeRoute{};
+ItemTestFn       BeltAccepts{};
+ItemTestFn       InventoryAccepts{};
+WithdrawFn       WithdrawRequest{};
+ItemSoundFn      ItemSound{};
+BatchWithdrawFn  BatchWithdraw{};
+FreeBeltSlotFn   FreeBeltSlot{};
+InventoryGridFn  InventoryGrid{};
+BeltTypeFn       BeltType{};
+BeltRecordFn     BeltRecord{};
+SameBeltItemFn   SameBeltItem{};
 
 template <typename T>
 auto At(std::uint64_t rva) noexcept -> T {
@@ -606,6 +917,8 @@ std::string       VerifyFailures;
 std::string       CreditTarget = "not resolved";
 std::atomic<bool> ControllerActive{};
 const char*       ControllerStatus = "not installed";
+std::atomic<bool> BatchBeltActive{};               // Ctrl + Right Click belt first
+std::string       BatchBeltStatus = "not checked";
 
 D2RL::Network::ChannelHandle        Channel{ D2RL::Network::InvalidChannelHandle };
 D2RL::Resources::RegistrationHandle StringsHandle{};
@@ -635,6 +948,12 @@ std::atomic<std::uint64_t> RequestsRefused{};
 std::atomic<std::uint64_t> UpgradesDone{};
 std::atomic<std::uint64_t> DowngradesDone{};
 std::atomic<std::uint64_t> UpgradesStoppedFull{};
+std::atomic<std::uint64_t> BeltMoves{};    // Ctrl + Left Clicks sent to the belt
+std::atomic<std::uint64_t> BatchMoves{};        // Ctrl + Right Clicks sent belt first
+std::atomic<std::uint64_t> BatchToBelt{};       // their units sent to the belt
+std::atomic<std::uint64_t> BatchToInventory{};  // their units sent to the inventory
+std::atomic<std::uint64_t> BeltMismatches{};    // belt copies whose first cell was not 3862D0's
+std::atomic<std::uint64_t> HintMisses{};   // Ctrl lines that could not be matched
 std::atomic<std::uint32_t> ConnectionNow{ static_cast<std::uint32_t>(D2RL::Network::ConnectionState::Disconnected) };
 
 std::mutex  LastMutex;
@@ -1130,6 +1449,8 @@ constexpr const char* FallbackDownAll   = "Alt + Right Click to Make {made} {res
 constexpr const char* FallbackDownShort = "Alt + Left Click to Make {made} {result} (Needs {need}, Have {have})";
 constexpr const char* FallbackHoldMake  = " (Hold to Make {made} {result})";
 constexpr const char* FallbackHoldShort = " (Hold to Make {made} {result}: Needs {need}, Have {have})";
+constexpr const char* FallbackMoveToBelt = "{combo} to Move to Belt";
+constexpr const char* FallbackCtrlCombo  = "Ctrl + Left Click";
 
 auto Pattern(const char* key, const char* fallback) -> std::string {
     std::string text;
@@ -1292,10 +1613,137 @@ auto ModifiedClick(void* widget, bool all) noexcept -> bool {
     return true;
 }
 
+auto KeyDown(int key) noexcept -> bool {
+    return (GetKeyState(key) & 0x8000) != 0;
+}
+
+// The test of the game's own Shift + Left Click belt move (2CF872, 2CF882):
+// the stash shows the stack tab, the item is beltable and the belt has room.
+auto BeltFirstApplies(void* item) noexcept -> bool {
+    return item != nullptr && StackTabView() != 0 && BeltAccepts(item) != 0;
+}
+
+// Ctrl + Left Click, belt first (see the header): the game's belt request in
+// place of its inventory move, for an item the belt takes right now. True
+// when the click was sent to the belt.
+auto BeltFirstClick(void* widget) noexcept -> bool {
+    if (!Active.load() || !KeyDown(VK_CONTROL)) return false;
+    void* const item = SlotItem(widget);
+    if (item == nullptr || CursorItem() != nullptr || StackCount(item) == 0) return false;
+    if (KeyDown(VK_SHIFT) && CubeRoute() != 0) return false;   // the game's move to the cube
+    if (!BeltFirstApplies(item)) return false;                 // the game's move to the inventory
+    void* const player = LocalPlayer();
+    void* const owner  = player != nullptr ? (StashView() != 0 ? StashOwnerA(player) : StashOwnerB(player)) : nullptr;
+    if (owner == nullptr) return false;
+    WithdrawRequest(item, owner, BeltDestination);
+    (void)PlaySound(ItemSound(item), nullptr, 0, 0, false);
+    BeltMoves.fetch_add(1);
+    return true;
+}
+
+// The next cell of the belt search of 3862D0 (3864C7..3865A1) for a unit of
+// item, on a copy of the belt's cells; -1 when the belt is full. same is the
+// column test, 36A8D0(item, bottom). A cell past the end of the copy counts
+// as taken.
+template <typename Same>
+auto NextBeltCell(const std::array<void*, MaxBeltCells>& cells, std::size_t size, std::uint32_t boxes, void* item,
+        Same&& same) -> std::int32_t {
+    for (std::uint32_t column = 0; column < BeltColumns; ++column) {
+        if (column >= size || cells[column] == nullptr) continue;
+        if (!same(item, cells[column]) || column >= boxes) continue;
+        for (std::uint32_t at = column; at < boxes; at += BeltColumns) {
+            if (at < size && cells[at] == nullptr) return static_cast<std::int32_t>(at);
+        }
+    }
+    for (std::uint32_t column = 0; column < BeltColumns; ++column) {
+        if (column < size && cells[column] == nullptr) return static_cast<std::int32_t>(column);
+    }
+    return -1;
+}
+
+// The belt's box count, as 3862D0 reads it (38643D..3864A2): the belts.txt
+// record of the belt in body cell 8, row 2 without a belt.
+auto BeltBoxes(void* inventory) noexcept -> std::uint32_t {
+    std::int32_t row = NoBeltRow;
+    if (const std::uint8_t* const body = InventoryGrid(inventory, BodyGrid, At<const void*>(BodyGridInfoRva))) {
+        void* const* const bodyCells = Read<void* const*>(body, GridCellsOffset);
+        void* const belt = bodyCells != nullptr ? bodyCells[BeltBodyCell] : nullptr;
+        if (belt != nullptr) row = BeltType(belt);
+    }
+    void* const owner = Read<void*>(inventory, InventoryOwnerOffset);
+    if (owner == nullptr) return 0;
+    alignas(16) std::uint8_t record[BeltRecordSize]{};
+    (void)BeltRecord(ItemBank(owner), row, 0, record);
+    return record[BeltBoxesOffset];
+}
+
+// How many of want units of item the belt takes, each where the game's belt
+// search puts it (see the header). Called once BeltAccepts said the belt
+// takes one.
+auto BeltRoom(void* item, std::uint32_t want) noexcept -> std::uint32_t {
+    void* const player = LocalPlayer();
+    void* const inventory = player != nullptr ? UnitInventory(player, SourceTag, __LINE__) : nullptr;
+    if (inventory == nullptr) return 0;
+    std::int32_t first = -1;
+    if (FreeBeltSlot(inventory, item, &first, 1) == 0) return 0;
+    const std::uint32_t boxes = BeltBoxes(inventory);
+    const std::uint8_t* const grid = InventoryGrid(inventory, BeltGrid, At<const void*>(BeltGridInfoRva));
+    void* const* const source = grid != nullptr ? Read<void* const*>(grid, GridCellsOffset) : nullptr;
+    const std::size_t size = grid != nullptr ? std::size_t{ grid[GridWidthOffset] } * grid[GridHeightOffset] : 0;
+    if (source == nullptr || size == 0 || size > MaxBeltCells) {
+        BeltMismatches.fetch_add(1);
+        return 1;
+    }
+    std::array<void*, MaxBeltCells> cells{};
+    std::copy(source, source + size, cells.begin());
+    const auto same = [](void* a, void* b) noexcept { return SameBeltItem(a, b) != 0; };
+    std::uint32_t taken = 0;
+    while (taken < want) {
+        const std::int32_t at = NextBeltCell(cells, size, boxes, item, same);
+        if (at < 0) break;
+        if (taken == 0 && at != first) break;
+        cells[static_cast<std::size_t>(at)] = item;   // the unit the host puts there is of the same item
+        ++taken;
+    }
+    if (taken == 0) {
+        BeltMismatches.fetch_add(1);
+        return 1;
+    }
+    return taken;
+}
+
+// Ctrl + Right Click, belt first (see the header): the game's Ctrl + Right
+// Click count, to the belt as far as it takes them and the rest to the
+// inventory. True when the click was sent from here.
+auto BeltFirstBatchClick(void* widget) noexcept -> bool {
+    if (!Active.load() || !BatchBeltActive.load() || !KeyDown(VK_CONTROL)) return false;
+    void* const item = SlotItem(widget);
+    if (item == nullptr || CursorItem() != nullptr) return false;
+    const std::uint32_t units = std::min(StackCount(item), BatchMoveLimit);
+    if (units == 0) return false;
+    if (KeyDown(VK_SHIFT) && CubeRoute() != 0) return false;   // the game's move to the cube
+    if (!BeltFirstApplies(item)) return false;                 // the game's move to the inventory
+    void* const player = LocalPlayer();
+    void* const owner  = player != nullptr ? (StashView() != 0 ? StashOwnerA(player) : StashOwnerB(player)) : nullptr;
+    if (owner == nullptr) return false;
+    const std::uint32_t belt = std::min(BeltRoom(item, units), units);
+    if (belt == 0) return false;
+    BatchWithdraw(item, owner, BeltDestination, static_cast<std::uint8_t>(belt));
+    const std::uint32_t rest = units - belt;
+    if (rest != 0 && InventoryAccepts(item) != 0) {
+        BatchWithdraw(item, owner, InventoryDestination, static_cast<std::uint8_t>(rest));
+        BatchToInventory.fetch_add(rest);
+    }
+    (void)PlaySound(ItemSound(item), nullptr, 0, 0, false);
+    BatchMoves.fetch_add(1);
+    BatchToBelt.fetch_add(belt);
+    return true;
+}
+
 std::int64_t __fastcall HookedLeftClick(void* widget, std::int64_t event) {
     bool mine = false;
     try {
-        mine = ModifiedClick(widget, false);
+        mine = ModifiedClick(widget, false) || BeltFirstClick(widget);
     } catch (...) {
         mine = false;
     }
@@ -1305,7 +1753,7 @@ std::int64_t __fastcall HookedLeftClick(void* widget, std::int64_t event) {
 std::int64_t __fastcall HookedRightClick(void* widget) {
     bool mine = false;
     try {
-        mine = ModifiedClick(widget, true);
+        mine = ModifiedClick(widget, true) || BeltFirstBatchClick(widget);
     } catch (...) {
         mine = false;
     }
@@ -1360,9 +1808,146 @@ void AppendHints(NativeString* out, void* item) {
     if (down != DownSteps.end()) AppendStepLines(out, down->second, have, DowngradeLines);
 }
 
+// sprintf with exactly one %s, the way the game builds its hint line
+// (1400CE510 is a vsnprintf wrapper); false for any other conversion.
+auto FormatOneString(const std::string& pattern, const std::string& value, std::string& out) -> bool {
+    out.clear();
+    bool used = false;
+    for (std::size_t i = 0; i < pattern.size(); ++i) {
+        if (pattern[i] != '%') {
+            out += pattern[i];
+            continue;
+        }
+        if (i + 1 >= pattern.size()) return false;
+        const char c = pattern[++i];
+        if (c == '%') {
+            out += '%';
+        } else if (c == 's' && !used) {
+            out += value;
+            used = true;
+        } else {
+            return false;
+        }
+    }
+    return used;
+}
+
+// sprintf with exactly one %d, %i or %u, the way the game adds its count to a
+// move line (1400783D0 appends a vsnprintf); false for any other conversion.
+auto FormatOneNumber(const std::string& pattern, std::uint64_t value, std::string& out) -> bool {
+    out.clear();
+    bool used = false;
+    for (std::size_t i = 0; i < pattern.size(); ++i) {
+        if (pattern[i] != '%') {
+            out += pattern[i];
+            continue;
+        }
+        if (i + 1 >= pattern.size()) return false;
+        const char c = pattern[++i];
+        if (c == '%') {
+            out += '%';
+        } else if ((c == 'd' || c == 'i' || c == 'u') && !used) {
+            out += std::to_string(value);
+            used = true;
+        } else {
+            return false;
+        }
+    }
+    return used;
+}
+
+// The count the game adds to its inventory line (2CED0A): on a stack of 2 or
+// more, InventoryItemTooltipAppenderBulkMovePostfix with min(count, 3).
+auto BatchSuffix(void* item) -> std::string {
+    const std::uint32_t have = StackCount(item);
+    if (have < 2) return {};
+    std::string pattern;
+    std::string text;
+    if (!TextForKey("InventoryItemTooltipAppenderBulkMovePostfix", pattern)
+            || !FormatOneNumber(pattern, std::min(have, BatchMoveLimit), text)) {
+        HintMisses.fetch_add(1);
+        return {};
+    }
+    return text;
+}
+
+auto SplitText(const std::string& text, const std::string& separator) -> std::vector<std::string> {
+    std::vector<std::string> lines;
+    if (text.empty()) return lines;
+    std::size_t start = 0;
+    for (std::size_t at = text.find(separator); at != std::string::npos; at = text.find(separator, start)) {
+        lines.push_back(text.substr(start, at - start));
+        start = at + separator.size();
+    }
+    lines.push_back(text.substr(start));
+    return lines;
+}
+
+auto JoinText(const std::vector<std::string>& lines, const std::string& separator) -> std::string {
+    std::string text;
+    for (std::size_t i = 0; i < lines.size(); ++i) {
+        if (i != 0) text += separator;
+        text += lines[i];
+    }
+    return text;
+}
+
+// The game's hint lines whose clicks this plugin changes (see the header).
+// Runs before the plugin's own lines are added, so out holds only the game's.
+void RewriteNativeHints(NativeString* out, void* item) {
+    if (out->data == nullptr) return;
+    std::uint32_t code = 0;
+    const bool shiftIsMine = ItemCodeOf(item, code) && Listed.contains(code);
+    const bool beltFirst   = BeltFirstApplies(item);
+    if (!shiftIsMine && !beltFirst) return;
+    if (Separator.empty() && !Localized("d2r:newline", Separator)) Separator = "\n";
+    std::vector<std::string> lines = SplitText(std::string(out->data, out->size), Separator);
+    bool changed = false;
+    std::string equip;
+    if (shiftIsMine && TextForKey("InventoryItemTooltipAppenderEquip", equip) && !equip.empty()) {
+        changed = std::erase(lines, equip) != 0;
+    }
+    if (beltFirst) {
+        std::string combo;
+        std::string pattern;
+        std::string inventory;
+        const bool haveCombo = TextForKey("InventoryItemTooltipKeyComboCtrlLC", combo) && !combo.empty();
+        const bool built     = haveCombo && TextForKey("InventoryItemTooltipAppenderMoveInventory", pattern)
+            && FormatOneString(pattern, combo, inventory) && !inventory.empty();
+        std::string belt = Pattern("MaterialUpgradeMoveToBelt", FallbackMoveToBelt);
+        Fill(belt, "{combo}", haveCombo ? combo : std::string(FallbackCtrlCombo));
+        bool done = false;
+        for (std::string& line : lines) {
+            const std::size_t at = built ? line.find(inventory) : std::string::npos;
+            if (at == std::string::npos) continue;
+            line.replace(at, inventory.size(), belt);
+            done = true;
+            break;
+        }
+        if (!done && InventoryAccepts(item) == 0) {
+            lines.insert(lines.begin(), BatchBeltActive.load() ? belt + BatchSuffix(item) : belt);
+            done = true;
+        }
+        if (done) {
+            changed = true;
+        } else {
+            HintMisses.fetch_add(1);
+        }
+    }
+    if (!changed) return;
+    const std::string text = JoinText(lines, Separator);
+    out->size    = 0;
+    out->data[0] = '\0';
+    if (!text.empty()) (void)StringAppend(out, text.data(), text.size());
+}
+
 NativeString* __fastcall HookedHintLines(void* self, NativeString* out, void* item) {
     NativeString* const result = OriginalHintLines(self, out, item);
     if (!Active.load() || out == nullptr || item == nullptr) return result;
+    try {
+        RewriteNativeHints(out, item);
+    } catch (...) {
+    }
     try {
         AppendHints(out, item);
     } catch (...) {
@@ -1883,6 +2468,26 @@ auto VerifyAll() -> bool {
     return ok;
 }
 
+// The game code only Ctrl + Right Click belt first relies on. A mismatch turns
+// that click off and leaves the rest of the plugin running.
+void VerifyBatch() {
+    std::string failures;
+    for (const Witness& witness : BatchWitnesses) {
+        if (Context->CheckExpectedBytes(witness.rva, witness.bytes, witness.size)) continue;
+        char line[160];
+        std::snprintf(line, sizeof(line), "%s (%llX); ", witness.name, static_cast<unsigned long long>(witness.rva));
+        failures += line;
+    }
+    if (failures.empty()) {
+        BatchBeltStatus = "on";
+        BatchBeltActive.store(true);
+        return;
+    }
+    BatchBeltStatus = "off, byte check failed: " + failures;
+    D2RL::LogWarnF(Context, "MaterialUpgrade: Ctrl + Right Click belt first is off, its byte check failed: %s; the "
+        "game's own Ctrl + Right Click runs.", failures.c_str());
+}
+
 // The count fix: each site is rewritten unless it already holds the fixed bytes.
 auto ApplyCountFix() -> bool {
     for (FixSite& site : FixSites) {
@@ -1958,6 +2563,18 @@ void BindNatives() noexcept {
     ItemFlag         = At<ItemFlagFn>(ItemFlagRva);
     ItemPage         = At<ItemPageFn>(ItemPageRva);
     MarkDirty        = At<UnitFlagFn>(MarkDirtyRva);
+    StackTabView     = At<StashViewFn>(StackTabViewRva);
+    CubeRoute        = At<StashViewFn>(CubeRouteRva);
+    BeltAccepts      = At<ItemTestFn>(BeltAcceptsRva);
+    InventoryAccepts = At<ItemTestFn>(InventoryAcceptsRva);
+    WithdrawRequest  = At<WithdrawFn>(WithdrawRequestRva);
+    ItemSound        = At<ItemSoundFn>(ItemSoundRva);
+    BatchWithdraw    = At<BatchWithdrawFn>(BatchWithdrawRva);
+    FreeBeltSlot     = At<FreeBeltSlotFn>(FreeBeltSlotRva);
+    InventoryGrid    = At<InventoryGridFn>(InventoryGridRva);
+    BeltType         = At<BeltTypeFn>(BeltTypeRva);
+    BeltRecord       = At<BeltRecordFn>(BeltRecordRva);
+    SameBeltItem     = At<SameBeltItemFn>(SameBeltItemRva);
 }
 
 auto QueryServices() -> bool {
@@ -2166,6 +2783,13 @@ auto __cdecl StatusCommand(D2R::Game::Client*, const D2RL::ConsoleCommandContext
         Count(ClicksRefused), Count(ClicksDropped), Count(RequestsReceived), Count(RequestsRefused),
         Count(UpgradesDone), Count(DowngradesDone), Count(UpgradesStoppedFull));
     say(line);
+    std::snprintf(line, sizeof(line), "  Ctrl + Left Click: %llu sent to the belt first. Hint lines not matched: %llu.",
+        Count(BeltMoves), Count(HintMisses));
+    say(line);
+    std::snprintf(line, sizeof(line), "  Ctrl + Right Click belt first: %.200s. %llu sent, %llu units to the belt and "
+        "%llu to the inventory; belt counts not matching the game: %llu.", BatchBeltStatus.c_str(), Count(BatchMoves),
+        Count(BatchToBelt), Count(BatchToInventory), Count(BeltMismatches));
+    say(line);
     {
         std::lock_guard lock(LastMutex);
         std::snprintf(line, sizeof(line), "  last host request: %s", LastResult.c_str());
@@ -2182,7 +2806,8 @@ constexpr D2RL::PluginInfo PluginInfoData{
     .version     = PluginVersion,
     .author      = "CelestialRayOne",
     .description = "Shift + click upgrades and Alt + click downgrades materials in the stash's stack tabs in place, by "
-                   "recipe chains from the config file; with the right button, the whole stack.",
+                   "recipe chains from the config file; with the right button, the whole stack. Ctrl + click puts "
+                   "potions in the belt first.",
     .flags       = D2RL::PluginFlags::Shared | D2RL::PluginFlags::NativeHooks,
 };
 
@@ -2223,6 +2848,7 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
         Context->LogError("MaterialUpgrade: this D2R build does not match; nothing was installed.");
         return true;
     }
+    VerifyBatch();
     BindNatives();
     if (!ResolveCredit()) {
         State = PluginState::UnsupportedBuild;
@@ -2254,6 +2880,7 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
 D2RL_PLUGIN_EXPORT void D2RLoaderUnloadPlugin() noexcept {
     Active.store(false);
     ControllerActive.store(false);
+    BatchBeltActive.store(false);
     if (Context == nullptr) return;
     if (NetworkSvc != nullptr && Channel != D2RL::Network::InvalidChannelHandle) {
         (void)NetworkSvc->unregisterChannel(Context, Channel);

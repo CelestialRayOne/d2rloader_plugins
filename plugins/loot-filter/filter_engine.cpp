@@ -36,6 +36,32 @@ auto StatsPass(const std::vector<StatCheck>& checks, bool anyOf, const auto& rea
     return !anyOf;
 }
 
+// A formula's stat calls, answered from the item and the player.
+class RuleValues final : public FormulaValues {
+public:
+    RuleValues(const ItemSubject& item, const PlayerSubject* player) : item_(item), player_(player) {}
+
+    [[nodiscard]] auto Value(const FormulaStat& call) const -> std::int64_t override {
+        if (call.stat < 0) return 0;
+        const bool anyLevel = call.mode == FormulaStat::Mode::SkillAnyLevel;
+        if (call.source == FormulaStat::Source::Player) {
+            if (player_ == nullptr) return 0;
+            return anyLevel ? player_->StatForSkill(call.stat, call.param) : player_->Stat(call.stat, call.param);
+        }
+        switch (call.mode) {
+        case FormulaStat::Mode::Exact:         return item_.Stat(call.stat, call.param);
+        case FormulaStat::Mode::Max:           return item_.StatMax(call.stat);
+        case FormulaStat::Mode::Sum:           return item_.StatSum(call.stat);
+        case FormulaStat::Mode::SkillAnyLevel: return item_.StatForSkill(call.stat, call.param);
+        }
+        return 0;
+    }
+
+private:
+    const ItemSubject&   item_;
+    const PlayerSubject* player_;
+};
+
 // Every condition except the item code and the location.
 auto OtherConditionsPass(const Conditions& when, const ItemSubject& item, const PlayerSubject* player) -> bool {
     if (when.quality.IsSet() && !when.quality.Matches(item.Quality())) return false;
@@ -79,6 +105,11 @@ auto OtherConditionsPass(const Conditions& when, const ItemSubject& item, const 
         if (!StatsPass(when.playerStats, false, playerStat)) return false;
         if (!StatsPass(when.playerStatsAnyOf, true, playerStat)) return false;
         if (when.difficulty.IsSet() && !when.difficulty.Matches(player->Difficulty())) return false;
+    }
+    if (when.formula) {
+        if (when.formula->readsPlayer && player == nullptr) return false;
+        const RuleValues values(item, player);
+        if (EvaluateFormula(*when.formula, values) == 0) return false;
     }
     return true;
 }
@@ -234,6 +265,8 @@ void Evaluate(const FilterProgram& program, const ItemSubject& item, const Playe
     const bool onGround = location == Location::Ground;
     const std::uint32_t code = item.Code();
     bool anyMatch = false;
+    bool shown = false;  // a matched "show" rule: no later rule hides the item
+    const bool identified = item.Identified();
     std::string name = outcome.nameTemplate;
 
     for (const Rule& rule : program.rules) {
@@ -246,8 +279,14 @@ void Evaluate(const FilterProgram& program, const ItemSubject& item, const Playe
         if (!CodeMatches(rule.when, code)) continue;
         const bool locationOk = (rule.when.locations & locationBit) != 0;
         if (!locationOk) continue;
+        // The client has no modifiers for an unidentified item, so a rule that
+        // checks them skips it entirely: no actions, no hide.
+        if (rule.skipsUnidentified && !identified) {
+            outcome.skippedUnidentified.push_back(rule.number);
+            continue;
+        }
         if (!OtherConditionsPass(rule.when, item, player)) {
-            if (onGround && rule.then.hideIfOtherConditionsFail.value_or(false)) {
+            if (onGround && !shown && rule.then.hideIfOtherConditionsFail.value_or(false)) {
                 outcome.hidden = true;
                 outcome.hiddenBy = rule.number;
                 break;
@@ -257,16 +296,20 @@ void Evaluate(const FilterProgram& program, const ItemSubject& item, const Playe
         anyMatch = true;
         outcome.matchedRules.push_back(rule.number);
         const Actions& then = rule.then;
-        if (then.chatMessage) {
+        if (then.show.value_or(false) && !shown) {
+            shown = true;
+            outcome.shownBy = rule.number;
+        }
+        if (program.chatNotifications && then.chatMessage) {
             outcome.chatMessages.push_back(ExpandText(then.chatMessage->Pick(settings.language), item, player, false, settings.strings));
-        } else if (then.notify.value_or(false)) {
+        } else if (program.chatNotifications && then.notify.value_or(false)) {
             const Text& format = program.notifications.dropFormat;
             outcome.chatMessages.push_back(ExpandText(format.Empty() ? std::string(DefaultDropFormat) : format.Pick(settings.language),
                                                       item, player, false, settings.strings));
         }
         if (then.sound) outcome.sounds.push_back(SoundPlay{ &*then.sound, then.soundVolume.value_or(program.soundVolume.value_or(100)) });
-        if (onGround && then.hide.value_or(false)) {
-            if (then.chatMessageWhenHidden) {
+        if (onGround && !shown && then.hide.value_or(false)) {
+            if (program.chatNotifications && then.chatMessageWhenHidden) {
                 outcome.chatMessages.push_back(
                     ExpandText(then.chatMessageWhenHidden->Pick(settings.language), item, player, false, settings.strings));
             }

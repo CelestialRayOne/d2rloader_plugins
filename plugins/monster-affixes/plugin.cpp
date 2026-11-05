@@ -56,6 +56,54 @@
 //      0x499210, which does run the spawn entries; the resist routine accepts
 //      minions there too.
 //
+//   9. AURA ENCHANTED: with aura_enchanted_selection = "3.1" in d2rloader.toml,
+//      D2RCore!ApplyAuraEnchanted runs the game's own routine 0x495CD0 (unit,
+//      mod, flag). Once any aura key is in the TOML that routine is replaced
+//      by the same steps, with the TOML's skills:
+//        - monstats row 704 (Uber Mephisto): skill 123 at level 20 and nothing
+//          else (0x495D3E);
+//        - superuniques row 37 (Lord De Seis): record 5 of the main list
+//          (0x495DCF);
+//        - every other monster rolls the main list on its name seed (0x38E370):
+//          state (seed, 666), one step seed * 6AC690C5h + 666, the low 32 bits
+//          modulo the total weight of the records at or under its level;
+//        - the skill goes in at (mlvl + offset) * multiplier / divisor, kept
+//          in 1..99 (0x433910, mode 1) and becomes the right-hand skill
+//          (0x438A70), which starts the aura;
+//        - a herald (rank flag 200h) rolls the herald list the same way and
+//          gets that skill as stat 151 with the skill as layer, in its stat
+//          list flagged 10000h (0x2F5810, else 0x2F7300 and 0x2F2CB0; the write
+//          is 0x2F7C00).
+//      The lists are 24-byte records (min level, weight, level offset,
+//      multiplier, divisor, skill): main at 0x1D1DE70 (7), herald at 0x1D1DF20
+//      (4). A list the TOML does not set is read from the game's table at roll
+//      time, so a static patch on it still counts. The lists in use are
+//      published as the "aura-enchanted" service for Monster Display.
+//
+//  10. HIGH LEVEL MONSTERS: past high_level_start, every monster level (stat
+//      12) raises Extra Strong's two bonuses and Magic Resistant's +50 by a
+//      percent of their own value and shortens the Mana Burn cooldown by a
+//      percent. Extra Strong and Magic Resistant read the level at spawn,
+//      Mana Burn reads the burning monster's level at the hit.
+//
+//  11. EXTRA FAST FRAMES: at spawn an Extra Fast monster past
+//      high_level_start gets fast_frames_percent_per_level percent per level
+//      (at most 100) in the itemstatcost.txt stat fast_frames_stat, which is
+//      sent to clients (Send Other). UNITS_UpdateAnimRateAndVelocity 0x350B40
+//      ends every path by handing the unit to 0x980E0 (the call at 0x350C87,
+//      after the 0x350C73 call frenzy-fpa redirects). 0x980E0 is hooked and
+//      acts only on the call that returns to 0x350C8C. For a monster with the
+//      stat in GH, A1, A2, BL, SC, S1-S4 or SQ the action gets that percent
+//      fewer frames, never fewer than fast_frames_minimum: the rate word at
+//      unit+68h (and the sequence rate at +54h when it holds the same value)
+//      becomes the slowest rate that reaches that many frames. Frames are
+//      ceil(256 * frames per direction / rate) - 1, frames per direction from
+//      the animation record (unit+70h, +8). SQ uses the sequence model
+//      (frenzy-fpa: length unit+48h, ceil(length / rate) frames) and keeps
+//      every hit of the sequence. 0x350B40 is shared code, so server units
+//      (timing, hits) and client units (animation) follow the same rule from
+//      the same stat; that is why the plugin is Shared.
+//
 // Built against D2R 3.3 in the D2RLoader 1.3.1 process image (base 0x140000000),
 // PluginSDK 0.3.0. Every hook site and patch site is checked byte for byte before
 // anything is written; nothing is installed for a feature whose check fails.
@@ -68,6 +116,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <limits>
 #include <mutex>
 #include <unordered_map>
 
@@ -152,11 +201,99 @@ constexpr ReturnPatch SpectralElementPatch { 0x004A11E0, RetOverStoreRbx, Ret5, 
 constexpr ReturnPatch SpectralMissilePatch { 0x004A0F80, RetOverStoreRbx, Ret5, 5, "Spectral Hit missile element 0x4A0F80" };
 constexpr ReturnPatch ManaBurnSpawnPatch { 0x00496CE0, RetOverPushRexRbx, Ret2, 2, "Mana Burn spawn routine 0x496CE0" };
 
+// The end of UNITS_UpdateAnimRateAndVelocity 0x350B40 (unit in rsi), past the
+// 0x350C73 call frenzy-fpa redirects: lea rdx,[rbp+18h] / mov [rbp+18h],rsi /
+// lea rcx,[rax+168h] / call 0x980E0. 0x980E0 gets the updated unit by address
+// in rdx. Its entry, push r12 / push r15 / sub rsp,0A8h: eleven bytes, no
+// relative operands. Only the call returning to 0x350C8C is acted on.
+constexpr std::uint64_t RateNotifyRva       = 0x000980E0;
+constexpr std::uint8_t  RateNotifyPrologue[] { 0x41, 0x54, 0x41, 0x57, 0x48, 0x81, 0xEC, 0xA8, 0x00, 0x00, 0x00 };
+constexpr std::uint64_t RateNotifyCallRva   = 0x00350C78;
+constexpr std::uint64_t RateNotifyReturnRva = 0x00350C8C;
+constexpr std::uint8_t  RateNotifyCallBytes[] {
+	0x48, 0x8D, 0x55, 0x18, 0x48, 0x89, 0x75, 0x18, 0x48, 0x8D, 0x88, 0x68, 0x01, 0x00, 0x00, 0xE8, 0x54, 0x74, 0xD4, 0xFF };
+
 // Affix callback table, read only: 45 rows (monumod.txt id) x 6 pointers.
 // The replacement landed-hit dispatcher reads slot 3 from it.
 constexpr std::uint64_t AffixTableRva = 0x02396210;
 constexpr std::uint32_t AffixSlots    = 6;
 constexpr std::uint32_t SlotLandedHit = 3;
+
+// The game's Aura Enchanted routine (unit, mod, flag), reached from
+// D2RCore!ApplyAuraEnchanted at aura_enchanted_selection "3.1". push rbp /
+// push rbx / push rdi / mov rbp,rsp / sub rsp,70h / mov ebx,r8d / mov rdi,rcx:
+// seventeen bytes, no relative operands.
+constexpr std::uint64_t AuraEnchantedRva = 0x00495CD0;
+constexpr std::uint8_t  AuraEnchantedPrologue[] {
+	0x40, 0x55, 0x53, 0x57, 0x48, 0x8B, 0xEC, 0x48, 0x83, 0xEC, 0x70, 0x41, 0x8B, 0xD8, 0x48, 0x8B, 0xF9 };
+
+// Its body, checked before it is replaced: every step the replacement repeats.
+// 0x495D3E  row 704: skill 123 at level 20, nothing else
+constexpr std::uint8_t AuraUberBody[] {
+	0xB9, 0xC0, 0x02, 0x00, 0x00, 0x66, 0x3B, 0xC1, 0x48, 0x8B, 0xCF, 0x75, 0x32, 0xBA, 0x7B, 0x00,
+	0x00, 0x00, 0x44, 0x8D, 0x4A, 0x86, 0x44, 0x8D, 0x42, 0x99 };
+// 0x495D97  monster level (stat 12), at least 1
+constexpr std::uint8_t AuraLevelBody[] {
+	0x41, 0x8D, 0x50, 0x0C, 0xE8, 0x80, 0xF2, 0xE5, 0xFF, 0x85, 0xC0, 0x8B, 0xF0, 0x41, 0xBE, 0x01,
+	0x00, 0x00, 0x00, 0x48, 0x8B, 0xCF, 0x41, 0x0F, 0x4E, 0xF6 };
+// 0x495DB1  name seed and superunique row
+constexpr std::uint8_t AuraSeedBody[] {
+	0xE8, 0xBA, 0x85, 0xEF, 0xFF, 0x48, 0x8B, 0xCF, 0x44, 0x0F, 0xB7, 0xF8, 0xE8, 0x0E, 0x86, 0xEF,
+	0xFF };
+// 0x495DCF  superunique 37 takes record 5
+constexpr std::uint8_t AuraDeSeisBody[] {
+	0x66, 0x83, 0xF8, 0x25, 0x75, 0x08, 0x8D, 0x4B, 0x05 };
+// 0x495DDD  roll state (seed, 666)
+constexpr std::uint8_t AuraStateBody[] {
+	0x48, 0x8D, 0x4D, 0x20, 0xE8, 0x1A, 0x13, 0xED, 0xFF, 0x41, 0x8B, 0xD7, 0x48, 0x8D, 0x4D, 0x20,
+	0xE8, 0x1E, 0x13, 0xED, 0xFF };
+// 0x495E00  main list at 1D1DE70: min level, weight
+constexpr std::uint8_t AuraMainReadBody[] {
+	0x48, 0x8D, 0x04, 0x49, 0x41, 0x39, 0xB4, 0xC4, 0x70, 0xDE, 0xD1, 0x01, 0x7F, 0x0F, 0x41, 0x8B,
+	0x84, 0xC4, 0x74, 0xDE, 0xD1, 0x01 };
+// 0x495E1D  main list: 7 records
+constexpr std::uint8_t AuraMainCountBody[] {
+	0x48, 0xFF, 0xC1, 0x48, 0x83, 0xF9, 0x07, 0x72, 0xDA };
+// 0x495E3B  roll step 6AC690C5h
+constexpr std::uint8_t AuraStepBody[] {
+	0x4C, 0x69, 0xC0, 0xC5, 0x90, 0xC6, 0x6A };
+// 0x495EF2  main list: the picked record
+constexpr std::uint8_t AuraRecordBody[] {
+	0x41, 0x0F, 0x10, 0x94, 0xCC, 0x70, 0xDE, 0xD1, 0x01, 0xF2, 0x41, 0x0F, 0x10, 0x84, 0xCC, 0x80,
+	0xDE, 0xD1, 0x01 };
+// 0x495F46  skill added, mode 1
+constexpr std::uint8_t AuraAddSkillBody[] {
+	0x45, 0x8B, 0xCE, 0x48, 0xC1, 0xEA, 0x20, 0x48, 0x8B, 0xCF, 0xE8, 0xBB, 0xD9, 0xF9, 0xFF };
+// 0x495F59  skill made the right-hand skill
+constexpr std::uint8_t AuraSelectBody[] {
+	0x41, 0xB9, 0xFF, 0xFF, 0xFF, 0xFF, 0x33, 0xD2, 0x48, 0x8B, 0xCF, 0xE8, 0x07, 0x2B, 0xFA, 0xFF };
+// 0x495F69  herald rank flag 200h
+constexpr std::uint8_t AuraHeraldFlagBody[] {
+	0xBA, 0x00, 0x02, 0x00, 0x00, 0x48, 0x8B, 0xCF, 0xE8, 0xFA, 0x88, 0xEF, 0xFF, 0x84, 0xC0, 0x0F,
+	0x84, 0xD2, 0x01, 0x00, 0x00 };
+// 0x495FA0  herald list at 1D1DF20: min level, weight
+constexpr std::uint8_t AuraHeraldReadBody[] {
+	0x48, 0x8D, 0x04, 0x49, 0x41, 0x39, 0xB4, 0xC4, 0x20, 0xDF, 0xD1, 0x01, 0x7F, 0x0F, 0x41, 0x8B,
+	0x84, 0xC4, 0x24, 0xDF, 0xD1, 0x01 };
+// 0x495FBD  herald list: 4 records
+constexpr std::uint8_t AuraHeraldCountBody[] {
+	0x48, 0xFF, 0xC1, 0x48, 0x83, 0xF9, 0x04, 0x72, 0xDA };
+// 0x4960D2  herald stat list flagged 10000h
+constexpr std::uint8_t AuraListFindBody[] {
+	0xBA, 0x00, 0x00, 0x01, 0x00, 0x48, 0x8B, 0xCF, 0xE8, 0x31, 0xF7, 0xE5, 0xFF };
+// 0x4960E7  new stat list (0, 0, type, id)
+constexpr std::uint8_t AuraListNewBody[] {
+	0x41, 0xB8, 0xF2, 0x05, 0x00, 0x00, 0x48, 0x8D, 0x15, 0x9C, 0x7E, 0x88, 0x01, 0x48, 0x8B, 0xCF,
+	0xE8, 0x34, 0x42, 0xEB, 0xFF, 0x48, 0x8B, 0xCF, 0x8B, 0xD8, 0xE8, 0xCA, 0x58, 0xEB, 0xFF, 0x44,
+	0x8B, 0xCB, 0x44, 0x8B, 0xC0, 0x33, 0xD2, 0x33, 0xC9, 0xE8, 0xEB, 0x11, 0xE6, 0xFF };
+// 0x49611D  stat list attached, update 1
+constexpr std::uint8_t AuraListAttachBody[] {
+	0x45, 0x8B, 0xC6, 0x48, 0x8B, 0xD0, 0x48, 0x8B, 0xCF, 0xE8, 0x85, 0xCB, 0xE5, 0xFF };
+// 0x49612B  stat 151, the skill word as layer
+constexpr std::uint8_t AuraStatWriteBody[] {
+	0x48, 0x8B, 0xCF, 0xE8, 0xAD, 0x3F, 0xEB, 0xFF, 0x0F, 0xB7, 0x4D, 0xDC, 0x44, 0x8B, 0xCE, 0x90,
+	0x89, 0x4C, 0x24, 0x20, 0x41, 0xB8, 0x97, 0x00, 0x00, 0x00, 0x0F, 0xB6, 0xC8, 0x48, 0x8B, 0xD3,
+	0xE8, 0xB0, 0x1A, 0xE6, 0xFF };
 
 // ---------------------------------------------------------------------------
 // Game functions
@@ -228,6 +365,7 @@ using SetRankFlagFn    = std::uint64_t(__fastcall*)(void* unit, std::uint32_t fl
 using DispatchFn       = std::uint64_t(__fastcall*)(void* game, void* unit) noexcept;
 using AffixCallbackFn  = std::uint64_t(__fastcall*)(void* game, void* unit, std::uint64_t affix, std::uint64_t unique) noexcept;
 using SpawnFn          = void(__fastcall*)(void* unit, std::int32_t affix, std::int32_t unique) noexcept;
+using RateNotifyFn     = std::uint64_t(__fastcall*)(void* container, void* unitSlot, void* r8, void* r9) noexcept;
 
 GetUnitStatFn    GetUnitStat    = nullptr;
 SetUnitStatFn    SetUnitStat    = nullptr;
@@ -256,6 +394,111 @@ SetRankFlagFn    OriginalSetRankFlag    = nullptr;
 DispatchFn       OriginalModeDispatch   = nullptr;
 DispatchFn       OriginalStruckDispatch = nullptr;
 SpawnFn          OriginalFastSpawn      = nullptr;
+RateNotifyFn     OriginalRateNotify     = nullptr;
+
+// ---------------------------------------------------------------------------
+// Aura Enchanted natives and lists
+// ---------------------------------------------------------------------------
+
+constexpr std::uint64_t ClassIdRva        = 0x00349860;  // (unit, file, line) -> unit+4, the monstats.txt row
+constexpr std::uint64_t NameSeedRva       = 0x0038E370;  // (unit) -> word at MonsterData+18h
+constexpr std::uint64_t SuperUniqueRva    = 0x0038E3D0;  // (unit) -> word at MonsterData+2Ah, FFFFh for none
+constexpr std::uint64_t SetSkillRva       = 0x00433910;  // (unit, skill, level, mode)
+constexpr std::uint64_t SelectSkillRva    = 0x00438A70;  // (unit, left, skill, owner)
+constexpr std::uint64_t FindStatListRva   = 0x002F5810;  // (unit, flags)
+constexpr std::uint64_t AllocStatListRva  = 0x002F7300;  // (flags, end frame, owner type, owner id)
+constexpr std::uint64_t AttachStatListRva = 0x002F2CB0;  // loader thunk, (unit, list, update)
+constexpr std::uint64_t DataContextRva    = 0x0034A0E0;  // (unit) -> byte at unit+1BDh
+constexpr std::uint64_t SetListStatRva    = 0x002F7C00;  // loader thunk, (context, list, stat, value, layer)
+
+constexpr std::uint8_t ClassIdBytes[] {
+	0x48, 0x83, 0xEC, 0x28, 0x48, 0x85, 0xC9, 0x75, 0x1D, 0x88, 0x4C, 0x24, 0x30, 0x48, 0x8D, 0x4C,
+	0x24, 0x30, 0xE8, 0x49, 0xCB, 0xFF, 0xFF, 0x84, 0xC0, 0x74, 0x01, 0xCC, 0xB8, 0xFF, 0xFF, 0xFF,
+	0xFF, 0x48, 0x83, 0xC4, 0x28, 0xC3, 0x8B, 0x41, 0x04 };
+constexpr std::uint8_t NameSeedBytes[] {
+	0x40, 0x53, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x8B, 0xD9, 0x48, 0x85, 0xC9, 0x74, 0x0A, 0xE8, 0x4D,
+	0xD6, 0xFB, 0xFF, 0x83, 0xF8, 0x01, 0x74, 0x19 };
+constexpr std::uint8_t SuperUniqueBytes[] {
+	0x40, 0x53, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x8B, 0xD9, 0x48, 0x85, 0xC9, 0x74, 0x0A, 0xE8, 0xED,
+	0xD5, 0xFB, 0xFF, 0x83, 0xF8, 0x01, 0x74, 0x19 };
+constexpr std::uint8_t SetSkillBytes[] {
+	0x48, 0x89, 0x5C, 0x24, 0x18, 0x55, 0x56, 0x41, 0x54, 0x41, 0x56, 0x41, 0x57, 0x48, 0x83, 0xEC,
+	0x50, 0x45, 0x8B, 0xE1, 0x4C, 0x63, 0xF2, 0x45, 0x8B, 0xF8, 0x48, 0x8B, 0xE9 };
+constexpr std::uint8_t SelectSkillBytes[] {
+	0x41, 0x83, 0xF8, 0x05, 0x0F, 0x84, 0x28, 0x02, 0x00, 0x00, 0x44, 0x89, 0x4C, 0x24, 0x20, 0x55,
+	0x41, 0x56, 0x41, 0x57, 0x48, 0x83, 0xEC, 0x40 };
+constexpr std::uint8_t FindStatListBytes[] {
+	0x48, 0x89, 0x5C, 0x24, 0x10, 0x57, 0x48, 0x83, 0xEC, 0x20, 0x8B, 0xFA, 0x48, 0x8B, 0xD9, 0x48,
+	0x85, 0xC9, 0x75, 0x13 };
+constexpr std::uint8_t AllocStatListBytes[] {
+	0x48, 0x89, 0x5C, 0x24, 0x10, 0x48, 0x89, 0x74, 0x24, 0x18, 0x48, 0x89, 0x7C, 0x24, 0x20, 0x89,
+	0x4C, 0x24, 0x08, 0x55, 0x41, 0x54, 0x41, 0x55, 0x41, 0x56, 0x41, 0x57 };
+constexpr std::uint8_t DataContextBytes[] {
+	0x48, 0x83, 0xEC, 0x28, 0x48, 0x85, 0xC9, 0x75, 0x1A, 0x88, 0x4C, 0x24, 0x30, 0x48, 0x8D, 0x4C,
+	0x24, 0x30, 0xE8, 0x49, 0xC7, 0xFF, 0xFF, 0x84, 0xC0, 0x74, 0x01, 0xCC, 0x32, 0xC0, 0x48, 0x83,
+	0xC4, 0x28, 0xC3, 0x0F, 0xB6, 0x81, 0xBD, 0x01, 0x00, 0x00 };
+
+using AuraEnchantedFn  = void(__fastcall*)(void* unit, std::uint32_t mod, std::uint32_t flag) noexcept;
+using ClassIdFn        = std::uint32_t(__fastcall*)(void* unit, const char* file, std::int32_t line) noexcept;
+using UnitWordFn       = std::uint16_t(__fastcall*)(void* unit) noexcept;
+using SetSkillFn       = void*(__fastcall*)(void* unit, std::int32_t skillId, std::int32_t level, std::int32_t mode) noexcept;
+using SelectSkillFn    = void(__fastcall*)(void* unit, std::int32_t left, std::int32_t skillId, std::int32_t owner) noexcept;
+using FindStatListFn   = void*(__fastcall*)(void* unit, std::uint32_t flags) noexcept;
+using AllocStatListFn  = void*(__fastcall*)(std::uint32_t flags, std::int32_t endFrame, std::uint32_t ownerType,
+                                            std::uint32_t ownerId) noexcept;
+using AttachStatListFn = void(__fastcall*)(void* unit, void* list, std::int32_t update) noexcept;
+using DataContextFn    = std::uint8_t(__fastcall*)(void* unit) noexcept;
+using SetListStatFn    = void(__fastcall*)(std::uint8_t context, void* list, std::int32_t stat, std::int32_t value,
+                                           std::int32_t layer) noexcept;
+
+ClassIdFn        ClassId        = nullptr;
+UnitWordFn       NameSeed       = nullptr;
+UnitWordFn       SuperUnique    = nullptr;
+SetSkillFn       SetSkill       = nullptr;
+SelectSkillFn    SelectSkill    = nullptr;
+FindStatListFn   FindStatList   = nullptr;
+AllocStatListFn  AllocStatList  = nullptr;
+AttachStatListFn AttachStatList = nullptr;
+DataContextFn    DataContext    = nullptr;
+SetListStatFn    SetListStat    = nullptr;
+AuraEnchantedFn  OriginalAuraEnchanted = nullptr;
+
+// One record of the game's lists, 24 bytes, the skill at +14h.
+struct AuraRecord {
+	std::int32_t minLevel;
+	std::int32_t weight;
+	std::int32_t levelOffset;
+	std::int32_t multiplier;
+	std::int32_t divisor;
+	std::int32_t skill;
+};
+static_assert(sizeof(AuraRecord) == 24 && offsetof(AuraRecord, skill) == 0x14);
+
+constexpr std::size_t MaxAuraEntries = 64;
+
+struct AuraList {
+	std::array<AuraRecord, MaxAuraEntries> records {};
+	std::uint32_t                          count      = 0;
+	bool                                   configured = false;  // false: the game's own table
+};
+
+constexpr std::uint64_t MainAuraTableRva      = 0x01D1DE70;
+constexpr std::uint64_t HeraldAuraTableRva    = 0x01D1DF20;
+constexpr std::uint32_t MainAuraRecords       = 7;
+constexpr std::uint32_t HeraldAuraRecords     = 4;
+constexpr std::uint64_t AuraFlagMaskRva       = 0x01D996E4;  // tested against skills.txt record byte +24h (0x438A70)
+constexpr std::size_t   SkillAuraFlagOffset   = 0x24;
+constexpr std::uint32_t UberMephistoClass     = 704;
+constexpr std::uint16_t LordDeSeisSuperUnique = 37;
+constexpr std::int32_t  StockUberAuraSkill    = 123;
+constexpr std::int32_t  StockUberAuraLevel    = 20;
+constexpr std::uint32_t StockLordDeSeisRecord = 5;
+constexpr std::uint32_t HeraldRank            = 0x0200;
+constexpr std::uint32_t HeraldStatListFlags   = 0x10000;
+constexpr std::int32_t  StatItemAura          = 151;
+constexpr std::int32_t  DefaultAuraDivisor    = 6;
+constexpr std::uint32_t AuraSeedMultiplier    = 0x6AC690C5U;
+constexpr std::uint32_t AuraSeedHigh          = 666;
 
 // ---------------------------------------------------------------------------
 // Layouts and ids
@@ -269,6 +512,18 @@ constexpr std::size_t GameFrameOffset        = 0x170;  // Game+170h, int32
 constexpr std::size_t DamageResultFlags      = 0x04;   // D2Damage+4, result flags
 constexpr std::size_t SkillLocalDelayCalc    = 0x238;  // skills.txt localdelay calc, +568
 constexpr std::size_t AffixListLength        = 9;
+
+// Unit animation fields (frenzy-fpa section 1, UNITS_UpdateAnimRateAndVelocity
+// 0x350B40).
+constexpr std::size_t UnitModeOffset        = 0x0C;
+constexpr std::size_t UnitSequenceRows      = 0x40;   // 6-byte rows, event at +5
+constexpr std::size_t UnitSequenceLength    = 0x48;   // steps << 8
+constexpr std::size_t UnitSequencePosition  = 0x4C;
+constexpr std::size_t UnitSequenceRate      = 0x54;
+constexpr std::size_t UnitSequenceCountdown = 0x64;
+constexpr std::size_t UnitAnimRate          = 0x68;   // int16
+constexpr std::size_t UnitAnimData          = 0x70;   // animation record
+constexpr std::size_t AnimDataFrames        = 0x08;   // frames per direction
 
 constexpr std::uint32_t UnitTypePlayer   = 0;
 constexpr std::uint32_t UnitTypeMonster  = 1;
@@ -317,6 +572,9 @@ constexpr std::uint32_t ModeAttack2 = 5;
 constexpr std::uint32_t ModeCast    = 7;
 constexpr std::uint32_t ModeSkill1  = 8;
 constexpr std::uint32_t ModeSkill4  = 11;
+constexpr std::uint32_t ModeGetHit  = 3;
+constexpr std::uint32_t ModeBlock   = 6;
+constexpr std::uint32_t ModeSequence = 14;
 
 constexpr std::int32_t  NoSkill         = -1;
 constexpr std::int32_t  MaxSkillId      = 0xFFFE;
@@ -371,9 +629,24 @@ struct Settings {
 	std::int32_t manaBurnPercent        = 10;
 	std::int32_t manaBurnCooldownFrames = 25;
 
+	std::int32_t highLevelStart                  = 100;
+	std::int32_t strongPercentPerLevel           = 5;
+	std::int32_t magicResistPercentPerLevel      = 5;
+	std::int32_t manaBurnCooldownPercentPerLevel = 5;
+	std::int32_t fastFramesStat                  = -1;
+	std::int32_t fastFramesPercentPerLevel       = 5;
+	std::int32_t fastFramesMinimum               = 5;
+
 	std::int32_t teleportSkill          = 184;
 	std::int32_t teleportChance         = 25;
 	std::int32_t teleportCooldownFrames = 25;
+
+	AuraList     auraMain;
+	AuraList     auraHerald;
+	std::int32_t uberMephistoSkill = NoSkill;  // NoSkill: the game's skill 123
+	std::int32_t uberMephistoLevel = 20;
+	std::int32_t lordDeSeisSkill   = NoSkill;  // NoSkill: record 5 of the game's main list
+	std::int32_t lordDeSeisDivisor = 8;
 };
 
 Settings Config {};
@@ -411,6 +684,9 @@ bool TeleportActive  = false;
 bool SpectralActive  = false;
 bool CursedActive    = false;
 bool ManaBurnActive  = false;
+bool AuraHookInstalled = false;
+bool RateHookInstalled = false;
+bool FastFramesActive  = false;
 
 std::array<std::int32_t, MaxCursedSkills> CursedPool {};
 std::uint32_t                             CursedPoolSize = 0;
@@ -435,6 +711,14 @@ std::atomic<std::uint64_t> CursedMinionCasts { 0 };
 std::atomic<std::uint64_t> SpectralRerolls { 0 };
 std::atomic<std::uint64_t> ManaBurnHits { 0 };
 std::atomic<std::uint64_t> ManaBurnBlocked { 0 };
+std::atomic<std::uint64_t> AuraMainGiven { 0 };
+std::atomic<std::uint64_t> AuraHeraldGiven { 0 };
+std::atomic<std::uint64_t> AuraFixedGiven { 0 };
+std::atomic<std::uint64_t> AuraNoEntry { 0 };
+std::atomic<std::uint64_t> AuraBadSkill { 0 };
+std::atomic<std::uint64_t> FastFramesGiven { 0 };
+std::atomic<std::uint64_t> FastFramesChanged { 0 };
+std::atomic<std::uint64_t> FastFramesHeldBack { 0 };
 
 // The struck and landed-hit dispatchers do not receive the other unit;
 // FinalizeDamage and ExecuteEvents do. Saved and restored around every call,
@@ -474,6 +758,11 @@ auto ReadField(const void* base, std::size_t offset) noexcept -> T {
 	T value {};
 	std::memcpy(&value, static_cast<const std::uint8_t*>(base) + offset, sizeof(T));
 	return value;
+}
+
+template <typename T>
+void WriteField(void* base, std::size_t offset, T value) noexcept {
+	std::memcpy(static_cast<std::uint8_t*>(base) + offset, &value, sizeof(T));
 }
 
 void LogInfo(const char* message) noexcept {
@@ -531,6 +820,33 @@ auto CountersFor(std::int32_t affix) noexcept -> AffixCounters* {
 
 auto GameFrame(void* game) noexcept -> std::int32_t {
 	return ReadField<std::int32_t>(game, GameFrameOffset);
+}
+
+// ---------------------------------------------------------------------------
+// High level monsters
+// ---------------------------------------------------------------------------
+
+// Monster levels (stat 12) past high_level_start; 0 at or below it.
+auto LevelsAbove(void* unit) noexcept -> std::int32_t {
+	if (unit == nullptr) return 0;
+	const std::int32_t level = GetUnitStat(unit, StatLevel, 0);
+	return level > Config.highLevelStart ? level - Config.highLevelStart : 0;
+}
+
+// value * (100 + percentPerLevel * levels) / 100, kept inside 32 bits.
+auto RaiseByLevels(std::int32_t value, std::int32_t percentPerLevel, std::int32_t levels) noexcept -> std::int32_t {
+	if (levels <= 0 || percentPerLevel <= 0) return value;
+	const std::int64_t scaled = static_cast<std::int64_t>(value) * (100 + static_cast<std::int64_t>(percentPerLevel) * levels) / 100;
+	if (scaled > std::numeric_limits<std::int32_t>::max()) return std::numeric_limits<std::int32_t>::max();
+	if (scaled < std::numeric_limits<std::int32_t>::min()) return std::numeric_limits<std::int32_t>::min();
+	return static_cast<std::int32_t>(scaled);
+}
+
+// value * (100 - percentPerLevel * levels) / 100, never below 0.
+auto LowerByLevels(std::int32_t value, std::int32_t percentPerLevel, std::int32_t levels) noexcept -> std::int32_t {
+	if (levels <= 0 || percentPerLevel <= 0) return value;
+	const std::int64_t factor = 100 - static_cast<std::int64_t>(percentPerLevel) * levels;
+	return factor <= 0 ? 0 : static_cast<std::int32_t>(static_cast<std::int64_t>(value) * factor / 100);
 }
 
 // ---------------------------------------------------------------------------
@@ -770,6 +1086,46 @@ void ProcessCursed(void* game, void* unit, std::uint64_t affix, std::uint64_t un
 // lands it. Multi-hit missiles (many hits a second) and packs of burners get
 // one burn per window. The window is fixed from the burn; hits inside it do
 // not extend it. A hit that finds no mana burns nothing and starts nothing.
+// Blessed Vials (Alchemy plugin, celestialrayone.alchemy): a player whose
+// perk is learned and whose Mana Potion effect is running cannot be burned.
+// Alchemy publishes the "mana-burn-immunity" service; it is looked up on the
+// first burn and again every 64 burns until found, so the load order of the
+// two plugins does not matter. Without Alchemy every burn goes through.
+struct AlchemyServiceTable {
+	std::uint32_t serviceSize;
+	std::uint32_t serviceVersion;
+	bool(__cdecl* manaBurnImmune)(void* player) noexcept;
+};
+
+const AlchemyServiceTable* AlchemyService = nullptr;
+std::uint32_t              AlchemyLookups = 0;
+
+auto AlchemyImmune(void* player) noexcept -> bool {
+	if (AlchemyService == nullptr && (AlchemyLookups++ % 64) == 0) {
+		const D2RL::PluginCommunicationService* communication = nullptr;
+		if (Context->QueryService(&communication) == D2RL::ServiceQueryResult::Success
+		    && D2RL::HasPluginCommunicationServiceField(communication, D2RL::PluginCommunicationServiceRequiredSize)) {
+			const D2RL::PluginCommunication::AcquireServiceRequest request {
+				.structSize       = D2RL::PluginCommunication::AcquireServiceRequestSize,
+				.flags            = 0,
+				.providerPluginId = "celestialrayone.alchemy",
+				.name             = "mana-burn-immunity",
+				.minimumVersion   = 1,
+				.minimumTableSize = static_cast<std::uint32_t>(sizeof(AlchemyServiceTable)),
+			};
+			D2RL::PluginCommunication::AcquiredService acquired {};
+			acquired.structSize = D2RL::PluginCommunication::AcquiredServiceSize;
+			if (communication->acquireService(Context, &request, &acquired) == D2RL::PluginCommunication::Result::Success
+			    && acquired.table != nullptr) {
+				AlchemyService = static_cast<const AlchemyServiceTable*>(acquired.table);
+				LogInfo("Mana Burn: Alchemy found; Blessed Vials can stop burns.");
+			}
+		}
+	}
+	return AlchemyService != nullptr && AlchemyService->manaBurnImmune != nullptr
+	    && AlchemyService->manaBurnImmune(player);
+}
+
 void ApplyManaBurn(void* game, void* attacker, void* defender) noexcept {
 	if (game == nullptr || attacker == nullptr || defender == nullptr) return;
 	if (UnitType(defender) != UnitTypePlayer) return;
@@ -782,6 +1138,10 @@ void ApplyManaBurn(void* game, void* attacker, void* defender) noexcept {
 	if (maxMana <= 0) return;
 	const std::int64_t mana = GetUnitStat(defender, StatMana, 0);
 	if (mana <= 0) return;
+	if (AlchemyImmune(defender)) {
+		ManaBurnBlocked.fetch_add(1, std::memory_order_relaxed);
+		return;
+	}
 
 	const bool          cooldown = Config.manaBurnCooldownFrames > 0;
 	const std::int32_t  frame    = GameFrame(game);
@@ -795,7 +1155,12 @@ void ApplyManaBurn(void* game, void* attacker, void* defender) noexcept {
 	if (left < 0) left = 0;
 	SetUnitStat(defender, StatMana, static_cast<std::int32_t>(left), 0);
 	ManaBurnHits.fetch_add(1, std::memory_order_relaxed);
-	if (cooldown) SetLockout(game, player, AffixManaBurn, WholeAffix, frame, Config.manaBurnCooldownFrames);
+	if (cooldown) {
+		// Shorter for every level the burning monster has past the start.
+		const std::int32_t frames = LowerByLevels(Config.manaBurnCooldownFrames, Config.manaBurnCooldownPercentPerLevel,
+		                                          LevelsAbove(source));
+		if (frames > 0) SetLockout(game, player, AffixManaBurn, WholeAffix, frame, frames);
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -871,13 +1236,154 @@ std::uint64_t __fastcall HookLandedDispatch(void* game, void* unit) noexcept {
 	return 0;
 }
 
-// 0x496180, Extra Strong at spawn: flat physical and spell damage, no attack
-// rating. Replaces the vanilla routine.
+// ---------------------------------------------------------------------------
+// Extra Fast frames
+// ---------------------------------------------------------------------------
+
+constexpr std::int32_t StepLength       = 256;
+constexpr std::int32_t MaxSequenceSteps = 256;
+constexpr std::size_t  SequenceRowSize  = 6;
+constexpr std::size_t  SequenceRowEvent = 5;
+constexpr std::int64_t MaxRate          = 0x7FFF;
+
+// The percent given at spawn: fast_frames_percent_per_level for every level
+// past the start, at most 100.
+auto FastFramesPercent(void* unit) noexcept -> std::int32_t {
+	const std::int64_t percent = static_cast<std::int64_t>(Config.fastFramesPercentPerLevel) * LevelsAbove(unit);
+	return percent <= 0 ? 0 : (percent > 100 ? 100 : static_cast<std::int32_t>(percent));
+}
+
+auto IsFastFramesMode(std::uint32_t mode) noexcept -> bool {
+	return mode == ModeGetHit || mode == ModeAttack1 || mode == ModeAttack2 || mode == ModeBlock || mode == ModeCast
+	    || (mode >= ModeSkill1 && mode <= ModeSkill4) || mode == ModeSequence;
+}
+
+// An animation moves by rate (1/256 frame) every game frame and its mode ends
+// the frame before the next step would reach the length.
+auto ActionFrames(std::int64_t length, std::int64_t rate) noexcept -> std::int64_t {
+	return (length + rate - 1) / rate - 1;
+}
+
+// A sequence ends when its countdown, lowered by rate every frame, reaches 0.
+auto SequenceFrames(std::int64_t length, std::int64_t rate) noexcept -> std::int64_t {
+	return (length + rate - 1) / rate;
+}
+
+// Plays a sequence frame by frame the way the server does (frenzy-fpa
+// section 2) and tells whether every step carrying an event gets it reported.
+auto EveryHitLands(const std::uint8_t* events, std::int32_t steps, std::int32_t rate) noexcept -> bool {
+	if (steps <= 0 || steps > MaxSequenceSteps || rate <= 0) return false;
+	const std::int32_t length = steps * StepLength;
+	bool reported[MaxSequenceSteps] {};
+	if (events[0] != 0) reported[0] = true;  // the installer's first step: position 0 to 0
+	std::int32_t position  = 0;
+	std::int64_t countdown = length;
+	while (countdown > 0) {
+		const std::int32_t old   = position;
+		const std::int64_t moved = static_cast<std::int64_t>(old) + rate;
+		position = static_cast<std::int32_t>(moved >= length ? moved % length : moved);
+		countdown -= rate;
+		if (position == old) {
+			if (events[position / StepLength] != 0) reported[position / StepLength] = true;
+			continue;
+		}
+		std::int32_t last = -1;
+		for (std::int32_t step = old / StepLength + 1; step <= position / StepLength; ++step) {
+			if (events[step] != 0) last = step;
+		}
+		if (last >= 0) reported[last] = true;
+	}
+	for (std::int32_t step = 0; step < steps; ++step) {
+		if (events[step] != 0 && !reported[step]) return false;
+	}
+	return true;
+}
+
+// SQ: the sequence model, only for a rate the attack or cast path stored
+// (the dword at +54h equals the word at +68h) and a sequence that has just
+// started (position + countdown == length).
+void ApplyFastFramesSequence(void* unit, std::int32_t percent) noexcept {
+	const auto* rows = ReadField<const std::uint8_t*>(unit, UnitSequenceRows);
+	if (rows == nullptr) return;
+	const std::int32_t rate = ReadField<std::int32_t>(unit, UnitSequenceRate);
+	if (rate <= 0 || rate != static_cast<std::int32_t>(ReadField<std::int16_t>(unit, UnitAnimRate))) return;
+	const std::int32_t length = ReadField<std::int32_t>(unit, UnitSequenceLength);
+	if (length <= 0 || length % StepLength != 0 || length / StepLength > MaxSequenceSteps) return;
+	if (static_cast<std::int64_t>(ReadField<std::int32_t>(unit, UnitSequencePosition))
+	        + ReadField<std::int32_t>(unit, UnitSequenceCountdown) != length) {
+		return;
+	}
+	const std::int32_t steps = length / StepLength;
+	std::uint8_t       events[MaxSequenceSteps] {};
+	for (std::int32_t step = 0; step < steps; ++step) {
+		events[step] = rows[static_cast<std::size_t>(step) * SequenceRowSize + SequenceRowEvent];
+	}
+
+	const std::int64_t game    = SequenceFrames(length, rate);
+	const std::int64_t minimum = Config.fastFramesMinimum;
+	if (game <= minimum) return;
+	std::int64_t wanted = game * (100 - percent) / 100;
+	if (wanted < minimum) wanted = minimum;
+	for (std::int64_t frames = wanted; frames < game; ++frames) {
+		std::int64_t faster = (length + frames - 1) / frames;  // the slowest rate that ends within `frames`
+		if (faster > MaxRate) faster = MaxRate;
+		if (faster <= rate) break;
+		if (!EveryHitLands(events, steps, static_cast<std::int32_t>(faster))) continue;
+		WriteField<std::int32_t>(unit, UnitSequenceRate, static_cast<std::int32_t>(faster));
+		WriteField<std::int16_t>(unit, UnitAnimRate, static_cast<std::int16_t>(faster));
+		FastFramesChanged.fetch_add(1, std::memory_order_relaxed);
+		if (frames > wanted) FastFramesHeldBack.fetch_add(1, std::memory_order_relaxed);
+		return;
+	}
+	FastFramesHeldBack.fetch_add(1, std::memory_order_relaxed);
+}
+
+// Called with the unit 0x350B40 has just given its rate.
+void ApplyFastFrames(void* unit) noexcept {
+	if (unit == nullptr || ReadField<std::uint32_t>(unit, 0) != UnitTypeMonster) return;
+	const std::uint32_t mode = ReadField<std::uint32_t>(unit, UnitModeOffset);
+	if (!IsFastFramesMode(mode)) return;
+	std::int32_t percent = GetUnitStat(unit, Config.fastFramesStat, 0);
+	if (percent <= 0) return;
+	if (percent > 100) percent = 100;
+	if (mode == ModeSequence) {
+		ApplyFastFramesSequence(unit, percent);
+		return;
+	}
+
+	const std::int32_t rate = ReadField<std::int16_t>(unit, UnitAnimRate);
+	const void*        anim = ReadField<const void*>(unit, UnitAnimData);
+	if (rate <= 0 || anim == nullptr) return;
+	const std::int32_t directionFrames = ReadField<std::int32_t>(anim, AnimDataFrames);
+	if (directionFrames <= 0 || directionFrames > 0xFFFF) return;
+	const std::int64_t length  = static_cast<std::int64_t>(directionFrames) * StepLength;
+	const std::int64_t game    = ActionFrames(length, rate);
+	const std::int64_t minimum = Config.fastFramesMinimum;
+	if (game <= minimum) return;
+	std::int64_t wanted = game * (100 - percent) / 100;
+	if (wanted < minimum) wanted = minimum;
+	if (wanted >= game) return;
+	std::int64_t faster = (length + wanted) / (wanted + 1);  // the slowest rate that ends within `wanted` frames
+	if (faster > MaxRate) faster = MaxRate;
+	if (faster <= rate) return;
+	WriteField<std::int16_t>(unit, UnitAnimRate, static_cast<std::int16_t>(faster));
+	if (ReadField<std::int32_t>(unit, UnitSequenceRate) == rate) {
+		WriteField<std::int32_t>(unit, UnitSequenceRate, static_cast<std::int32_t>(faster));
+	}
+	FastFramesChanged.fetch_add(1, std::memory_order_relaxed);
+}
+
+// 0x496180, Extra Strong at spawn: physical and spell damage, no attack
+// rating, both raised for every level past high_level_start. Replaces the
+// vanilla routine.
 void __fastcall HookStrongSpawn(void* unit, std::int32_t, std::int32_t) noexcept {
 	if (unit == nullptr || UnitType(unit) != UnitTypeMonster) return;
-	if (Config.strongDamagePercent != 0) AddUnitStat(unit, StatDamagePercent, Config.strongDamagePercent, 0);
-	if (Config.strongSpellDamagePercent != 0) {
-		for (const std::int32_t stat : SpellMasteryStats) AddUnitStat(unit, stat, Config.strongSpellDamagePercent, 0);
+	const std::int32_t levels = LevelsAbove(unit);
+	const std::int32_t damage = RaiseByLevels(Config.strongDamagePercent, Config.strongPercentPerLevel, levels);
+	const std::int32_t spell  = RaiseByLevels(Config.strongSpellDamagePercent, Config.strongPercentPerLevel, levels);
+	if (damage != 0) AddUnitStat(unit, StatDamagePercent, damage, 0);
+	if (spell != 0) {
+		for (const std::int32_t stat : SpellMasteryStats) AddUnitStat(unit, stat, spell, 0);
 	}
 }
 
@@ -896,20 +1402,31 @@ void __fastcall HookFastSpawn(void* unit, std::int32_t affix, std::int32_t uniqu
 	const std::int32_t castRate   = Config.fastCastRate[difficulty];
 	if (attackRate != 0) AddUnitStat(unit, StatAttackRate, attackRate, 0);
 	if (castRate != 0) AddUnitStat(unit, Config.fastCastRateStat, castRate, 0);
+
+	// Fewer frames past high_level_start, carried to clients by the stat.
+	if (FastFramesActive) {
+		const std::int32_t percent = FastFramesPercent(unit);
+		if (percent > 0) {
+			SetUnitStat(unit, Config.fastFramesStat, percent, 0);
+			FastFramesGiven.fetch_add(1, std::memory_order_relaxed);
+		}
+	}
 }
 
 void ApplyMagicResistant(void* unit) noexcept {
+	// +50, raised for every level past high_level_start.
+	const std::int32_t boost = RaiseByLevels(MagicResistBoost, Config.magicResistPercentPerLevel, LevelsAbove(unit));
 	for (const ResistConversion& entry : MagicResistTable) {
 		const std::int32_t current = GetUnitStat(unit, entry.resistStat, 0);
 
 		std::int32_t gain = 0;
 		if (current < MagicResistCap) {
 			gain = MagicResistCap - current;
-			if (gain > MagicResistBoost) gain = MagicResistBoost;
+			if (gain > boost) gain = boost;
 		}
 		if (gain > 0) AddUnitStat(unit, entry.resistStat, gain, 0);
 
-		const std::int32_t bonus = (MagicResistBoost - gain) / entry.pointsPerBonus;
+		const std::int32_t bonus = (boost - gain) / entry.pointsPerBonus;
 		if (bonus <= 0) continue;
 		for (std::int32_t i = 0; i < entry.outputCount; ++i) {
 			AddUnitStat(unit, entry.outputs[static_cast<std::size_t>(i)], bonus, 0);
@@ -953,6 +1470,177 @@ std::uint64_t __fastcall HookSetRankFlag(void* unit, std::uint32_t flag, std::ui
 		MinionMagicResistApplied.fetch_add(1, std::memory_order_relaxed);
 	}
 	return result;
+}
+
+// 0x980E0, handed the unit by 0x350B40 after every rate update (the call
+// returning to 0x350C8C); every other call passes straight through.
+std::uint64_t __fastcall HookRateNotify(void* container, void* unitSlot, void* r8, void* r9) noexcept {
+	if (FastFramesActive && unitSlot != nullptr
+	    && AFFIX_RETURN_ADDRESS() == reinterpret_cast<const void*>(Base + RateNotifyReturnRva)) {
+		ApplyFastFrames(*static_cast<void* const*>(unitSlot));
+	}
+	return OriginalRateNotify(container, unitSlot, r8, r9);
+}
+
+// ---------------------------------------------------------------------------
+// Aura Enchanted
+// ---------------------------------------------------------------------------
+
+// One record of the game's own table, as it is now.
+auto TableRecord(std::uint64_t tableRva, std::uint32_t index) noexcept -> AuraRecord {
+	AuraRecord record {};
+	std::memcpy(&record, reinterpret_cast<const std::uint8_t*>(Base + tableRva) + index * sizeof(AuraRecord),
+	            sizeof(record));
+	return record;
+}
+
+// The list a roll uses: the TOML's, or the game's own table read now (a static
+// patch on it still counts).
+auto EffectiveList(const AuraList& configured, std::uint64_t tableRva, std::uint32_t records, AuraList& stock) noexcept
+	-> const AuraList& {
+	if (configured.configured) return configured;
+	stock.count      = 0;
+	stock.configured = false;
+	for (std::uint32_t i = 0; i < records && i < MaxAuraEntries; ++i) stock.records[stock.count++] = TableRecord(tableRva, i);
+	return stock;
+}
+
+// The game's own pick (0x495E00..0x495EC0): records at or under the monster
+// level with a positive weight count; state (seed, 666), one step, the low 32
+// bits modulo the total weight, walked through the records in order.
+auto PickAura(const AuraList& list, std::uint16_t seed, std::int32_t monsterLevel) noexcept -> const AuraRecord* {
+	std::uint32_t total = 0;
+	for (std::uint32_t i = 0; i < list.count; ++i) {
+		const AuraRecord& record = list.records[i];
+		if (record.minLevel <= monsterLevel && record.weight > 0) total += static_cast<std::uint32_t>(record.weight);
+	}
+	if (total == 0) return nullptr;
+
+	std::uint32_t pick = (static_cast<std::uint32_t>(seed) * AuraSeedMultiplier + AuraSeedHigh) % total;
+	for (std::uint32_t i = 0; i < list.count; ++i) {
+		const AuraRecord& record = list.records[i];
+		if (record.minLevel > monsterLevel || record.weight <= 0) continue;
+		if (pick < static_cast<std::uint32_t>(record.weight)) return &record;
+		pick -= static_cast<std::uint32_t>(record.weight);
+	}
+	return nullptr;
+}
+
+// (monster level + offset) * multiplier / divisor, kept between 1 and 99.
+auto AuraLevel(const AuraRecord& record, std::int32_t monsterLevel) noexcept -> std::int32_t {
+	const std::int64_t divisor = record.divisor != 0 ? record.divisor : 1;
+	const std::int64_t level   = (static_cast<std::int64_t>(monsterLevel) + record.levelOffset) * record.multiplier / divisor;
+	return level < 1 ? 1 : (level > 99 ? 99 : static_cast<std::int32_t>(level));
+}
+
+// Per skills.txt id: 0 not checked yet, 1 given, 2 not a row (never given).
+// Each problem is logged once.
+std::array<std::atomic<std::uint8_t>, 0x10000> AuraSkillState {};
+
+auto AuraSkillUsable(void* unit, std::int32_t skill) noexcept -> bool {
+	if (skill < 0 || skill > MaxSkillId) {
+		AuraBadSkill.fetch_add(1, std::memory_order_relaxed);
+		return false;
+	}
+	std::atomic<std::uint8_t>& state = AuraSkillState[static_cast<std::size_t>(skill)];
+	const std::uint8_t         known = state.load(std::memory_order_relaxed);
+	if (known == 1) return true;
+	if (known == 2) {
+		AuraBadSkill.fetch_add(1, std::memory_order_relaxed);
+		return false;
+	}
+
+	char                message[192] {};
+	const std::uint8_t* record = SkillsRecord(DataContext(unit), skill);
+	if (record == nullptr) {
+		state.store(2, std::memory_order_relaxed);
+		AuraBadSkill.fetch_add(1, std::memory_order_relaxed);
+		std::snprintf(message, sizeof(message),
+		              "Aura Enchanted: skill %d is not a skills.txt row, so it is never given. Fix the TOML.", skill);
+		LogError(message);
+		return false;
+	}
+	const std::uint8_t mask = ReadField<std::uint8_t>(reinterpret_cast<const void*>(Base + AuraFlagMaskRva), 0);
+	if (mask != 0 && (record[SkillAuraFlagOffset] & mask) == 0) {
+		std::snprintf(message, sizeof(message),
+		              "Aura Enchanted: skill %d has aura = 0 in skills.txt; monsters get it, but no aura runs.", skill);
+		LogWarn(message);
+	}
+	state.store(1, std::memory_order_relaxed);
+	return true;
+}
+
+// Main list and fixed auras: the skill joins the skill list (0x495F50), then
+// becomes the right-hand skill (0x495F64), which starts the aura.
+void GiveSkillAura(void* unit, std::int32_t skill, std::int32_t level) noexcept {
+	SetSkill(unit, skill, level, 1);
+	SelectSkill(unit, 0, skill, -1);
+}
+
+// Herald extra: stat 151 (item_aura) with the skill word as layer, in the stat
+// list flagged 10000h, made when missing (0x4960D2..0x49614B).
+void GiveHeraldAura(void* unit, std::int32_t skill, std::int32_t level) noexcept {
+	void* list = FindStatList(unit, HeraldStatListFlags);
+	if (list == nullptr) {
+		const std::uint32_t id   = UnitId(unit, __FILE__, __LINE__);
+		const std::uint32_t type = UnitType(unit);
+		list                     = AllocStatList(0, 0, type, id);
+		if (list == nullptr) return;
+		AttachStatList(unit, list, 1);
+	}
+	SetListStat(DataContext(unit), list, StatItemAura, level, skill & 0xFFFF);
+}
+
+// Replaces 0x495CD0. Same steps, same order, the skills from the TOML.
+void __fastcall HookAuraEnchanted(void* unit, std::uint32_t mod, std::uint32_t flag) noexcept {
+	// What the routine refuses or asserts on (no unit, not a monster, flag 0)
+	// goes to it unchanged.
+	if (unit == nullptr || flag == 0 || UnitType(unit) != UnitTypeMonster) {
+		OriginalAuraEnchanted(unit, mod, flag);
+		return;
+	}
+
+	if ((ClassId(unit, __FILE__, __LINE__) & 0xFFFFU) == UberMephistoClass) {
+		const bool         own   = Config.uberMephistoSkill != NoSkill;
+		const std::int32_t skill = own ? Config.uberMephistoSkill : StockUberAuraSkill;
+		if (AuraSkillUsable(unit, skill)) {
+			GiveSkillAura(unit, skill, own ? Config.uberMephistoLevel : StockUberAuraLevel);
+			AuraFixedGiven.fetch_add(1, std::memory_order_relaxed);
+		}
+		return;
+	}
+
+	std::int32_t monsterLevel = GetUnitStat(unit, StatLevel, 0);
+	if (monsterLevel <= 0) monsterLevel = 1;
+	const std::uint16_t seed = NameSeed(unit);
+
+	AuraList stock {};
+	if (SuperUnique(unit) == LordDeSeisSuperUnique) {
+		const AuraRecord record = Config.lordDeSeisSkill != NoSkill
+		                            ? AuraRecord { 0, 1, 0, 1, Config.lordDeSeisDivisor, Config.lordDeSeisSkill }
+		                            : TableRecord(MainAuraTableRva, StockLordDeSeisRecord);
+		if (AuraSkillUsable(unit, record.skill)) {
+			GiveSkillAura(unit, record.skill, AuraLevel(record, monsterLevel));
+			AuraFixedGiven.fetch_add(1, std::memory_order_relaxed);
+		}
+	} else {
+		const AuraList&   list   = EffectiveList(Config.auraMain, MainAuraTableRva, MainAuraRecords, stock);
+		const AuraRecord* picked = PickAura(list, seed, monsterLevel);
+		if (picked == nullptr) {
+			AuraNoEntry.fetch_add(1, std::memory_order_relaxed);
+		} else if (AuraSkillUsable(unit, picked->skill)) {
+			GiveSkillAura(unit, picked->skill, AuraLevel(*picked, monsterLevel));
+			AuraMainGiven.fetch_add(1, std::memory_order_relaxed);
+		}
+	}
+
+	if (HasRankFlag(unit, HeraldRank) == 0) return;
+	const AuraList&   heraldList = EffectiveList(Config.auraHerald, HeraldAuraTableRva, HeraldAuraRecords, stock);
+	const AuraRecord* extra      = PickAura(heraldList, seed, monsterLevel);
+	if (extra != nullptr && AuraSkillUsable(unit, extra->skill)) {
+		GiveHeraldAura(unit, extra->skill, AuraLevel(*extra, monsterLevel));
+		AuraHeraldGiven.fetch_add(1, std::memory_order_relaxed);
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -1075,6 +1763,192 @@ void ReadSkillList(const char* text, const char* key, Settings& settings) noexce
 	}
 }
 
+// Finds `key = [` at the start of a line and the `]` that closes it; the list
+// may span lines and hold # comments. False when the key is missing. begin is
+// null when the key is there but its value is not a closed list; end points at
+// the closing `]`.
+auto FindConfigList(const char* text, const char* key, const char*& begin, const char*& end) noexcept -> bool {
+	const char* value  = nullptr;
+	std::size_t length = 0;
+	begin              = nullptr;
+	end                = nullptr;
+	if (!FindConfigValue(text, key, value, length)) return false;
+	if (*value != '[') return true;
+	for (const char* p = value + 1; *p != '\0'; ++p) {
+		if (*p == '#') {
+			while (p[1] != '\0' && p[1] != '\n') ++p;
+			continue;
+		}
+		if (*p == '[') return true;
+		if (*p == ']') {
+			begin = value;
+			end   = p;
+			return true;
+		}
+	}
+	return true;
+}
+
+auto LineOf(const char* text, const char* at) noexcept -> std::int32_t {
+	std::int32_t line = 1;
+	for (const char* p = text; p < at && *p != '\0'; ++p) {
+		if (*p == '\n') ++line;
+	}
+	return line;
+}
+
+auto KeyIs(const char* word, std::size_t length, const char* key) noexcept -> bool {
+	return std::strlen(key) == length && std::strncmp(word, key, length) == 0;
+}
+
+// Reads a whole number such as -1 or 1_000 at p and moves p past it.
+auto ScanInteger(const char*& p, const char* end, std::int64_t& value) noexcept -> bool {
+	const char* start = p;
+	if (p < end && *p == '-') ++p;
+	while (p < end && ((*p >= '0' && *p <= '9') || *p == '_')) ++p;
+	return ParseInteger(start, static_cast<std::size_t>(p - start), value);
+}
+
+// One aura list entry: a bare skills.txt *Id, or { skill = N, divisor = N,
+// min_level = N }. A skill of -1 comes back as NoSkill, which is skipped.
+auto ParseAuraEntry(const char*& p, const char* end, AuraRecord& record, const char*& error) noexcept -> bool {
+	std::int64_t skill    = NoSkill;
+	std::int64_t divisor  = DefaultAuraDivisor;
+	std::int64_t minLevel = 0;
+	if (*p == '{') {
+		++p;
+		bool haveSkill = false;
+		for (;;) {
+			while (p < end && (IsBlank(*p) || *p == '\n')) ++p;
+			if (p >= end) {
+				error = "an entry has no closing }";
+				return false;
+			}
+			if (*p == '}') {
+				++p;
+				break;
+			}
+			const char* word = p;
+			while (p < end && ((*p >= 'a' && *p <= 'z') || *p == '_')) ++p;
+			const std::size_t wordLength = static_cast<std::size_t>(p - word);
+			while (p < end && IsBlank(*p)) ++p;
+			if (wordLength == 0 || p >= end || *p != '=') {
+				error = "expected skill, divisor or min_level = a number inside { }";
+				return false;
+			}
+			++p;
+			while (p < end && IsBlank(*p)) ++p;
+			std::int64_t number = 0;
+			if (!ScanInteger(p, end, number)) {
+				error = "expected a whole number inside { }";
+				return false;
+			}
+			if (KeyIs(word, wordLength, "skill")) {
+				skill     = number;
+				haveSkill = true;
+			} else if (KeyIs(word, wordLength, "divisor")) {
+				divisor = number;
+			} else if (KeyIs(word, wordLength, "min_level")) {
+				minLevel = number;
+			} else {
+				error = "unknown key inside { } (use skill, divisor, min_level)";
+				return false;
+			}
+			while (p < end && (IsBlank(*p) || *p == '\n')) ++p;
+			if (p < end && *p == ',') {
+				++p;
+				continue;
+			}
+			if (p < end && *p == '}') {
+				++p;
+				break;
+			}
+			error = "expected , or } inside { }";
+			return false;
+		}
+		if (!haveSkill) {
+			error = "an entry has no skill";
+			return false;
+		}
+	} else if (!ScanInteger(p, end, skill)) {
+		error = "each entry is a skill id or { skill = N, divisor = N, min_level = N }";
+		return false;
+	}
+
+	if (skill != NoSkill && (skill < 1 || skill > MaxSkillId)) {
+		error = "skill must be a skills.txt *Id from 1 to 65534, or -1";
+		return false;
+	}
+	if (divisor < 1 || divisor > 9'999) {
+		error = "divisor must be from 1 to 9999";
+		return false;
+	}
+	if (minLevel < 0 || minLevel > 9'999) {
+		error = "min_level must be from 0 to 9999";
+		return false;
+	}
+	record = AuraRecord { static_cast<std::int32_t>(minLevel), 1, 0, 1, static_cast<std::int32_t>(divisor),
+	                      static_cast<std::int32_t>(skill) };
+	return true;
+}
+
+// Reads `key = [ ... ]` into list. A missing key, an empty list or one that
+// cannot be read leaves list.configured false: the game's own table is used.
+void ReadAuraList(const char* text, const char* key, AuraList& list) noexcept {
+	list.count      = 0;
+	list.configured = false;
+
+	const char* begin = nullptr;
+	const char* end   = nullptr;
+	if (!FindConfigList(text, key, begin, end)) return;
+
+	char message[256] {};
+	if (begin == nullptr) {
+		std::snprintf(message, sizeof(message), "%s must be a list, %s = [ ... ]; the game's own list is used.", key,
+		              key);
+		LogWarn(message);
+		return;
+	}
+
+	const char* p = begin + 1;
+	for (;;) {
+		while (p < end && (IsBlank(*p) || *p == '\n' || *p == ',' || *p == '#')) {
+			if (*p == '#') {
+				while (p < end && *p != '\n') ++p;
+			} else {
+				++p;
+			}
+		}
+		if (p >= end) break;
+
+		AuraRecord  record {};
+		const char* error = nullptr;
+		if (!ParseAuraEntry(p, end, record, error)) {
+			std::snprintf(message, sizeof(message), "%s, line %d: %s; the game's own list is used.", key,
+			              LineOf(text, p), error);
+			LogWarn(message);
+			list.count = 0;
+			return;
+		}
+		if (record.skill == NoSkill) continue;
+		if (list.count >= MaxAuraEntries) {
+			std::snprintf(message, sizeof(message), "%s holds more than %u skills; the game's own list is used.", key,
+			              static_cast<unsigned>(MaxAuraEntries));
+			LogWarn(message);
+			list.count = 0;
+			return;
+		}
+		list.records[list.count++] = record;
+	}
+
+	if (list.count == 0) {
+		std::snprintf(message, sizeof(message), "%s is empty; the game's own list is used.", key);
+		LogInfo(message);
+		return;
+	}
+	list.configured = true;
+}
+
 constexpr char DefaultConfigToml[] = R"toml(# celestialrayone.monster-affixes
 #
 # Monster affix rework for the unique monster mods in monumod.txt.
@@ -1105,7 +1979,8 @@ constexpr char DefaultConfigToml[] = R"toml(# celestialrayone.monster-affixes
 #   skill's localdelay in skills.txt, in frames (25 = 1 second). localdelay is
 #   evaluated as a formula for the monster at the cast level, so lvl and other
 #   calc terms work. Blank or 0 means no lockout. Teleportation uses its own
-#   cooldown below instead. Spectral Hit locks each of its skills separately.
+#   cooldown below (with -1 there, localdelay too). Spectral Hit locks each
+#   of its skills separately.
 
 # FIRE / COLD / LIGHTNING ENCHANTED (when struck)
 #   Fire Enchanted no longer explodes on death and Cold Enchanted no longer
@@ -1135,8 +2010,10 @@ stone_skin_skill = -1
 #   The affix still gives the monster its teleport skill (skills.txt Id 184)
 #   as before. On top of that, each struck hit has teleport_chance percent to
 #   cast teleport_skill at the attacker. After a cast nothing fires for
-#   teleport_cooldown_frames (25 = 1 second). While the cooldown runs no roll
-#   is made. -1 for teleport_skill turns this part off.
+#   teleport_cooldown_frames (25 = 1 second). -1 uses the teleport skill's
+#   skills.txt localdelay instead, evaluated for the monster at its level like
+#   the other affix lockouts (blank or 0 there means no cooldown). While the
+#   cooldown runs no roll is made. -1 for teleport_skill turns this part off.
 teleport_skill = 184
 teleport_chance = 25
 teleport_cooldown_frames = 25
@@ -1167,6 +2044,16 @@ spectral_hit_skill_4 = -1
 #   routine untouched: Amplify Damage with its own chance.
 cursed_skills = []
 
+# HIGH LEVEL MONSTERS
+#   Extra Strong, Extra Fast, Mana Burn and Magic Resistant get stronger for
+#   every monster level past high_level_start (monster level = stat 12: at
+#   spawn for Extra Strong, Extra Fast and Magic Resistant, the burning
+#   monster's level at the hit for Mana Burn). Each affix has its own percent
+#   per level below; 0 turns that part off. The growth is linear: 5 percent
+#   per level with the start at 100 is +35% at level 107 (with the start at
+#   99 the same level counts 8 levels, +40%).
+high_level_start = 100
+
 # EXTRA STRONG (at spawn)
 #   Flat bonuses, the same for every difficulty. No attack rating bonus any
 #   more. (Minions: see NOTE ON MINIONS above.)
@@ -1174,8 +2061,12 @@ cursed_skills = []
 #   strong_spell_damage_percent: added to each of passive_fire_mastery,
 #   passive_ltng_mastery, passive_cold_mastery, passive_pois_mastery,
 #   passive_mag2_mastery and passive_wind_mastery (stats 329 to 332, 482, 483)
+#   strong_percent_per_level: both bonuses grow by this percent of their own
+#   value for every level past high_level_start (5: level 107 gets 135% of
+#   them, 202% damage and 135% spell damage).
 strong_damage_percent = 150
 strong_spell_damage_percent = 100
+strong_percent_per_level = 5
 
 # EXTRA FAST (at spawn)
 #   Walk speed is unchanged. On top of it, flat attack rate (stat 68,
@@ -1191,6 +2082,30 @@ fast_cast_rate_nightmare = 50
 fast_cast_rate_hell = 75
 fast_cast_rate_stat = 105
 
+# EXTRA FAST FRAMES (high level monsters)
+#   An Extra Fast monster past high_level_start plays its actions in fewer
+#   frames: fast_frames_percent_per_level percent fewer for every level past
+#   the start (at most 100%), never fewer than fast_frames_minimum frames;
+#   an action already at or below that minimum is left alone. It covers
+#   attack (A1, A2), skill (S1 to S4), cast (SC), block (BL), get hit (GH)
+#   and sequence (SQ) animations, on top of every other speed bonus. A
+#   sequence keeps every hit it has: when the shorter length would lose one,
+#   the closest length that keeps them all is used. Two hits of one attack
+#   animation that land on the same frame count once, as with any fast
+#   animation in the game.
+#   Walk and run are not changed: their animation speed and the ground speed
+#   come from the same movement percent, so a shorter walk cycle would only
+#   make the legs slide. Extra Fast keeps the game's own movement bonus.
+#   The amount reaches every client in a stat, so the animation and the
+#   game's timing match:
+#     fast_frames_stat  itemstatcost.txt *ID of a stat added for this, with
+#                       Send Other = 1, Send Bits = 8, UpdateAnimRate = 1
+#                       and no Save Bits. -1 turns this part off.
+#   (Minions: see NOTE ON MINIONS above.)
+fast_frames_stat = -1
+fast_frames_percent_per_level = 5
+fast_frames_minimum = 5
+
 # MANA BURN (when the monster lands a hit)
 #   No mana drain damage any more. Instead a successful hit on a player
 #   burns mana_burn_percent of that player's maximum mana from the current
@@ -1202,7 +2117,62 @@ fast_cast_rate_stat = 105
 #   the wait. So multi-hit missiles and a whole pack of burners take at most
 #   one burn per window. 0 = every successful hit burns.
 mana_burn_percent = 10
+#   mana_burn_cooldown_percent_per_level: the cooldown gets this percent
+#   shorter for every level the burning monster has past high_level_start
+#   (5: a level 110 monster burns once every 12 frames). It cannot go below
+#   0, which burns on every hit.
 mana_burn_cooldown_frames = 25
+mana_burn_cooldown_percent_per_level = 5
+
+# AURA ENCHANTED (at spawn)
+#   Replaces the game's own Aura Enchanted roll, the one D2RLoader runs while
+#   d2rloader.toml has d2rcore.game_rules.aura_enchanted_selection = "3.1".
+#   At "3.2" D2RLoader rolls its own built-in list and none of this applies.
+#   With none of the keys below set, the game's roll runs untouched.
+#
+#   List entries are { skill = N, divisor = N, min_level = N } or a bare
+#   skills.txt *Id (divisor 6, min_level 0). -1 entries are skipped.
+#     skill      skills.txt *Id of the aura
+#     divisor    aura level = monster level / divisor, kept between 1 and 99
+#     min_level  the entry only counts for monsters of at least this level
+#   Every entry that counts is equally likely; list a skill twice to make it
+#   twice as likely. The pick comes from the monster's name seed, as before.
+#   A list that is missing, empty or cannot be read uses the game's own:
+#     aura list    98, 368, 108, 365, 123, 122 and 369 (369 from level 20)
+#     herald list  113, 115 and 428 (or what a static patch put there)
+#   Those are vanilla 3.3 rows; ESR has other skills at most of them.
+#   A skill that is not a skills.txt row is never given. One whose aura column
+#   is 0 is given, but runs no aura. The plugin log names each such skill once.
+#   The console command lists both lists and counts each kind of roll.
+
+# Every Aura Enchanted monster rolls one aura from this list.
+aura_enchanted_skills = [
+    { skill = 540, divisor = 6 },                  # Might
+    { skill = 535, divisor = 6 },                  # Holy Fire
+    { skill = 529, divisor = 5 },                  # Blessed Aim
+    { skill = 544, divisor = 7 },                  # Holy Freeze
+    { skill = 555, divisor = 8 },                  # Conviction
+    { skill = 554, divisor = 8 },                  # Fanaticism
+    { skill = 548, divisor = 8, min_level = 20 },  # Holy Shock
+]
+
+# Heralds roll one more aura from this list, given the way an item gives an
+# aura (stat 151, item_aura).
+herald_aura_skills = [
+    { skill = 543, divisor = 6 },                  # Concentration
+    { skill = 545, divisor = 6 },                  # Vigor
+    { skill = 555, divisor = 10 },                 # Conviction
+]
+
+# Fixed auras that skip the roll. -1 keeps the game's own.
+#   Uber Mephisto (monstats.txt row 704): the game gives skill 123 at level
+#   20. He gets no herald aura.
+#   Lord De Seis (superuniques.txt row 37): the game gives the 6th entry of
+#   its own aura list (skill 122, level = monster level / 8).
+uber_mephisto_aura_skill = 555
+uber_mephisto_aura_level = 20
+lord_de_seis_aura_skill = 554
+lord_de_seis_aura_divisor = 8
 
 # RESISTANCE (always on, nothing to configure)
 #   No affix grants resistance any more. Removed: Fire / Cold / Lightning
@@ -1211,7 +2181,7 @@ mana_burn_cooldown_frames = 25
 #   (+50 physical) and the old Magic Resistant (+40 fire, cold, lightning).
 #   Ghostly champions keep their 80% physical resist (a separate routine).
 #
-# MAGIC RESISTANT (always on, nothing to configure)
+# MAGIC RESISTANT (always on)
 #   At spawn, each resist separately gets +50, capped at 95.
 #   What the cap leaves unused is converted:
 #     fire, cold, lightning, magic: 1% absorb of that element per 2 points
@@ -1221,6 +2191,11 @@ mana_burn_cooldown_frames = 25
 #   Applied once at spawn, never re-evaluated. The boss gets it, and so do its
 #   minions that inherit the affix (monumod.txt xfer = 1); vanilla gave the
 #   minions nothing.
+#   magic_resistant_percent_per_level: the +50 grows by this percent for
+#   every level past high_level_start (5: level 107 gets +67). The 95 cap and
+#   the conversion rates stay, so the extra points mostly become absorb,
+#   dodge, avoid, evade and poison length reduction.
+magic_resistant_percent_per_level = 5
 )toml";
 
 void LoadSettings() noexcept {
@@ -1248,7 +2223,8 @@ void LoadSettings() noexcept {
 
 			c.teleportSkill          = ReadSkillId(text, "teleport_skill", c.teleportSkill);
 			c.teleportChance         = ReadNumber(text, "teleport_chance", 0, 100, c.teleportChance);
-			c.teleportCooldownFrames = ReadNumber(text, "teleport_cooldown_frames", 0, 1'000'000, c.teleportCooldownFrames);
+			c.teleportCooldownFrames = ReadNumber(text, "teleport_cooldown_frames", UseLocalDelay, 1'000'000,
+			                                      c.teleportCooldownFrames);
 
 			ReadSkillList(text, "cursed_skills", c);
 
@@ -1268,6 +2244,24 @@ void LoadSettings() noexcept {
 			c.manaBurnPercent        = ReadNumber(text, "mana_burn_percent", -1, 100, c.manaBurnPercent);
 			c.manaBurnCooldownFrames = ReadNumber(text, "mana_burn_cooldown_frames", 0, 1'000'000,
 			                                      c.manaBurnCooldownFrames);
+
+			c.highLevelStart                  = ReadNumber(text, "high_level_start", 0, 100'000, c.highLevelStart);
+			c.strongPercentPerLevel           = ReadNumber(text, "strong_percent_per_level", 0, 10'000, c.strongPercentPerLevel);
+			c.magicResistPercentPerLevel      = ReadNumber(text, "magic_resistant_percent_per_level", 0, 10'000,
+			                                               c.magicResistPercentPerLevel);
+			c.manaBurnCooldownPercentPerLevel = ReadNumber(text, "mana_burn_cooldown_percent_per_level", 0, 100,
+			                                               c.manaBurnCooldownPercentPerLevel);
+			c.fastFramesStat                  = ReadNumber(text, "fast_frames_stat", -1, 0xFFFF, c.fastFramesStat);
+			c.fastFramesPercentPerLevel       = ReadNumber(text, "fast_frames_percent_per_level", 0, 100,
+			                                               c.fastFramesPercentPerLevel);
+			c.fastFramesMinimum               = ReadNumber(text, "fast_frames_minimum", 1, 1'000, c.fastFramesMinimum);
+
+			ReadAuraList(text, "aura_enchanted_skills", c.auraMain);
+			ReadAuraList(text, "herald_aura_skills", c.auraHerald);
+			c.uberMephistoSkill = ReadSkillId(text, "uber_mephisto_aura_skill", c.uberMephistoSkill);
+			c.uberMephistoLevel = ReadNumber(text, "uber_mephisto_aura_level", 1, 99, c.uberMephistoLevel);
+			c.lordDeSeisSkill   = ReadSkillId(text, "lord_de_seis_aura_skill", c.lordDeSeisSkill);
+			c.lordDeSeisDivisor = ReadNumber(text, "lord_de_seis_aura_divisor", 1, 9'999, c.lordDeSeisDivisor);
 		}
 	}
 
@@ -1390,6 +2384,156 @@ void InstallMinionMagicResist() noexcept {
 	                         reinterpret_cast<void**>(&OriginalSetRankFlag), "the rank flag setter");
 }
 
+// "aura-enchanted", version 1, read by Monster Display: the skills the roll can
+// give. kind 0 = the ones put in the skill list (main list, Uber Mephisto, Lord
+// De Seis), kind 1 = the herald extras (stat 151 layers). Writes up to capacity
+// ids and returns how many it wrote. The lists are fixed after load; a list
+// the TOML does not set is read from the game's table.
+struct AuraEnchantedService {
+	using CandidatesFn = std::uint32_t(__cdecl*)(std::uint32_t kind, std::uint16_t* skills, std::uint32_t capacity) noexcept;
+
+	std::uint32_t serviceSize;
+	std::uint32_t serviceVersion;
+	CandidatesFn  candidates;
+};
+static_assert(sizeof(AuraEnchantedService) == 16 && offsetof(AuraEnchantedService, candidates) == 8);
+
+auto __cdecl ServiceAuraCandidates(std::uint32_t kind, std::uint16_t* skills, std::uint32_t capacity) noexcept
+	-> std::uint32_t {
+	if (skills == nullptr || capacity == 0) return 0;
+	std::uint32_t count = 0;
+	const auto    add   = [&](std::int32_t skill) noexcept {
+        if (skill <= 0 || skill > MaxSkillId || count >= capacity) return;
+        skills[count++] = static_cast<std::uint16_t>(skill);
+	};
+	AuraList stock {};
+	if (kind == 0) {
+		const AuraList& list = EffectiveList(Config.auraMain, MainAuraTableRva, MainAuraRecords, stock);
+		for (std::uint32_t i = 0; i < list.count; ++i) add(list.records[i].skill);
+		add(Config.uberMephistoSkill != NoSkill ? Config.uberMephistoSkill : StockUberAuraSkill);
+		add(Config.lordDeSeisSkill != NoSkill ? Config.lordDeSeisSkill
+		                                      : TableRecord(MainAuraTableRva, StockLordDeSeisRecord).skill);
+	} else if (kind == 1) {
+		const AuraList& list = EffectiveList(Config.auraHerald, HeraldAuraTableRva, HeraldAuraRecords, stock);
+		for (std::uint32_t i = 0; i < list.count; ++i) add(list.records[i].skill & 0xFFFF);
+	}
+	return count;
+}
+
+constexpr AuraEnchantedService AuraServiceTable {
+	.serviceSize    = sizeof(AuraEnchantedService),
+	.serviceVersion = 1,
+	.candidates     = &ServiceAuraCandidates,
+};
+
+const D2RL::PluginCommunicationService* Communication = nullptr;
+
+void PublishAuraService() noexcept {
+	if (Context->QueryService(&Communication) != D2RL::ServiceQueryResult::Success
+	    || !D2RL::HasPluginCommunicationServiceField(Communication, D2RL::PluginCommunicationServiceRequiredSize)) {
+		Communication = nullptr;
+		LogWarn("Aura Enchanted: no plugin communication service; Monster Display looks for the game's lists.");
+		return;
+	}
+	const D2RL::PluginCommunication::PublishServiceRequest request {
+		.structSize     = D2RL::PluginCommunication::PublishServiceRequestSize,
+		.flags          = 0,
+		.name           = "aura-enchanted",
+		.serviceVersion = 1,
+		.tableSize      = static_cast<std::uint32_t>(sizeof(AuraServiceTable)),
+		.table          = &AuraServiceTable,
+	};
+	if (Communication->publishService(Context, &request) != D2RL::PluginCommunication::Result::Success) {
+		LogWarn("Aura Enchanted: the aura-enchanted service was refused; Monster Display looks for the game's lists.");
+	}
+}
+
+auto AuraWanted() noexcept -> bool {
+	return Config.auraMain.configured || Config.auraHerald.configured || Config.uberMephistoSkill != NoSkill
+	    || Config.lordDeSeisSkill != NoSkill;
+}
+
+void InstallAuraEnchanted() noexcept {
+	if (!AuraWanted()) {
+		LogInfo("Aura Enchanted: no aura key in the TOML; the game's own roll runs.");
+		return;
+	}
+
+	struct AuraWitness {
+		std::uint64_t       rva;
+		const std::uint8_t* bytes;
+		std::uint32_t       size;
+		const char*         name;
+	};
+	const AuraWitness witnesses[] {
+		{ 0x00495D3E, AuraUberBody, ByteCount(AuraUberBody), "Aura Enchanted, row 704 branch" },
+		{ 0x00495D97, AuraLevelBody, ByteCount(AuraLevelBody), "Aura Enchanted, monster level" },
+		{ 0x00495DB1, AuraSeedBody, ByteCount(AuraSeedBody), "Aura Enchanted, seed and superunique" },
+		{ 0x00495DCF, AuraDeSeisBody, ByteCount(AuraDeSeisBody), "Aura Enchanted, superunique 37" },
+		{ 0x00495DDD, AuraStateBody, ByteCount(AuraStateBody), "Aura Enchanted, roll state" },
+		{ 0x00495E00, AuraMainReadBody, ByteCount(AuraMainReadBody), "Aura Enchanted, main list" },
+		{ 0x00495E1D, AuraMainCountBody, ByteCount(AuraMainCountBody), "Aura Enchanted, main list size" },
+		{ 0x00495E3B, AuraStepBody, ByteCount(AuraStepBody), "Aura Enchanted, roll step" },
+		{ 0x00495EF2, AuraRecordBody, ByteCount(AuraRecordBody), "Aura Enchanted, picked record" },
+		{ 0x00495F46, AuraAddSkillBody, ByteCount(AuraAddSkillBody), "Aura Enchanted, skill added" },
+		{ 0x00495F59, AuraSelectBody, ByteCount(AuraSelectBody), "Aura Enchanted, right-hand skill" },
+		{ 0x00495F69, AuraHeraldFlagBody, ByteCount(AuraHeraldFlagBody), "Aura Enchanted, herald flag" },
+		{ 0x00495FA0, AuraHeraldReadBody, ByteCount(AuraHeraldReadBody), "Aura Enchanted, herald list" },
+		{ 0x00495FBD, AuraHeraldCountBody, ByteCount(AuraHeraldCountBody), "Aura Enchanted, herald list size" },
+		{ 0x004960D2, AuraListFindBody, ByteCount(AuraListFindBody), "Aura Enchanted, herald stat list" },
+		{ 0x004960E7, AuraListNewBody, ByteCount(AuraListNewBody), "Aura Enchanted, new stat list" },
+		{ 0x0049611D, AuraListAttachBody, ByteCount(AuraListAttachBody), "Aura Enchanted, stat list attach" },
+		{ 0x0049612B, AuraStatWriteBody, ByteCount(AuraStatWriteBody), "Aura Enchanted, stat 151 write" },
+		{ ClassIdRva, ClassIdBytes, ByteCount(ClassIdBytes), "monstats row helper" },
+		{ NameSeedRva, NameSeedBytes, ByteCount(NameSeedBytes), "name seed helper" },
+		{ SuperUniqueRva, SuperUniqueBytes, ByteCount(SuperUniqueBytes), "superunique row helper" },
+		{ SetSkillRva, SetSkillBytes, ByteCount(SetSkillBytes), "set skill" },
+		{ SelectSkillRva, SelectSkillBytes, ByteCount(SelectSkillBytes), "right-hand skill" },
+		{ FindStatListRva, FindStatListBytes, ByteCount(FindStatListBytes), "stat list lookup" },
+		{ AllocStatListRva, AllocStatListBytes, ByteCount(AllocStatListBytes), "stat list allocation" },
+		{ AttachStatListRva, LoaderThunkBytes, ByteCount(LoaderThunkBytes), "stat list attach" },
+		{ DataContextRva, DataContextBytes, ByteCount(DataContextBytes), "data context" },
+		{ SetListStatRva, LoaderThunkBytes, ByteCount(LoaderThunkBytes), "stat list write" },
+	};
+	for (const AuraWitness& witness : witnesses) {
+		if (!Context->CheckExpectedBytes(witness.rva, witness.bytes, witness.size)) {
+			char message[224] {};
+			std::snprintf(message, sizeof(message), "%s at 0x%llX does not match; Aura Enchanted keeps the game's own roll.",
+			              witness.name, static_cast<unsigned long long>(witness.rva));
+			LogError(message);
+			return;
+		}
+	}
+
+	ClassId        = At<ClassIdFn>(ClassIdRva);
+	NameSeed       = At<UnitWordFn>(NameSeedRva);
+	SuperUnique    = At<UnitWordFn>(SuperUniqueRva);
+	SetSkill       = At<SetSkillFn>(SetSkillRva);
+	SelectSkill    = At<SelectSkillFn>(SelectSkillRva);
+	FindStatList   = At<FindStatListFn>(FindStatListRva);
+	AllocStatList  = At<AllocStatListFn>(AllocStatListRva);
+	AttachStatList = At<AttachStatListFn>(AttachStatListRva);
+	DataContext    = At<DataContextFn>(DataContextRva);
+	SetListStat    = At<SetListStatFn>(SetListStatRva);
+
+	AuraHookInstalled = Hook(AuraEnchantedRva, AuraEnchantedPrologue, reinterpret_cast<void*>(&HookAuraEnchanted),
+	                         reinterpret_cast<void**>(&OriginalAuraEnchanted), "the Aura Enchanted routine");
+	if (!AuraHookInstalled) return;
+	PublishAuraService();
+
+	char message[384] {};
+	std::snprintf(message, sizeof(message),
+	              "Aura Enchanted: main list %s (%u), herald list %s (%u), Uber Mephisto skill %d at level %d, Lord De "
+	              "Seis skill %d. Used while d2rloader.toml has aura_enchanted_selection = \"3.1\".",
+	              Config.auraMain.configured ? "from the TOML" : "the game's", Config.auraMain.count,
+	              Config.auraHerald.configured ? "from the TOML" : "the game's", Config.auraHerald.count,
+	              Config.uberMephistoSkill != NoSkill ? Config.uberMephistoSkill : StockUberAuraSkill,
+	              Config.uberMephistoSkill != NoSkill ? Config.uberMephistoLevel : StockUberAuraLevel,
+	              Config.lordDeSeisSkill != NoSkill ? Config.lordDeSeisSkill
+	                                                : TableRecord(MainAuraTableRva, StockLordDeSeisRecord).skill);
+	LogInfo(message);
+}
+
 void InstallAll() noexcept {
 	const bool struckWanted = Config.fireSkill != NoSkill || Config.coldSkill != NoSkill
 	                       || Config.lightningSkill != NoSkill || Config.stoneSkinSkill != NoSkill
@@ -1459,10 +2603,24 @@ void InstallAll() noexcept {
 		}
 	}
 
+	// Extra Fast frames: the rate update hands every unit it updates to 0x980E0.
+	if (Config.fastFramesStat >= 0 && Config.fastFramesPercentPerLevel > 0) {
+		if (!Context->CheckExpectedBytes(RateNotifyCallRva, RateNotifyCallBytes, ByteCount(RateNotifyCallBytes))) {
+			LogError("The rate update call at 0x350C78 does not match; Extra Fast frames stay off.");
+		} else {
+			RateHookInstalled = Hook(RateNotifyRva, RateNotifyPrologue, reinterpret_cast<void*>(&HookRateNotify),
+			                         reinterpret_cast<void**>(&OriginalRateNotify), "the rate update notifier");
+		}
+		FastFramesActive = RateHookInstalled;
+	}
+
+	// Aura Enchanted.
+	InstallAuraEnchanted();
+
 	char message[512] {};
 	std::snprintf(message, sizeof(message),
 	              "Struck skills: fire %d (%s), cold %d (%s), lightning %d (%s), stone skin %d (%s), teleport %d at "
-	              "%d%% every %d frames (%s). Spectral Hit: %u skill%s (%s). Cursed: %u skill%s (%s). Mana Burn %d%%, "
+	              "%d%%, lockout %d frames, -1 = localdelay (%s). Spectral Hit: %u skill%s (%s). Cursed: %u skill%s (%s). Mana Burn %d%%, "
 	              "once per %d frames per player (%s). Death effects: fire %s, cold %s.",
 	              Config.fireSkill, FireActive ? "on" : "off", Config.coldSkill, ColdActive ? "on" : "off",
 	              Config.lightningSkill, LightningActive ? "on" : "off", Config.stoneSkinSkill,
@@ -1472,6 +2630,14 @@ void InstallAll() noexcept {
 	              CursedPoolSize == 1 ? "" : "s", CursedActive ? "on" : "off", Config.manaBurnPercent,
 	              Config.manaBurnCooldownFrames, ManaBurnActive ? "on" : "off", FireDeathPatched ? "removed" : "STOCK",
 	              ColdDeathPatched ? "removed" : "STOCK");
+	LogInfo(message);
+
+	std::snprintf(message, sizeof(message),
+	              "High level monsters past level %d, per level: Extra Strong +%d%%, Magic Resistant +%d%%, Mana Burn "
+	              "cooldown -%d%%, Extra Fast frames -%d%% (stat %d, at least %d frames, %s).",
+	              Config.highLevelStart, Config.strongPercentPerLevel, Config.magicResistPercentPerLevel,
+	              Config.manaBurnCooldownPercentPerLevel, Config.fastFramesPercentPerLevel, Config.fastFramesStat,
+	              Config.fastFramesMinimum, FastFramesActive ? "on" : "off");
 	LogInfo(message);
 }
 
@@ -1483,6 +2649,25 @@ auto OnOff(bool value) noexcept -> const char* {
 	return value ? "on" : "OFF";
 }
 
+// "name (TOML|game): skill/divisor ..., with "from N" for a minimum level.
+void WriteAuraList(const D2RL::PluginContext* plugin, const char* name, const AuraList& configured,
+                   std::uint64_t tableRva, std::uint32_t records) noexcept {
+	AuraList        stock {};
+	const AuraList& list = EffectiveList(configured, tableRva, records, stock);
+	char            line[1024] {};
+	int             used = std::snprintf(line, sizeof(line), "%s (%s):", name, configured.configured ? "TOML" : "game");
+	for (std::uint32_t i = 0; i < list.count; ++i) {
+		if (used < 0 || static_cast<std::size_t>(used) >= sizeof(line)) break;
+		const AuraRecord& record = list.records[i];
+		if (record.weight <= 0) continue;
+		const std::size_t left = sizeof(line) - static_cast<std::size_t>(used);
+		used += record.minLevel > 0
+		          ? std::snprintf(line + used, left, " %d/%d from %d", record.skill, record.divisor, record.minLevel)
+		          : std::snprintf(line + used, left, " %d/%d", record.skill, record.divisor);
+	}
+	plugin->WriteConsoleMessage(line);
+}
+
 auto __cdecl StatusCommand(D2R::Game::Client*, const D2RL::ConsoleCommandContext* command, void*) noexcept
 	-> D2RL::ConsoleCommandResult {
 	if (command == nullptr || command->plugin == nullptr) return D2RL::ConsoleCommandResult::Failed;
@@ -1490,7 +2675,7 @@ auto __cdecl StatusCommand(D2R::Game::Client*, const D2RL::ConsoleCommandContext
 
 	char line[512] {};
 	std::snprintf(line, sizeof(line),
-	              "Monster Affixes 1.4.1: config %s | hooks: resist %s, minion flag %s, finalize %s, events %s, "
+	              "Monster Affixes 1.7.0: config %s | hooks: resist %s, minion flag %s, finalize %s, events %s, "
 	              "struck %s, mode %s, landed %s, strong %s, fast %s",
 	              ConfigFileRead ? "loaded" : "NOT READ (defaults)", OnOff(ResistRoutineInstalled),
 	              OnOff(MinionMagicResist), OnOff(StruckCaptureInstalled), OnOff(HitCaptureInstalled),
@@ -1515,6 +2700,18 @@ auto __cdecl StatusCommand(D2R::Game::Client*, const D2RL::ConsoleCommandContext
 	              Config.manaBurnCooldownFrames,
 	              static_cast<unsigned long long>(ManaBurnBlocked.load(std::memory_order_relaxed)),
 	              static_cast<unsigned long long>(LockoutCount()));
+	plugin->WriteConsoleMessage(line);
+
+	std::snprintf(line, sizeof(line),
+	              "high level past %d | per level: strong +%d%%, magic resistant +%d%%, mana burn cooldown -%d%%, fast "
+	              "frames -%d%% (stat %d, minimum %d, %s) | fast frames given %llu, rates shortened %llu, sequences held "
+	              "back %llu",
+	              Config.highLevelStart, Config.strongPercentPerLevel, Config.magicResistPercentPerLevel,
+	              Config.manaBurnCooldownPercentPerLevel, Config.fastFramesPercentPerLevel, Config.fastFramesStat,
+	              Config.fastFramesMinimum, FastFramesActive ? "on" : "off",
+	              static_cast<unsigned long long>(FastFramesGiven.load(std::memory_order_relaxed)),
+	              static_cast<unsigned long long>(FastFramesChanged.load(std::memory_order_relaxed)),
+	              static_cast<unsigned long long>(FastFramesHeldBack.load(std::memory_order_relaxed)));
 	plugin->WriteConsoleMessage(line);
 
 	struct Row {
@@ -1549,6 +2746,23 @@ auto __cdecl StatusCommand(D2R::Game::Client*, const D2RL::ConsoleCommandContext
 	              static_cast<unsigned long long>(CursedMinionCasts.load(std::memory_order_relaxed)),
 	              static_cast<unsigned long long>(CursedDelegated.load(std::memory_order_relaxed)));
 	plugin->WriteConsoleMessage(line);
+
+	std::snprintf(line, sizeof(line),
+	              "aura enchanted %s | given: main list %llu, herald %llu, fixed %llu | no entry %llu | skill missing "
+	              "%llu | uber mephisto %d at level %d | lord de seis %d",
+	              AuraHookInstalled ? "on" : (AuraWanted() ? "OFF (see the log)" : "stock (no aura key)"),
+	              static_cast<unsigned long long>(AuraMainGiven.load(std::memory_order_relaxed)),
+	              static_cast<unsigned long long>(AuraHeraldGiven.load(std::memory_order_relaxed)),
+	              static_cast<unsigned long long>(AuraFixedGiven.load(std::memory_order_relaxed)),
+	              static_cast<unsigned long long>(AuraNoEntry.load(std::memory_order_relaxed)),
+	              static_cast<unsigned long long>(AuraBadSkill.load(std::memory_order_relaxed)),
+	              Config.uberMephistoSkill != NoSkill ? Config.uberMephistoSkill : StockUberAuraSkill,
+	              Config.uberMephistoSkill != NoSkill ? Config.uberMephistoLevel : StockUberAuraLevel,
+	              Config.lordDeSeisSkill != NoSkill ? Config.lordDeSeisSkill
+	                                                : TableRecord(MainAuraTableRva, StockLordDeSeisRecord).skill);
+	plugin->WriteConsoleMessage(line);
+	WriteAuraList(plugin, "aura list", Config.auraMain, MainAuraTableRva, MainAuraRecords);
+	WriteAuraList(plugin, "herald list", Config.auraHerald, HeraldAuraTableRva, HeraldAuraRecords);
 	return D2RL::ConsoleCommandResult::Handled;
 }
 
@@ -1557,13 +2771,14 @@ constexpr D2RL::PluginInfo MonsterAffixesInfo {
 	.abiVersion  = D2RL_PLUGIN_ABI_VERSION,
 	.id          = "celestialrayone.monster-affixes",
 	.name        = "Monster Affixes",
-	.version     = "1.4.1",
+	.version     = "1.7.0",
 	.author      = "CelestialRayOne",
 	.description = "Monster affix rework: skills cast when struck (enchanted, Stone Skin, Teleportation), no enchanted "
 	               "death effects, Spectral Hit skills on attack and cast with per-skill lockouts, Cursed skill pool "
 	               "shared with minions, new Extra Strong, Extra Fast and Mana Burn bonuses, localdelay lockouts, no "
-	               "affix resistances and a new Magic Resistant that minions share.",
-	.flags       = D2RL::PluginFlags::Server | D2RL::PluginFlags::NativeHooks,
+	               "affix resistances, a new Magic Resistant that minions share, Aura Enchanted auras from TOML lists, and "
+	               "level scaling past level 100 for Extra Strong, Extra Fast, Mana Burn and Magic Resistant.",
+	.flags       = D2RL::PluginFlags::Shared | D2RL::PluginFlags::NativeHooks,
 };
 
 }  // namespace
@@ -1618,5 +2833,10 @@ D2RL_PLUGIN_EXPORT void D2RLoaderUnloadPlugin() noexcept {
 	OriginalModeDispatch   = nullptr;
 	OriginalStruckDispatch = nullptr;
 	OriginalFastSpawn      = nullptr;
+	FastFramesActive       = false;
+	RateHookInstalled      = false;
+	OriginalRateNotify     = nullptr;
+	AuraHookInstalled      = false;
+	OriginalAuraEnchanted  = nullptr;
 	Context                = nullptr;
 }

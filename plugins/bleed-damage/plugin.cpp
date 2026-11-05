@@ -120,11 +120,18 @@
 //     2DB84E  83 FB 2A              cmp  ebx, 2Ah
 //     2DB851  0F 87 62 06 00 00     ja   2DBEB9              ; return 0
 //   Stats 17..59 go to the native switch first, as the 2.4 cave did. For the
-//   min stat with the flag set the hook formats the line the way the native
-//   poison range line does, sub_1400847F0(buffer256, text, min, max, len/25),
-//   then runs the native tail: the chronicle bullet when requested, the
-//   line, and the newline key, each through the composer's own string
-//   resolver and 12276A0. The max and length stats return the flag.
+//   min stat with the flag set the hook formats the line into a 256-byte
+//   buffer from (text, min, max, seconds), the argument order of the native
+//   poison range line, then runs the native tail: the chronicle bullet when
+//   requested, the line, and the newline key, each through the composer's
+//   own string resolver and 12276A0. The max and length stats return the flag.
+//
+//   The line is formatted with the plugin's own snprintf rather than the
+//   game's formatter 847F0, so the text may show the seconds with decimals.
+//   Seconds is length / 25.0 when the text's third placeholder is a floating
+//   one (%.2f and so on) and the whole seconds length / 25 otherwise, so a
+//   text still written with %d keeps working and never reads a double as an
+//   int.
 
 #include <D2RLPlugin/api.h>
 
@@ -175,7 +182,6 @@ constexpr std::uint64_t ComposerTailLineRva         = 0x2DBE69;
 constexpr std::uint64_t ComposerTailReturnRva       = 0x2DBEA5;
 constexpr std::uint64_t ComposerBulletResolveCallRva = 0x2DBE64;
 constexpr std::uint64_t ComposerNewlineResolveCallRva = 0x2DBEA0;
-constexpr std::uint64_t FormatLineRva               = 0x847F0;
 constexpr std::uint64_t AppendTextRva               = 0x12276A0;
 
 // The thunks keep an FF 25 disp32 jump into D2RLoader's import slot. The
@@ -321,14 +327,6 @@ constexpr std::uint8_t ComposerTailReturnWitness[]{
     0xF4, 0x00, 0x41, 0xB8, 0x01, 0x00, 0x00, 0x00,
 };
 
-// 847F0: vsnprintf(output, 100h, format, ...).
-constexpr std::uint8_t FormatLineBodyWitness[]{
-    0x48, 0x89, 0x54, 0x24, 0x10, 0x4C, 0x89, 0x44, 0x24, 0x18, 0x4C, 0x89,
-    0x4C, 0x24, 0x20, 0x48, 0x83, 0xEC, 0x28, 0x4C, 0x8B, 0xC2, 0x4C, 0x8D,
-    0x4C, 0x24, 0x40, 0xBA, 0x00, 0x01, 0x00, 0x00, 0xE8, 0x5B, 0x5E, 0x1A,
-    0x01, 0x48, 0x83, 0xC4, 0x28, 0xC3,
-};
-
 // 12276A0: append(output, capacity, text).
 constexpr std::uint8_t AppendTextPrologueWitness[]{
     0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x6C, 0x24, 0x10, 0x48, 0x89,
@@ -403,7 +401,6 @@ using AccumulateFn        = std::uint64_t(__fastcall*)(void* unit, void* statLis
 using ComposeFn           = std::uint64_t(__fastcall*)(std::int32_t* accumulator,
                                 std::uint64_t statId, char* output, std::uint64_t capacity,
                                 std::uint64_t chronicle) noexcept;
-using FormatLineFn        = std::int32_t(__cdecl*)(char* output, const char* format, ...);
 using AppendTextFn        = void(__fastcall*)(char* output, std::uint64_t capacity,
                                 const char* text);
 using ResolveStringKeyFn  = const char*(__fastcall*)(const StringKey* key);
@@ -486,9 +483,12 @@ constexpr char DefaultConfigToml[] =
     "# Master switch for the composed tooltip line.\n"
     "enabled = true\n"
     "\n"
-    "# String key of the tooltip line. The text receives three whole numbers\n"
-    "# in this order: min percent, max percent, length in seconds (length / 25).\n"
-    "# Write them as %d, like the game's poison damage line.\n"
+    "# String key of the tooltip line. The text receives three values in this\n"
+    "# order: min percent, max percent, length in seconds (length / 25).\n"
+    "# Write the percents as %d. Write the seconds as %.2f for two decimals\n"
+    "# (5 frames shows 0.20) or as %d for whole seconds (5 frames shows 0).\n"
+    "# A floating placeholder (%f, %e, %g, %a, with any precision) gets the\n"
+    "# exact seconds, any other gets whole seconds.\n"
     "#\n"
     "# The line appears where the min stat's own line would be. While both min\n"
     "# and max are above 0 on the item, the max and length stats show no line\n"
@@ -523,7 +523,6 @@ GetUnitSeedFn      GetUnitSeed{};
 UnitStatEventFn    OriginalUnitStatEvent{};
 AccumulateFn       OriginalAccumulate{};
 ComposeFn          OriginalCompose{};
-FormatLineFn       FormatLine{};
 AppendTextFn       AppendText{};
 ResolveStringKeyFn ResolveStringKey{};
 
@@ -879,6 +878,26 @@ auto Resolve(const char* key, std::size_t length) noexcept -> const char* {
     return text != nullptr ? text : "";
 }
 
+// The conversion letter of the text's third placeholder, 0 when the text has
+// fewer than three. %% is a literal percent sign, not a placeholder.
+auto ThirdConversion(const char* format) noexcept -> char {
+    constexpr char SpecifierPrefix[] = "-+ #0123456789.*hlLjztwI";
+    int placeholders = 0;
+    for (const char* cursor = format; *cursor != '\0'; ++cursor) {
+        if (*cursor != '%') continue;
+        ++cursor;
+        while (*cursor != '\0' && std::strchr(SpecifierPrefix, *cursor) != nullptr) ++cursor;
+        if (*cursor == '\0') return 0;
+        if (*cursor == '%') continue;
+        if (++placeholders == 3) return *cursor;
+    }
+    return 0;
+}
+
+auto IsFloatingConversion(char conversion) noexcept -> bool {
+    return conversion != '\0' && std::strchr("aAeEfFgG", conversion) != nullptr;
+}
+
 std::uint64_t __fastcall HookedCompose(std::int32_t* accumulator, std::uint64_t statIdArgument,
         char* output, std::uint64_t capacity, std::uint64_t chronicle) noexcept {
     const auto statId = static_cast<std::int32_t>(static_cast<std::uint32_t>(statIdArgument));
@@ -902,7 +921,13 @@ std::uint64_t __fastcall HookedCompose(std::int32_t* accumulator, std::uint64_t 
 
     char line[TooltipBufferBytes]{};
     const char* const format = Resolve(Settings.stringKey.c_str(), Settings.stringKey.size());
-    FormatLine(line, format, values->minimum, values->maximum, values->length / FramesPerSecond);
+    if (IsFloatingConversion(ThirdConversion(format))) {
+        std::snprintf(line, sizeof(line), format, values->minimum, values->maximum,
+            static_cast<double>(values->length) / FramesPerSecond);
+    } else {
+        std::snprintf(line, sizeof(line), format, values->minimum, values->maximum,
+            values->length / FramesPerSecond);
+    }
 
     if ((chronicle & 0xFF) != 0) {
         AppendText(output, capacity, Resolve(BulletKey, sizeof(BulletKey) - 1));
@@ -1016,8 +1041,6 @@ auto VerifyTooltipContract() noexcept -> bool {
                 sizeof(ComposerTailLineWitness), "the tooltip composer line append")
             && Verify(ComposerTailReturnRva, ComposerTailReturnWitness,
                 sizeof(ComposerTailReturnWitness), "the tooltip composer newline")
-            && Verify(FormatLineRva, FormatLineBodyWitness, sizeof(FormatLineBodyWitness),
-                "the tooltip line formatter")
             && Verify(AppendTextRva, AppendTextPrologueWitness,
                 sizeof(AppendTextPrologueWitness), "the tooltip text append"))) {
         return false;
@@ -1250,7 +1273,6 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
     ReadListStat      = reinterpret_cast<ReadStatFn>(Base + ReadListStatRva);
     GetDataContext    = reinterpret_cast<GetDataContextFn>(Base + GetDataContextRva);
     GetUnitSeed       = reinterpret_cast<GetUnitSeedFn>(Base + GetUnitSeedRva);
-    FormatLine        = reinterpret_cast<FormatLineFn>(Base + FormatLineRva);
     AppendText        = reinterpret_cast<AppendTextFn>(Base + AppendTextRva);
 
     ReadConfiguration();

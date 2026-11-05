@@ -36,7 +36,14 @@ public:
     [[nodiscard]] virtual auto Where() const -> Location = 0;
     [[nodiscard]] virtual auto Area() const -> int = 0;              // levels.txt id, -1 unknown
     [[nodiscard]] virtual auto IsType(int itemTypeRow) const -> bool = 0;
+    // Stats read as the number the item tooltip prints (stat_values.h).
     [[nodiscard]] virtual auto Stat(int stat, int param) const -> int = 0;
+    // Every param of one stat: the highest and the total value, 0 when it has none.
+    [[nodiscard]] virtual auto StatMax(int stat) const -> int = 0;
+    [[nodiscard]] virtual auto StatSum(int stat) const -> std::int64_t = 0;
+    // For a stat whose param holds a skill and its level: the highest value of
+    // the entries for `skill`, at any level.
+    [[nodiscard]] virtual auto StatForSkill(int stat, int skill) const -> int = 0;
     [[nodiscard]] virtual auto IsGold() const -> bool = 0;
     [[nodiscard]] virtual auto DisplayName() const -> std::string = 0;  // plain name, for chat lines
     // The color code character the item's name shows in (the X of ÿcX), after
@@ -55,7 +62,8 @@ public:
 class PlayerSubject {
 public:
     virtual ~PlayerSubject() = default;
-    [[nodiscard]] virtual auto Stat(int stat, int param) const -> int = 0;
+    [[nodiscard]] virtual auto Stat(int stat, int param) const -> int = 0;  // as the tooltip prints it
+    [[nodiscard]] virtual auto StatForSkill(int stat, int skill) const -> int = 0;
     [[nodiscard]] virtual auto Difficulty() const -> int = 0;        // 0-2, -1 unknown
 };
 
@@ -82,6 +90,8 @@ struct Outcome {
     const DroplightSpec*        droplight{};    // null when none or when hidden
     std::vector<int>            matchedRules;   // rule numbers, in order
     int                         hiddenBy{};     // rule number that hid the item, -1 for hideUnmatchedItems, 0 when shown
+    int                         shownBy{};      // rule number whose "show" kept later rules from hiding it, 0 for none
+    std::vector<int>            skippedUnidentified;  // rules skipped because the item is unidentified
 };
 
 void Evaluate(const FilterProgram& program, const ItemSubject& item, const PlayerSubject* player,

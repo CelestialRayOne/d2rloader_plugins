@@ -1,0 +1,12143 @@
+// The specialization window layout (data/global/ui/layouts/celestialrayone.specializations/
+// SpecializationPanelhd.json), compiled into the plugin. Generated; split into pieces below
+// MSVC's string literal limit. The plugin joins them and registers the result.
+constexpr const char* const PanelLayoutChunks[] = {
+R"SPLJ({
+ "type": "Panel",
+ "name": "celestialrayone.specializations/SpecializationPanel",
+ "fields": {
+  "anchor": {
+   "x": 0.5,
+   "y": 0.0
+  },
+  "priority": 8500
+ },
+ "children": [
+  {
+   "type": "ClickCatcherWidget",
+   "name": "ClickCatcher",
+   "fields": {
+    "rect": {
+     "x": -639,
+     "y": 297,
+     "width": 1279,
+     "height": 1440
+    }
+   }
+  },
+  {
+   "type": "ImageWidget",
+   "name": "Background",
+   "fields": {
+    "rect": {
+     "x": -639,
+     "y": 297
+    },
+    "filename": "PANEL\\Specializations\\Background"
+   }
+  },
+  {
+   "type": "TextBoxWidget",
+   "name": "Title",
+   "fields": {
+    "rect": {
+     "x": -544,
+     "y": 353,
+     "width": 1089,
+     "height": 71
+    },
+    "text": "@d2r:SpecializationsTitle",
+    "style": "$StyleTitleBlock"
+   }
+  },
+  {
+   "type": "ButtonWidget",
+   "name": "Close",
+   "fields": {
+    "rect": {
+     "x": 558,
+     "y": 298
+    },
+    "filename": "PANEL\\closebtn_4x",
+    "hoveredFrame": 3,
+    "tooltipString": "@d2r:strClose",
+    "onClickMessage": "PanelManager:OpenPanel:SpecializationsClose",
+    "sound": "cursor_close_window_hd"
+   }
+  },
+  {
+   "type": "TextBoxWidget",
+   "name": "PointsAvailable",
+   "fields": {
+    "rect": {
+     "x": -300,
+     "y": 1610,
+     "width": 600,
+     "height": 58
+    },
+    "text": "",
+    "style": {
+     "fontColor": "$FontColorLightGold",
+     "pointSize": "$SmallMediumFontSize",
+     "alignment": {
+      "h": "center",
+      "v": "center"
+     },
+     "dropShadow": "$DefaultDropShadow"
+    }
+   }
+  },
+  {
+   "type": "ButtonWidget",
+   "name": "Tab1",
+   "fields": {
+    "rect": {
+     "x": -575,
+     "y": 447
+    },
+    "filename": "PANEL\\Specializations\\Tab",
+    "hoveredFrame": 1,
+    "pressedFrame": 2,
+    "onClickMessage": "PanelManager:OpenPanel:SpecializationsTab1"
+   }
+  },
+  {
+   "type": "ImageWidget",
+   "name": "TabActive1",
+   "fields": {
+    "rect": {
+     "x": -575,
+     "y": 447
+    },
+    "filename": "PANEL\\Specializations\\TabActive"
+   }
+  },
+  {
+   "type": "ImageWidget",
+   "name": "TabLocked1",
+   "fields": {
+    "rect": {
+     "x": -575,
+     "y": 447
+    },
+    "filename": "PANEL\\Specializations\\TabLocked"
+   }
+  },
+  {
+   "type": "TextBoxWidget",
+   "name": "TabLabel1",
+   "fields": {
+    "rect": {
+     "x": -575,
+     "y": 447,
+     "width": 280,
+     "height": 84
+    },
+    "text": "@d2r:SpecializationsAlchemist",
+    "style": {
+     "fontColor": "$FontColorLightGold",
+     "pointSize": "$SmallMediumFontSize",
+     "alignment": {
+      "h": "center",
+      "v": "center"
+     },
+     "dropShadow": "$DefaultDropShadow"
+    }
+   }
+  },
+  {
+   "type": "ImageWidget",
+   "name": "TabChosen1",
+   "fields": {
+    "rect": {
+     "x": -331,
+     "y": 433
+    },
+    "filename": "PANEL\\Specializations\\TabChosen"
+   }
+  },
+  {
+   "type": "ButtonWidget",
+   "name": "Tab2",
+   "fields": {
+    "rect": {
+     "x": -285,
+     "y": 447
+    },
+    "filename": "PANEL\\Specializations\\Tab",
+    "hoveredFrame": 1,
+    "pressedFrame": 2,
+    "onClickMessage": "PanelManager:OpenPanel:SpecializationsTab2"
+   }
+  },
+  {
+   "type": "ImageWidget",
+   "name": "TabActive2",
+   "fields": {
+    "rect": {
+     "x": -285,
+     "y": 447
+    },
+    "filename": "PANEL\\Specializations\\TabActive"
+   }
+  },
+  {
+   "type": "ImageWidget",
+   "name": "TabLocked2",
+   "fields": {
+    "rect": {
+     "x": -285,
+     "y": 447
+    },
+    "filename": "PANEL\\Specializations\\TabLocked"
+   }
+  },
+  {
+   "type": "TextBoxWidget",
+   "name": "TabLabel2",
+   "fields": {
+    "rect": {
+     "x": -285,
+     "y": 447,
+     "width": 280,
+     "height": 84
+    },
+    "text": "@d2r:SpecializationsBlacksmith",
+    "style": {
+     "fontColor": "$FontColorLightGold",
+     "pointSize": "$SmallMediumFontSize",
+     "alignment": {
+      "h": "center",
+      "v": "center"
+     },
+     "dropShadow": "$DefaultDropShadow"
+    }
+   }
+  },
+  {
+   "type": "ImageWidget",
+   "name": "TabChosen2",
+   "fields": {
+    "rect": {
+     "x": -41,
+     "y": 433
+    },
+    "filename": "PANEL\\Specializations\\TabChosen"
+   }
+  },
+  {
+   "type": "ButtonWidget",
+   "name": "Tab3",
+   "fields": {
+    "rect": {
+     "x": 5,
+     "y": 447
+    },
+    "filename": "PANEL\\Specializations\\Tab",
+    "hoveredFrame": 1,
+    "pressedFrame": 2,
+    "onClickMessage": "PanelManager:OpenPanel:SpecializationsTab3"
+   }
+  },
+  {
+   "type": "ImageWidget",
+   "name": "TabActive3",
+   "fields": {
+    "rect": {
+     "x": 5,
+     "y": 447
+    },
+    "filename": "PANEL\\Specializations\\TabActive"
+   }
+  },
+  {
+   "type": "ImageWidget",
+   "name": "TabLocked3",
+   "fields": {
+    "rect": {
+     "x": 5,
+     "y": 447
+    },
+    "filename": "PANEL\\Specializations\\TabLocked"
+   }
+  },
+  {
+   "type": "TextBoxWidget",
+   "name": "TabLabel3",
+   "fields": {
+    "rect": {
+     "x": 5,
+     "y": 447,
+     "width": 280,
+     "height": 84
+    },
+    "text": "@d2r:SpecializationsJeweler",
+    "style": {
+     "fontColor": "$FontColorLightGold",
+     "pointSize": "$SmallMediumFontSize",
+     "alignment": {
+      "h": "center",
+      "v": "center"
+     },
+     "dropShadow": "$DefaultDropShadow"
+    }
+   }
+  },
+  {
+   "type": "ImageWidget",
+   "name": "TabChosen3",
+   "fields": {
+    "rect": {
+     "x": 249,
+     "y": 433
+    },
+    "filename": "PANEL\\Specializations\\TabChosen"
+   }
+  },
+  {
+   "type": "ButtonWidget",
+   "name": "Tab4",
+   "fields": {
+    "rect": {
+     "x": 295,
+     "y": 447
+    },
+    "filename": "PANEL\\Specializations\\Tab",
+    "hoveredFrame": 1,
+    "pressedFrame": 2,
+    "onClickMessage": "PanelManager:OpenPanel:SpecializationsTab4"
+   }
+  },
+  {
+   "type": "ImageWidget",
+   "name": "TabActive4",
+   "fields": {
+    "rect": {
+     "x": 295,
+     "y": 447
+    },
+    "filename": "PANEL\\Specializations\\TabActive"
+   }
+  },
+  {
+   "type": "ImageWidget",
+   "name": "TabLocked4",
+   "fields": {
+    "rect": {
+     "x": 295,
+     "y": 447
+    },
+    "filename": "PANEL\\Specializations\\TabLocked"
+   }
+  },
+  {
+   "type": "TextBoxWidget",
+   "name": "TabLabel4",
+   "fields": {
+    "rect": {
+     "x": 295,
+     "y": 447,
+     "width": 280,
+     "height": 84
+    },
+    "text": "@d2r:SpecializationsArchaeologist",
+    "style": {
+     "fontColor": "$FontColorLightGold",
+     "pointSize": "$SmallMediumFontSize",
+     "alignment": {
+      "h": "center",
+      "v": "center"
+     },
+     "dropShadow": "$DefaultDropShadow"
+    }
+   }
+  },
+  {
+   "type": "ImageWidget",
+   "name": "TabChosen4",
+   "fields": {
+    "rect": {
+     "x": 539,
+     "y": 433
+    },
+    "filename": "PANEL\\Specializations\\TabChosen"
+   }
+  },
+  {
+   "type": "Widget",
+   "name": "Page1",
+   "fields": {
+    "rect": {
+     "x": -639,
+     "y": 297,
+     "width": 1279,
+     "height": 1440
+    }
+   },
+   "children": [
+    {
+     "type": "ImageWidget",
+     "name": "Glow1_1",
+     "fields": {
+      "rect": {
+       "x": 209,
+       "y": 242
+      },
+      "filename": "PANEL\\Specializations\\Glow"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Socket1_1",
+     "fields": {
+      "rect": {
+       "x": 251,
+       "y": 284
+      },
+      "filename": "PANEL\\Specializations\\Socket"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Learned1_1",
+     "fields": {
+      "rect": {
+       "x": 251,
+       "y": 284
+      },
+      "filename": "PANEL\\Specializations\\RingLearned"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Icon1_1",
+     "fields": {
+      "rect": {
+       "x": 273,
+       "y": 307
+      },
+      "filename": "Specializations\\alchemist",
+      "frame": 0
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Locked1_1",
+     "fields": {
+      "rect": {
+       "x": 273,
+       "y": 307
+      },
+      "filename": "PANEL\\Specializations\\Shade"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Glow1_2",
+     "fields": {
+      "rect": {
+       "x": 509,
+       "y": 242
+      },
+      "filename": "PANEL\\Specializations\\Glow"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Socket1_2",
+     "fields": {
+      "rect": {
+       "x": 551,
+       "y": 284
+      },
+      "filename": "PANEL\\Specializations\\Socket"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Learned1_2",
+     "fields": {
+      "rect": {
+       "x": 551,
+       "y": 284
+      },
+      "filename": "PANEL\\Specializations\\RingLearned"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Icon1_2",
+     "fields": {
+      "rect": {
+       "x": 573,
+       "y": 307
+      },
+      "filename": "Specializations\\alchemist",
+      "frame": 1
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Locked1_2",
+     "fields": {
+      "rect": {
+       "x": 573,
+       "y": 307
+      },
+      "filename": "PANEL\\Specializations\\Shade"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Glow1_3",
+     "fields": {
+      "rect": {
+       "x": 809,
+       "y": 242
+      },
+      "filename": "PANEL\\Specializations\\Glow"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Socket1_3",
+     "fields": {
+      "rect": {
+       "x": 851,
+       "y": 284
+      },
+      "filename": "PANEL\\Specializations\\Socket"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Learned1_3",
+     "fields": {
+      "rect": {
+       "x": 851,
+       "y": 284
+      },
+      "filename": "PANEL\\Specializations\\RingLearned"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Icon1_3",
+     "fields": {
+      "rect": {
+       "x": 873,
+       "y": 307
+      },
+      "filename": "Specializations\\alchemist",
+      "frame": 2
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Locked1_3",
+     "fields": {
+      "rect": {
+       "x": 873,
+       "y": 307
+      },
+      "filename": "PANEL\\Specializations\\Shade"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Glow2_1",
+     "fields": {
+      "rect": {
+       "x": 209,
+       "y": 447
+      },
+      "filename": "PANEL\\Specializations\\Glow"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Socket2_1",
+     "fields": {
+      "rect": {
+       "x": 251,
+       "y": 489
+      },
+      "filename": "PANEL\\Specializations\\Socket"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Learned2_1",
+     "fields": {
+      "rect": {
+       "x": 251,
+       "y": 489
+      },
+      "filename": "PANEL\\Specializations\\RingLearned"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Icon2_1",
+     "fields": {
+      "rect": {
+       "x": 273,
+       "y": 512
+      },
+      "filename": "Specializations\\alchemist",
+      "frame": 3
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Locked2_1",
+     "fields": {
+      "rect": {
+       "x": 273,
+       "y": 512
+      },
+      "filename": "PANEL\\Specializations\\Shade"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Glow2_2",
+     "fields": {
+      "rect": {
+       "x": 509,
+       "y": 447
+      },
+      "filename": "PANEL\\Specializations\\Glow"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Socket2_2",
+     "fields": {
+      "rect": {
+       "x": 551,
+       "y": 489
+      },
+      "filename": "PANEL\\Specializations\\Socket"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Learned2_2",
+     "fields": {
+      "rect": {
+       "x": 551,
+       "y": 489
+      },
+      "filename": "PANEL\\Specializations\\RingLearned"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Icon2_2",
+     "fields": {
+      "rect": {
+       "x": 573,
+       "y": 512
+      },
+      "filename": "Specializations\\alchemist",
+      "frame": 4
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Locked2_2",
+     "fields": {
+      "rect": {
+       "x": 573,
+       "y": 512
+      },
+      "filename": "PANEL\\Specializations\\Shade"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Glow2_3",
+     "fields": {
+      "rect": {
+       "x": 809,
+       "y": 447
+      },
+      "filename": "PANEL\\Specializations\\Glow"
+     }
+    },
+    {
+)SPLJ",
+R"SPLJ(     "type": "ImageWidget",
+     "name": "Socket2_3",
+     "fields": {
+      "rect": {
+       "x": 851,
+       "y": 489
+      },
+      "filename": "PANEL\\Specializations\\Socket"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Learned2_3",
+     "fields": {
+      "rect": {
+       "x": 851,
+       "y": 489
+      },
+      "filename": "PANEL\\Specializations\\RingLearned"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Icon2_3",
+     "fields": {
+      "rect": {
+       "x": 873,
+       "y": 512
+      },
+      "filename": "Specializations\\alchemist",
+      "frame": 5
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Locked2_3",
+     "fields": {
+      "rect": {
+       "x": 873,
+       "y": 512
+      },
+      "filename": "PANEL\\Specializations\\Shade"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Glow3_1",
+     "fields": {
+      "rect": {
+       "x": 209,
+       "y": 652
+      },
+      "filename": "PANEL\\Specializations\\Glow"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Socket3_1",
+     "fields": {
+      "rect": {
+       "x": 251,
+       "y": 694
+      },
+      "filename": "PANEL\\Specializations\\Socket"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Learned3_1",
+     "fields": {
+      "rect": {
+       "x": 251,
+       "y": 694
+      },
+      "filename": "PANEL\\Specializations\\RingLearned"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Icon3_1",
+     "fields": {
+      "rect": {
+       "x": 273,
+       "y": 717
+      },
+      "filename": "Specializations\\alchemist",
+      "frame": 6
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Locked3_1",
+     "fields": {
+      "rect": {
+       "x": 273,
+       "y": 717
+      },
+      "filename": "PANEL\\Specializations\\Shade"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Glow3_2",
+     "fields": {
+      "rect": {
+       "x": 509,
+       "y": 652
+      },
+      "filename": "PANEL\\Specializations\\Glow"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Socket3_2",
+     "fields": {
+      "rect": {
+       "x": 551,
+       "y": 694
+      },
+      "filename": "PANEL\\Specializations\\Socket"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Learned3_2",
+     "fields": {
+      "rect": {
+       "x": 551,
+       "y": 694
+      },
+      "filename": "PANEL\\Specializations\\RingLearned"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Icon3_2",
+     "fields": {
+      "rect": {
+       "x": 573,
+       "y": 717
+      },
+      "filename": "Specializations\\alchemist",
+      "frame": 7
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Locked3_2",
+     "fields": {
+      "rect": {
+       "x": 573,
+       "y": 717
+      },
+      "filename": "PANEL\\Specializations\\Shade"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Glow3_3",
+     "fields": {
+      "rect": {
+       "x": 809,
+       "y": 652
+      },
+      "filename": "PANEL\\Specializations\\Glow"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Socket3_3",
+     "fields": {
+      "rect": {
+       "x": 851,
+       "y": 694
+      },
+      "filename": "PANEL\\Specializations\\Socket"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Learned3_3",
+     "fields": {
+      "rect": {
+       "x": 851,
+       "y": 694
+      },
+      "filename": "PANEL\\Specializations\\RingLearned"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Icon3_3",
+     "fields": {
+      "rect": {
+       "x": 873,
+       "y": 717
+      },
+      "filename": "Specializations\\alchemist",
+      "frame": 8
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Locked3_3",
+     "fields": {
+      "rect": {
+       "x": 873,
+       "y": 717
+      },
+      "filename": "PANEL\\Specializations\\Shade"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Glow4_1",
+     "fields": {
+      "rect": {
+       "x": 209,
+       "y": 857
+      },
+      "filename": "PANEL\\Specializations\\Glow"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Socket4_1",
+     "fields": {
+      "rect": {
+       "x": 251,
+       "y": 899
+      },
+      "filename": "PANEL\\Specializations\\Socket"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Learned4_1",
+     "fields": {
+      "rect": {
+       "x": 251,
+       "y": 899
+      },
+      "filename": "PANEL\\Specializations\\RingLearned"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Icon4_1",
+     "fields": {
+      "rect": {
+       "x": 273,
+       "y": 922
+      },
+      "filename": "Specializations\\alchemist",
+      "frame": 9
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Locked4_1",
+     "fields": {
+      "rect": {
+       "x": 273,
+       "y": 922
+      },
+      "filename": "PANEL\\Specializations\\Shade"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Glow4_2",
+     "fields": {
+      "rect": {
+       "x": 509,
+       "y": 857
+      },
+      "filename": "PANEL\\Specializations\\Glow"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Socket4_2",
+     "fields": {
+      "rect": {
+       "x": 551,
+       "y": 899
+      },
+      "filename": "PANEL\\Specializations\\Socket"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Learned4_2",
+     "fields": {
+      "rect": {
+       "x": 551,
+       "y": 899
+      },
+      "filename": "PANEL\\Specializations\\RingLearned"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Icon4_2",
+     "fields": {
+      "rect": {
+       "x": 573,
+       "y": 922
+      },
+      "filename": "Specializations\\alchemist",
+      "frame": 10
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Locked4_2",
+     "fields": {
+      "rect": {
+       "x": 573,
+       "y": 922
+      },
+      "filename": "PANEL\\Specializations\\Shade"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Glow4_3",
+     "fields": {
+      "rect": {
+       "x": 809,
+       "y": 857
+      },
+      "filename": "PANEL\\Specializations\\Glow"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Socket4_3",
+     "fields": {
+      "rect": {
+       "x": 851,
+       "y": 899
+      },
+      "filename": "PANEL\\Specializations\\Socket"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Learned4_3",
+     "fields": {
+      "rect": {
+       "x": 851,
+       "y": 899
+      },
+      "filename": "PANEL\\Specializations\\RingLearned"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Icon4_3",
+     "fields": {
+      "rect": {
+       "x": 873,
+       "y": 922
+      },
+      "filename": "Specializations\\alchemist",
+      "frame": 11
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Locked4_3",
+     "fields": {
+      "rect": {
+       "x": 873,
+       "y": 922
+      },
+      "filename": "PANEL\\Specializations\\Shade"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Glow5_1",
+     "fields": {
+      "rect": {
+       "x": 209,
+       "y": 1062
+      },
+      "filename": "PANEL\\Specializations\\Glow"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Socket5_1",
+     "fields": {
+      "rect": {
+       "x": 251,
+       "y": 1104
+      },
+      "filename": "PANEL\\Specializations\\Socket"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Learned5_1",
+     "fields": {
+      "rect": {
+       "x": 251,
+       "y": 1104
+      },
+      "filename": "PANEL\\Specializations\\RingLearned"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Icon5_1",
+     "fields": {
+      "rect": {
+       "x": 273,
+       "y": 1127
+      },
+      "filename": "Specializations\\alchemist",
+      "frame": 12
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Locked5_1",
+     "fields": {
+      "rect": {
+       "x": 273,
+       "y": 1127
+      },
+      "filename": "PANEL\\Specializations\\Shade"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Glow5_2",
+     "fields": {
+      "rect": {
+       "x": 509,
+       "y": 1062
+      },
+      "filename": "PANEL\\Specializations\\Glow"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Socket5_2",
+     "fields": {
+      "rect": {
+       "x": 551,
+       "y": 1104
+      },
+      "filename": "PANEL\\Specializations\\Socket"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Learned5_2",
+     "fields": {
+      "rect": {
+       "x": 551,
+       "y": 1104
+      },
+      "filename": "PANEL\\Specializations\\RingLearned"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Icon5_2",
+     "fields": {
+      "rect": {
+       "x": 573,
+       "y": 1127
+      },
+      "filename": "Specializations\\alchemist",
+      "frame": 13
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Locked5_2",
+     "fields": {
+      "rect": {
+       "x": 573,
+       "y": 1127
+      },
+      "filename": "PANEL\\Specializations\\Shade"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Glow5_3",
+     "fields": {
+      "rect": {
+       "x": 809,
+       "y": 1062
+      },
+      "filename": "PANEL\\Specializations\\Glow"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Socket5_3",
+     "fields": {
+      "rect": {
+       "x": 851,
+       "y": 1104
+      },
+      "filename": "PANEL\\Specializations\\Socket"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Learned5_3",
+     "fields": {
+      "rect": {
+       "x": 851,
+       "y": 1104
+      },
+      "filename": "PANEL\\Specializations\\RingLearned"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Icon5_3",
+     "fields": {
+      "rect": {
+       "x": 873,
+       "y": 1127
+      },
+      "filename": "Specializations\\alchemist",
+      "frame": 14
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Locked5_3",
+     "fields": {
+      "rect": {
+       "x": 873,
+       "y": 1127
+      },
+      "filename": "PANEL\\Specializations\\Shade"
+     }
+    }
+   ]
+  },
+  {
+   "type": "Widget",
+   "name": "Page2",
+   "fields": {
+    "rect": {
+     "x": -639,
+     "y": 297,
+     "width": 1279,
+     "height": 1440
+    }
+   },
+   "children": [
+    {
+     "type": "ImageWidget",
+     "name": "Glow1_1",
+     "fields": {
+      "rect": {
+       "x": 209,
+       "y": 242
+      },
+      "filename": "PANEL\\Specializations\\Glow"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Socket1_1",
+     "fields": {
+      "rect": {
+       "x": 251,
+       "y": 284
+      },
+      "filename": "PANEL\\Specializations\\Socket"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Learned1_1",
+     "fields": {
+      "rect": {
+       "x": 251,
+       "y": 284
+      },
+      "filename": "PANEL\\Specializations\\RingLearned"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Icon1_1",
+     "fields": {
+      "rect": {
+       "x": 273,
+       "y": 307
+      },
+      "filename": "Specializations\\blacksmith",
+      "frame": 0
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Locked1_1",
+     "fields": {
+      "rect": {
+       "x": 273,
+       "y": 307
+      },
+      "filename": "PANEL\\Specializations\\Shade"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Glow1_2",
+     "fields": {
+      "rect": {
+       "x": 509,
+       "y": 242
+      },
+      "filename": "PANEL\\Specializations\\Glow"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Socket1_2",
+     "fields": {
+      "rect": {
+       "x": 551,
+       "y": 284
+      },
+      "filename": "PANEL\\Specializations\\Socket"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Learned1_2",
+     "fields": {
+      "rect": {
+       "x": 551,
+       "y": 284
+      },
+      "filename": "PANEL\\Specializations\\RingLearned"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Icon1_2",
+     "fields": {
+      "rect": {
+       "x": 573,
+       "y": 307
+      },
+      "filename": "Specializations\\blacksmith",
+      "frame": 1
+     }
+    },
+    {
+     "type": "ImageWidget",
+)SPLJ",
+R"SPLJ(     "name": "Locked1_2",
+     "fields": {
+      "rect": {
+       "x": 573,
+       "y": 307
+      },
+      "filename": "PANEL\\Specializations\\Shade"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Glow1_3",
+     "fields": {
+      "rect": {
+       "x": 809,
+       "y": 242
+      },
+      "filename": "PANEL\\Specializations\\Glow"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Socket1_3",
+     "fields": {
+      "rect": {
+       "x": 851,
+       "y": 284
+      },
+      "filename": "PANEL\\Specializations\\Socket"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Learned1_3",
+     "fields": {
+      "rect": {
+       "x": 851,
+       "y": 284
+      },
+      "filename": "PANEL\\Specializations\\RingLearned"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Icon1_3",
+     "fields": {
+      "rect": {
+       "x": 873,
+       "y": 307
+      },
+      "filename": "Specializations\\blacksmith",
+      "frame": 2
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Locked1_3",
+     "fields": {
+      "rect": {
+       "x": 873,
+       "y": 307
+      },
+      "filename": "PANEL\\Specializations\\Shade"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Glow2_1",
+     "fields": {
+      "rect": {
+       "x": 209,
+       "y": 447
+      },
+      "filename": "PANEL\\Specializations\\Glow"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Socket2_1",
+     "fields": {
+      "rect": {
+       "x": 251,
+       "y": 489
+      },
+      "filename": "PANEL\\Specializations\\Socket"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Learned2_1",
+     "fields": {
+      "rect": {
+       "x": 251,
+       "y": 489
+      },
+      "filename": "PANEL\\Specializations\\RingLearned"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Icon2_1",
+     "fields": {
+      "rect": {
+       "x": 273,
+       "y": 512
+      },
+      "filename": "Specializations\\blacksmith",
+      "frame": 3
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Locked2_1",
+     "fields": {
+      "rect": {
+       "x": 273,
+       "y": 512
+      },
+      "filename": "PANEL\\Specializations\\Shade"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Glow2_2",
+     "fields": {
+      "rect": {
+       "x": 509,
+       "y": 447
+      },
+      "filename": "PANEL\\Specializations\\Glow"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Socket2_2",
+     "fields": {
+      "rect": {
+       "x": 551,
+       "y": 489
+      },
+      "filename": "PANEL\\Specializations\\Socket"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Learned2_2",
+     "fields": {
+      "rect": {
+       "x": 551,
+       "y": 489
+      },
+      "filename": "PANEL\\Specializations\\RingLearned"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Icon2_2",
+     "fields": {
+      "rect": {
+       "x": 573,
+       "y": 512
+      },
+      "filename": "Specializations\\blacksmith",
+      "frame": 4
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Locked2_2",
+     "fields": {
+      "rect": {
+       "x": 573,
+       "y": 512
+      },
+      "filename": "PANEL\\Specializations\\Shade"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Glow2_3",
+     "fields": {
+      "rect": {
+       "x": 809,
+       "y": 447
+      },
+      "filename": "PANEL\\Specializations\\Glow"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Socket2_3",
+     "fields": {
+      "rect": {
+       "x": 851,
+       "y": 489
+      },
+      "filename": "PANEL\\Specializations\\Socket"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Learned2_3",
+     "fields": {
+      "rect": {
+       "x": 851,
+       "y": 489
+      },
+      "filename": "PANEL\\Specializations\\RingLearned"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Icon2_3",
+     "fields": {
+      "rect": {
+       "x": 873,
+       "y": 512
+      },
+      "filename": "Specializations\\blacksmith",
+      "frame": 5
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Locked2_3",
+     "fields": {
+      "rect": {
+       "x": 873,
+       "y": 512
+      },
+      "filename": "PANEL\\Specializations\\Shade"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Glow3_1",
+     "fields": {
+      "rect": {
+       "x": 209,
+       "y": 652
+      },
+      "filename": "PANEL\\Specializations\\Glow"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Socket3_1",
+     "fields": {
+      "rect": {
+       "x": 251,
+       "y": 694
+      },
+      "filename": "PANEL\\Specializations\\Socket"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Learned3_1",
+     "fields": {
+      "rect": {
+       "x": 251,
+       "y": 694
+      },
+      "filename": "PANEL\\Specializations\\RingLearned"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Icon3_1",
+     "fields": {
+      "rect": {
+       "x": 273,
+       "y": 717
+      },
+      "filename": "Specializations\\blacksmith",
+      "frame": 6
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Locked3_1",
+     "fields": {
+      "rect": {
+       "x": 273,
+       "y": 717
+      },
+      "filename": "PANEL\\Specializations\\Shade"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Glow3_2",
+     "fields": {
+      "rect": {
+       "x": 509,
+       "y": 652
+      },
+      "filename": "PANEL\\Specializations\\Glow"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Socket3_2",
+     "fields": {
+      "rect": {
+       "x": 551,
+       "y": 694
+      },
+      "filename": "PANEL\\Specializations\\Socket"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Learned3_2",
+     "fields": {
+      "rect": {
+       "x": 551,
+       "y": 694
+      },
+      "filename": "PANEL\\Specializations\\RingLearned"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Icon3_2",
+     "fields": {
+      "rect": {
+       "x": 573,
+       "y": 717
+      },
+      "filename": "Specializations\\blacksmith",
+      "frame": 7
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Locked3_2",
+     "fields": {
+      "rect": {
+       "x": 573,
+       "y": 717
+      },
+      "filename": "PANEL\\Specializations\\Shade"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Glow3_3",
+     "fields": {
+      "rect": {
+       "x": 809,
+       "y": 652
+      },
+      "filename": "PANEL\\Specializations\\Glow"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Socket3_3",
+     "fields": {
+      "rect": {
+       "x": 851,
+       "y": 694
+      },
+      "filename": "PANEL\\Specializations\\Socket"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Learned3_3",
+     "fields": {
+      "rect": {
+       "x": 851,
+       "y": 694
+      },
+      "filename": "PANEL\\Specializations\\RingLearned"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Icon3_3",
+     "fields": {
+      "rect": {
+       "x": 873,
+       "y": 717
+      },
+      "filename": "Specializations\\blacksmith",
+      "frame": 8
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Locked3_3",
+     "fields": {
+      "rect": {
+       "x": 873,
+       "y": 717
+      },
+      "filename": "PANEL\\Specializations\\Shade"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Glow4_1",
+     "fields": {
+      "rect": {
+       "x": 209,
+       "y": 857
+      },
+      "filename": "PANEL\\Specializations\\Glow"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Socket4_1",
+     "fields": {
+      "rect": {
+       "x": 251,
+       "y": 899
+      },
+      "filename": "PANEL\\Specializations\\Socket"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Learned4_1",
+     "fields": {
+      "rect": {
+       "x": 251,
+       "y": 899
+      },
+      "filename": "PANEL\\Specializations\\RingLearned"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Icon4_1",
+     "fields": {
+      "rect": {
+       "x": 273,
+       "y": 922
+      },
+      "filename": "Specializations\\blacksmith",
+      "frame": 9
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Locked4_1",
+     "fields": {
+      "rect": {
+       "x": 273,
+       "y": 922
+      },
+      "filename": "PANEL\\Specializations\\Shade"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Glow4_2",
+     "fields": {
+      "rect": {
+       "x": 509,
+       "y": 857
+      },
+      "filename": "PANEL\\Specializations\\Glow"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Socket4_2",
+     "fields": {
+      "rect": {
+       "x": 551,
+       "y": 899
+      },
+      "filename": "PANEL\\Specializations\\Socket"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Learned4_2",
+     "fields": {
+      "rect": {
+       "x": 551,
+       "y": 899
+      },
+      "filename": "PANEL\\Specializations\\RingLearned"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Icon4_2",
+     "fields": {
+      "rect": {
+       "x": 573,
+       "y": 922
+      },
+      "filename": "Specializations\\blacksmith",
+      "frame": 10
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Locked4_2",
+     "fields": {
+      "rect": {
+       "x": 573,
+       "y": 922
+      },
+      "filename": "PANEL\\Specializations\\Shade"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Glow4_3",
+     "fields": {
+      "rect": {
+       "x": 809,
+       "y": 857
+      },
+      "filename": "PANEL\\Specializations\\Glow"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Socket4_3",
+     "fields": {
+      "rect": {
+       "x": 851,
+       "y": 899
+      },
+      "filename": "PANEL\\Specializations\\Socket"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Learned4_3",
+     "fields": {
+      "rect": {
+       "x": 851,
+       "y": 899
+      },
+      "filename": "PANEL\\Specializations\\RingLearned"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Icon4_3",
+     "fields": {
+      "rect": {
+       "x": 873,
+       "y": 922
+      },
+      "filename": "Specializations\\blacksmith",
+      "frame": 11
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Locked4_3",
+     "fields": {
+      "rect": {
+       "x": 873,
+       "y": 922
+      },
+      "filename": "PANEL\\Specializations\\Shade"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Glow5_1",
+     "fields": {
+      "rect": {
+       "x": 209,
+       "y": 1062
+      },
+      "filename": "PANEL\\Specializations\\Glow"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Socket5_1",
+     "fields": {
+      "rect": {
+       "x": 251,
+       "y": 1104
+      },
+      "filename": "PANEL\\Specializations\\Socket"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Learned5_1",
+     "fields": {
+      "rect": {
+       "x": 251,
+       "y": 1104
+      },
+      "filename": "PANEL\\Specializations\\RingLearned"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Icon5_1",
+     "fields": {
+      "rect": {
+       "x": 273,
+       "y": 1127
+      },
+      "filename": "Specializations\\blacksmith",
+      "frame": 12
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Locked5_1",
+     "fields": {
+      "rect": {
+       "x": 273,
+       "y": 1127
+      },
+      "filename": "PANEL\\Specializations\\Shade"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Glow5_2",
+     "fields": {
+      "rect": {
+       "x": 509,
+       "y": 1062
+      },
+      "filename": "PANEL\\Specializations\\Glow"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Socket5_2",
+     "fields": {
+      "rect": {
+       "x": 551,
+       "y": 1104
+      },
+      "filename": "PANEL\\Specializations\\Socket"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Learned5_2",
+     "fields": {
+      "rect": {
+       "x": 551,
+       "y": 1104
+      },
+      "filename": "PANEL\\Specializations\\RingLearned"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Icon5_2",
+)SPLJ",
+R"SPLJ(     "fields": {
+      "rect": {
+       "x": 573,
+       "y": 1127
+      },
+      "filename": "Specializations\\blacksmith",
+      "frame": 13
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Locked5_2",
+     "fields": {
+      "rect": {
+       "x": 573,
+       "y": 1127
+      },
+      "filename": "PANEL\\Specializations\\Shade"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Glow5_3",
+     "fields": {
+      "rect": {
+       "x": 809,
+       "y": 1062
+      },
+      "filename": "PANEL\\Specializations\\Glow"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Socket5_3",
+     "fields": {
+      "rect": {
+       "x": 851,
+       "y": 1104
+      },
+      "filename": "PANEL\\Specializations\\Socket"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Learned5_3",
+     "fields": {
+      "rect": {
+       "x": 851,
+       "y": 1104
+      },
+      "filename": "PANEL\\Specializations\\RingLearned"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Icon5_3",
+     "fields": {
+      "rect": {
+       "x": 873,
+       "y": 1127
+      },
+      "filename": "Specializations\\blacksmith",
+      "frame": 14
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Locked5_3",
+     "fields": {
+      "rect": {
+       "x": 873,
+       "y": 1127
+      },
+      "filename": "PANEL\\Specializations\\Shade"
+     }
+    }
+   ]
+  },
+  {
+   "type": "Widget",
+   "name": "Page3",
+   "fields": {
+    "rect": {
+     "x": -639,
+     "y": 297,
+     "width": 1279,
+     "height": 1440
+    }
+   },
+   "children": [
+    {
+     "type": "ImageWidget",
+     "name": "Glow1_1",
+     "fields": {
+      "rect": {
+       "x": 209,
+       "y": 242
+      },
+      "filename": "PANEL\\Specializations\\Glow"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Socket1_1",
+     "fields": {
+      "rect": {
+       "x": 251,
+       "y": 284
+      },
+      "filename": "PANEL\\Specializations\\Socket"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Learned1_1",
+     "fields": {
+      "rect": {
+       "x": 251,
+       "y": 284
+      },
+      "filename": "PANEL\\Specializations\\RingLearned"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Icon1_1",
+     "fields": {
+      "rect": {
+       "x": 273,
+       "y": 307
+      },
+      "filename": "Specializations\\jeweler",
+      "frame": 0
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Locked1_1",
+     "fields": {
+      "rect": {
+       "x": 273,
+       "y": 307
+      },
+      "filename": "PANEL\\Specializations\\Shade"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Glow1_2",
+     "fields": {
+      "rect": {
+       "x": 509,
+       "y": 242
+      },
+      "filename": "PANEL\\Specializations\\Glow"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Socket1_2",
+     "fields": {
+      "rect": {
+       "x": 551,
+       "y": 284
+      },
+      "filename": "PANEL\\Specializations\\Socket"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Learned1_2",
+     "fields": {
+      "rect": {
+       "x": 551,
+       "y": 284
+      },
+      "filename": "PANEL\\Specializations\\RingLearned"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Icon1_2",
+     "fields": {
+      "rect": {
+       "x": 573,
+       "y": 307
+      },
+      "filename": "Specializations\\jeweler",
+      "frame": 1
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Locked1_2",
+     "fields": {
+      "rect": {
+       "x": 573,
+       "y": 307
+      },
+      "filename": "PANEL\\Specializations\\Shade"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Glow1_3",
+     "fields": {
+      "rect": {
+       "x": 809,
+       "y": 242
+      },
+      "filename": "PANEL\\Specializations\\Glow"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Socket1_3",
+     "fields": {
+      "rect": {
+       "x": 851,
+       "y": 284
+      },
+      "filename": "PANEL\\Specializations\\Socket"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Learned1_3",
+     "fields": {
+      "rect": {
+       "x": 851,
+       "y": 284
+      },
+      "filename": "PANEL\\Specializations\\RingLearned"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Icon1_3",
+     "fields": {
+      "rect": {
+       "x": 873,
+       "y": 307
+      },
+      "filename": "Specializations\\jeweler",
+      "frame": 2
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Locked1_3",
+     "fields": {
+      "rect": {
+       "x": 873,
+       "y": 307
+      },
+      "filename": "PANEL\\Specializations\\Shade"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Glow2_1",
+     "fields": {
+      "rect": {
+       "x": 209,
+       "y": 447
+      },
+      "filename": "PANEL\\Specializations\\Glow"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Socket2_1",
+     "fields": {
+      "rect": {
+       "x": 251,
+       "y": 489
+      },
+      "filename": "PANEL\\Specializations\\Socket"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Learned2_1",
+     "fields": {
+      "rect": {
+       "x": 251,
+       "y": 489
+      },
+      "filename": "PANEL\\Specializations\\RingLearned"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Icon2_1",
+     "fields": {
+      "rect": {
+       "x": 273,
+       "y": 512
+      },
+      "filename": "Specializations\\jeweler",
+      "frame": 3
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Locked2_1",
+     "fields": {
+      "rect": {
+       "x": 273,
+       "y": 512
+      },
+      "filename": "PANEL\\Specializations\\Shade"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Glow2_2",
+     "fields": {
+      "rect": {
+       "x": 509,
+       "y": 447
+      },
+      "filename": "PANEL\\Specializations\\Glow"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Socket2_2",
+     "fields": {
+      "rect": {
+       "x": 551,
+       "y": 489
+      },
+      "filename": "PANEL\\Specializations\\Socket"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Learned2_2",
+     "fields": {
+      "rect": {
+       "x": 551,
+       "y": 489
+      },
+      "filename": "PANEL\\Specializations\\RingLearned"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Icon2_2",
+     "fields": {
+      "rect": {
+       "x": 573,
+       "y": 512
+      },
+      "filename": "Specializations\\jeweler",
+      "frame": 4
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Locked2_2",
+     "fields": {
+      "rect": {
+       "x": 573,
+       "y": 512
+      },
+      "filename": "PANEL\\Specializations\\Shade"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Glow2_3",
+     "fields": {
+      "rect": {
+       "x": 809,
+       "y": 447
+      },
+      "filename": "PANEL\\Specializations\\Glow"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Socket2_3",
+     "fields": {
+      "rect": {
+       "x": 851,
+       "y": 489
+      },
+      "filename": "PANEL\\Specializations\\Socket"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Learned2_3",
+     "fields": {
+      "rect": {
+       "x": 851,
+       "y": 489
+      },
+      "filename": "PANEL\\Specializations\\RingLearned"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Icon2_3",
+     "fields": {
+      "rect": {
+       "x": 873,
+       "y": 512
+      },
+      "filename": "Specializations\\jeweler",
+      "frame": 5
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Locked2_3",
+     "fields": {
+      "rect": {
+       "x": 873,
+       "y": 512
+      },
+      "filename": "PANEL\\Specializations\\Shade"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Glow3_1",
+     "fields": {
+      "rect": {
+       "x": 209,
+       "y": 652
+      },
+      "filename": "PANEL\\Specializations\\Glow"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Socket3_1",
+     "fields": {
+      "rect": {
+       "x": 251,
+       "y": 694
+      },
+      "filename": "PANEL\\Specializations\\Socket"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Learned3_1",
+     "fields": {
+      "rect": {
+       "x": 251,
+       "y": 694
+      },
+      "filename": "PANEL\\Specializations\\RingLearned"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Icon3_1",
+     "fields": {
+      "rect": {
+       "x": 273,
+       "y": 717
+      },
+      "filename": "Specializations\\jeweler",
+      "frame": 6
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Locked3_1",
+     "fields": {
+      "rect": {
+       "x": 273,
+       "y": 717
+      },
+      "filename": "PANEL\\Specializations\\Shade"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Glow3_2",
+     "fields": {
+      "rect": {
+       "x": 509,
+       "y": 652
+      },
+      "filename": "PANEL\\Specializations\\Glow"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Socket3_2",
+     "fields": {
+      "rect": {
+       "x": 551,
+       "y": 694
+      },
+      "filename": "PANEL\\Specializations\\Socket"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Learned3_2",
+     "fields": {
+      "rect": {
+       "x": 551,
+       "y": 694
+      },
+      "filename": "PANEL\\Specializations\\RingLearned"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Icon3_2",
+     "fields": {
+      "rect": {
+       "x": 573,
+       "y": 717
+      },
+      "filename": "Specializations\\jeweler",
+      "frame": 7
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Locked3_2",
+     "fields": {
+      "rect": {
+       "x": 573,
+       "y": 717
+      },
+      "filename": "PANEL\\Specializations\\Shade"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Glow3_3",
+     "fields": {
+      "rect": {
+       "x": 809,
+       "y": 652
+      },
+      "filename": "PANEL\\Specializations\\Glow"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Socket3_3",
+     "fields": {
+      "rect": {
+       "x": 851,
+       "y": 694
+      },
+      "filename": "PANEL\\Specializations\\Socket"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Learned3_3",
+     "fields": {
+      "rect": {
+       "x": 851,
+       "y": 694
+      },
+      "filename": "PANEL\\Specializations\\RingLearned"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Icon3_3",
+     "fields": {
+      "rect": {
+       "x": 873,
+       "y": 717
+      },
+      "filename": "Specializations\\jeweler",
+      "frame": 8
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Locked3_3",
+     "fields": {
+      "rect": {
+       "x": 873,
+       "y": 717
+      },
+      "filename": "PANEL\\Specializations\\Shade"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Glow4_1",
+     "fields": {
+      "rect": {
+       "x": 209,
+       "y": 857
+      },
+      "filename": "PANEL\\Specializations\\Glow"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Socket4_1",
+     "fields": {
+      "rect": {
+       "x": 251,
+       "y": 899
+      },
+      "filename": "PANEL\\Specializations\\Socket"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Learned4_1",
+     "fields": {
+      "rect": {
+       "x": 251,
+       "y": 899
+      },
+      "filename": "PANEL\\Specializations\\RingLearned"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Icon4_1",
+     "fields": {
+      "rect": {
+       "x": 273,
+       "y": 922
+      },
+      "filename": "Specializations\\jeweler",
+      "frame": 9
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Locked4_1",
+     "fields": {
+      "rect": {
+       "x": 273,
+       "y": 922
+      },
+      "filename": "PANEL\\Specializations\\Shade"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Glow4_2",
+     "fields": {
+      "rect": {
+       "x": 509,
+       "y": 857
+      },
+      "filename": "PANEL\\Specializations\\Glow"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Socket4_2",
+     "fields": {
+      "rect": {
+       "x": 551,
+       "y": 899
+)SPLJ",
+R"SPLJ(      },
+      "filename": "PANEL\\Specializations\\Socket"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Learned4_2",
+     "fields": {
+      "rect": {
+       "x": 551,
+       "y": 899
+      },
+      "filename": "PANEL\\Specializations\\RingLearned"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Icon4_2",
+     "fields": {
+      "rect": {
+       "x": 573,
+       "y": 922
+      },
+      "filename": "Specializations\\jeweler",
+      "frame": 10
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Locked4_2",
+     "fields": {
+      "rect": {
+       "x": 573,
+       "y": 922
+      },
+      "filename": "PANEL\\Specializations\\Shade"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Glow4_3",
+     "fields": {
+      "rect": {
+       "x": 809,
+       "y": 857
+      },
+      "filename": "PANEL\\Specializations\\Glow"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Socket4_3",
+     "fields": {
+      "rect": {
+       "x": 851,
+       "y": 899
+      },
+      "filename": "PANEL\\Specializations\\Socket"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Learned4_3",
+     "fields": {
+      "rect": {
+       "x": 851,
+       "y": 899
+      },
+      "filename": "PANEL\\Specializations\\RingLearned"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Icon4_3",
+     "fields": {
+      "rect": {
+       "x": 873,
+       "y": 922
+      },
+      "filename": "Specializations\\jeweler",
+      "frame": 11
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Locked4_3",
+     "fields": {
+      "rect": {
+       "x": 873,
+       "y": 922
+      },
+      "filename": "PANEL\\Specializations\\Shade"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Glow5_1",
+     "fields": {
+      "rect": {
+       "x": 209,
+       "y": 1062
+      },
+      "filename": "PANEL\\Specializations\\Glow"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Socket5_1",
+     "fields": {
+      "rect": {
+       "x": 251,
+       "y": 1104
+      },
+      "filename": "PANEL\\Specializations\\Socket"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Learned5_1",
+     "fields": {
+      "rect": {
+       "x": 251,
+       "y": 1104
+      },
+      "filename": "PANEL\\Specializations\\RingLearned"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Icon5_1",
+     "fields": {
+      "rect": {
+       "x": 273,
+       "y": 1127
+      },
+      "filename": "Specializations\\jeweler",
+      "frame": 12
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Locked5_1",
+     "fields": {
+      "rect": {
+       "x": 273,
+       "y": 1127
+      },
+      "filename": "PANEL\\Specializations\\Shade"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Glow5_2",
+     "fields": {
+      "rect": {
+       "x": 509,
+       "y": 1062
+      },
+      "filename": "PANEL\\Specializations\\Glow"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Socket5_2",
+     "fields": {
+      "rect": {
+       "x": 551,
+       "y": 1104
+      },
+      "filename": "PANEL\\Specializations\\Socket"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Learned5_2",
+     "fields": {
+      "rect": {
+       "x": 551,
+       "y": 1104
+      },
+      "filename": "PANEL\\Specializations\\RingLearned"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Icon5_2",
+     "fields": {
+      "rect": {
+       "x": 573,
+       "y": 1127
+      },
+      "filename": "Specializations\\jeweler",
+      "frame": 13
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Locked5_2",
+     "fields": {
+      "rect": {
+       "x": 573,
+       "y": 1127
+      },
+      "filename": "PANEL\\Specializations\\Shade"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Glow5_3",
+     "fields": {
+      "rect": {
+       "x": 809,
+       "y": 1062
+      },
+      "filename": "PANEL\\Specializations\\Glow"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Socket5_3",
+     "fields": {
+      "rect": {
+       "x": 851,
+       "y": 1104
+      },
+      "filename": "PANEL\\Specializations\\Socket"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Learned5_3",
+     "fields": {
+      "rect": {
+       "x": 851,
+       "y": 1104
+      },
+      "filename": "PANEL\\Specializations\\RingLearned"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Icon5_3",
+     "fields": {
+      "rect": {
+       "x": 873,
+       "y": 1127
+      },
+      "filename": "Specializations\\jeweler",
+      "frame": 14
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Locked5_3",
+     "fields": {
+      "rect": {
+       "x": 873,
+       "y": 1127
+      },
+      "filename": "PANEL\\Specializations\\Shade"
+     }
+    }
+   ]
+  },
+  {
+   "type": "Widget",
+   "name": "Page4",
+   "fields": {
+    "rect": {
+     "x": -639,
+     "y": 297,
+     "width": 1279,
+     "height": 1440
+    }
+   },
+   "children": [
+    {
+     "type": "ImageWidget",
+     "name": "Glow1_1",
+     "fields": {
+      "rect": {
+       "x": 209,
+       "y": 242
+      },
+      "filename": "PANEL\\Specializations\\Glow"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Socket1_1",
+     "fields": {
+      "rect": {
+       "x": 251,
+       "y": 284
+      },
+      "filename": "PANEL\\Specializations\\Socket"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Learned1_1",
+     "fields": {
+      "rect": {
+       "x": 251,
+       "y": 284
+      },
+      "filename": "PANEL\\Specializations\\RingLearned"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Icon1_1",
+     "fields": {
+      "rect": {
+       "x": 273,
+       "y": 307
+      },
+      "filename": "Specializations\\archaeologist",
+      "frame": 0
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Locked1_1",
+     "fields": {
+      "rect": {
+       "x": 273,
+       "y": 307
+      },
+      "filename": "PANEL\\Specializations\\Shade"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Glow1_2",
+     "fields": {
+      "rect": {
+       "x": 509,
+       "y": 242
+      },
+      "filename": "PANEL\\Specializations\\Glow"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Socket1_2",
+     "fields": {
+      "rect": {
+       "x": 551,
+       "y": 284
+      },
+      "filename": "PANEL\\Specializations\\Socket"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Learned1_2",
+     "fields": {
+      "rect": {
+       "x": 551,
+       "y": 284
+      },
+      "filename": "PANEL\\Specializations\\RingLearned"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Icon1_2",
+     "fields": {
+      "rect": {
+       "x": 573,
+       "y": 307
+      },
+      "filename": "Specializations\\archaeologist",
+      "frame": 1
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Locked1_2",
+     "fields": {
+      "rect": {
+       "x": 573,
+       "y": 307
+      },
+      "filename": "PANEL\\Specializations\\Shade"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Glow1_3",
+     "fields": {
+      "rect": {
+       "x": 809,
+       "y": 242
+      },
+      "filename": "PANEL\\Specializations\\Glow"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Socket1_3",
+     "fields": {
+      "rect": {
+       "x": 851,
+       "y": 284
+      },
+      "filename": "PANEL\\Specializations\\Socket"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Learned1_3",
+     "fields": {
+      "rect": {
+       "x": 851,
+       "y": 284
+      },
+      "filename": "PANEL\\Specializations\\RingLearned"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Icon1_3",
+     "fields": {
+      "rect": {
+       "x": 873,
+       "y": 307
+      },
+      "filename": "Specializations\\archaeologist",
+      "frame": 2
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Locked1_3",
+     "fields": {
+      "rect": {
+       "x": 873,
+       "y": 307
+      },
+      "filename": "PANEL\\Specializations\\Shade"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Glow2_1",
+     "fields": {
+      "rect": {
+       "x": 209,
+       "y": 447
+      },
+      "filename": "PANEL\\Specializations\\Glow"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Socket2_1",
+     "fields": {
+      "rect": {
+       "x": 251,
+       "y": 489
+      },
+      "filename": "PANEL\\Specializations\\Socket"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Learned2_1",
+     "fields": {
+      "rect": {
+       "x": 251,
+       "y": 489
+      },
+      "filename": "PANEL\\Specializations\\RingLearned"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Icon2_1",
+     "fields": {
+      "rect": {
+       "x": 273,
+       "y": 512
+      },
+      "filename": "Specializations\\archaeologist",
+      "frame": 3
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Locked2_1",
+     "fields": {
+      "rect": {
+       "x": 273,
+       "y": 512
+      },
+      "filename": "PANEL\\Specializations\\Shade"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Glow2_2",
+     "fields": {
+      "rect": {
+       "x": 509,
+       "y": 447
+      },
+      "filename": "PANEL\\Specializations\\Glow"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Socket2_2",
+     "fields": {
+      "rect": {
+       "x": 551,
+       "y": 489
+      },
+      "filename": "PANEL\\Specializations\\Socket"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Learned2_2",
+     "fields": {
+      "rect": {
+       "x": 551,
+       "y": 489
+      },
+      "filename": "PANEL\\Specializations\\RingLearned"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Icon2_2",
+     "fields": {
+      "rect": {
+       "x": 573,
+       "y": 512
+      },
+      "filename": "Specializations\\archaeologist",
+      "frame": 4
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Locked2_2",
+     "fields": {
+      "rect": {
+       "x": 573,
+       "y": 512
+      },
+      "filename": "PANEL\\Specializations\\Shade"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Glow2_3",
+     "fields": {
+      "rect": {
+       "x": 809,
+       "y": 447
+      },
+      "filename": "PANEL\\Specializations\\Glow"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Socket2_3",
+     "fields": {
+      "rect": {
+       "x": 851,
+       "y": 489
+      },
+      "filename": "PANEL\\Specializations\\Socket"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Learned2_3",
+     "fields": {
+      "rect": {
+       "x": 851,
+       "y": 489
+      },
+      "filename": "PANEL\\Specializations\\RingLearned"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Icon2_3",
+     "fields": {
+      "rect": {
+       "x": 873,
+       "y": 512
+      },
+      "filename": "Specializations\\archaeologist",
+      "frame": 5
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Locked2_3",
+     "fields": {
+      "rect": {
+       "x": 873,
+       "y": 512
+      },
+      "filename": "PANEL\\Specializations\\Shade"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Glow3_1",
+     "fields": {
+      "rect": {
+       "x": 209,
+       "y": 652
+      },
+      "filename": "PANEL\\Specializations\\Glow"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Socket3_1",
+     "fields": {
+      "rect": {
+       "x": 251,
+       "y": 694
+      },
+      "filename": "PANEL\\Specializations\\Socket"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Learned3_1",
+     "fields": {
+      "rect": {
+       "x": 251,
+       "y": 694
+      },
+      "filename": "PANEL\\Specializations\\RingLearned"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Icon3_1",
+     "fields": {
+      "rect": {
+       "x": 273,
+       "y": 717
+      },
+      "filename": "Specializations\\archaeologist",
+      "frame": 6
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Locked3_1",
+     "fields": {
+      "rect": {
+       "x": 273,
+       "y": 717
+      },
+)SPLJ",
+R"SPLJ(      "filename": "PANEL\\Specializations\\Shade"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Glow3_2",
+     "fields": {
+      "rect": {
+       "x": 509,
+       "y": 652
+      },
+      "filename": "PANEL\\Specializations\\Glow"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Socket3_2",
+     "fields": {
+      "rect": {
+       "x": 551,
+       "y": 694
+      },
+      "filename": "PANEL\\Specializations\\Socket"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Learned3_2",
+     "fields": {
+      "rect": {
+       "x": 551,
+       "y": 694
+      },
+      "filename": "PANEL\\Specializations\\RingLearned"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Icon3_2",
+     "fields": {
+      "rect": {
+       "x": 573,
+       "y": 717
+      },
+      "filename": "Specializations\\archaeologist",
+      "frame": 7
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Locked3_2",
+     "fields": {
+      "rect": {
+       "x": 573,
+       "y": 717
+      },
+      "filename": "PANEL\\Specializations\\Shade"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Glow3_3",
+     "fields": {
+      "rect": {
+       "x": 809,
+       "y": 652
+      },
+      "filename": "PANEL\\Specializations\\Glow"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Socket3_3",
+     "fields": {
+      "rect": {
+       "x": 851,
+       "y": 694
+      },
+      "filename": "PANEL\\Specializations\\Socket"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Learned3_3",
+     "fields": {
+      "rect": {
+       "x": 851,
+       "y": 694
+      },
+      "filename": "PANEL\\Specializations\\RingLearned"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Icon3_3",
+     "fields": {
+      "rect": {
+       "x": 873,
+       "y": 717
+      },
+      "filename": "Specializations\\archaeologist",
+      "frame": 8
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Locked3_3",
+     "fields": {
+      "rect": {
+       "x": 873,
+       "y": 717
+      },
+      "filename": "PANEL\\Specializations\\Shade"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Glow4_1",
+     "fields": {
+      "rect": {
+       "x": 209,
+       "y": 857
+      },
+      "filename": "PANEL\\Specializations\\Glow"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Socket4_1",
+     "fields": {
+      "rect": {
+       "x": 251,
+       "y": 899
+      },
+      "filename": "PANEL\\Specializations\\Socket"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Learned4_1",
+     "fields": {
+      "rect": {
+       "x": 251,
+       "y": 899
+      },
+      "filename": "PANEL\\Specializations\\RingLearned"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Icon4_1",
+     "fields": {
+      "rect": {
+       "x": 273,
+       "y": 922
+      },
+      "filename": "Specializations\\archaeologist",
+      "frame": 9
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Locked4_1",
+     "fields": {
+      "rect": {
+       "x": 273,
+       "y": 922
+      },
+      "filename": "PANEL\\Specializations\\Shade"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Glow4_2",
+     "fields": {
+      "rect": {
+       "x": 509,
+       "y": 857
+      },
+      "filename": "PANEL\\Specializations\\Glow"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Socket4_2",
+     "fields": {
+      "rect": {
+       "x": 551,
+       "y": 899
+      },
+      "filename": "PANEL\\Specializations\\Socket"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Learned4_2",
+     "fields": {
+      "rect": {
+       "x": 551,
+       "y": 899
+      },
+      "filename": "PANEL\\Specializations\\RingLearned"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Icon4_2",
+     "fields": {
+      "rect": {
+       "x": 573,
+       "y": 922
+      },
+      "filename": "Specializations\\archaeologist",
+      "frame": 10
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Locked4_2",
+     "fields": {
+      "rect": {
+       "x": 573,
+       "y": 922
+      },
+      "filename": "PANEL\\Specializations\\Shade"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Glow4_3",
+     "fields": {
+      "rect": {
+       "x": 809,
+       "y": 857
+      },
+      "filename": "PANEL\\Specializations\\Glow"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Socket4_3",
+     "fields": {
+      "rect": {
+       "x": 851,
+       "y": 899
+      },
+      "filename": "PANEL\\Specializations\\Socket"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Learned4_3",
+     "fields": {
+      "rect": {
+       "x": 851,
+       "y": 899
+      },
+      "filename": "PANEL\\Specializations\\RingLearned"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Icon4_3",
+     "fields": {
+      "rect": {
+       "x": 873,
+       "y": 922
+      },
+      "filename": "Specializations\\archaeologist",
+      "frame": 11
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Locked4_3",
+     "fields": {
+      "rect": {
+       "x": 873,
+       "y": 922
+      },
+      "filename": "PANEL\\Specializations\\Shade"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Glow5_1",
+     "fields": {
+      "rect": {
+       "x": 209,
+       "y": 1062
+      },
+      "filename": "PANEL\\Specializations\\Glow"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Socket5_1",
+     "fields": {
+      "rect": {
+       "x": 251,
+       "y": 1104
+      },
+      "filename": "PANEL\\Specializations\\Socket"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Learned5_1",
+     "fields": {
+      "rect": {
+       "x": 251,
+       "y": 1104
+      },
+      "filename": "PANEL\\Specializations\\RingLearned"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Icon5_1",
+     "fields": {
+      "rect": {
+       "x": 273,
+       "y": 1127
+      },
+      "filename": "Specializations\\archaeologist",
+      "frame": 12
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Locked5_1",
+     "fields": {
+      "rect": {
+       "x": 273,
+       "y": 1127
+      },
+      "filename": "PANEL\\Specializations\\Shade"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Glow5_2",
+     "fields": {
+      "rect": {
+       "x": 509,
+       "y": 1062
+      },
+      "filename": "PANEL\\Specializations\\Glow"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Socket5_2",
+     "fields": {
+      "rect": {
+       "x": 551,
+       "y": 1104
+      },
+      "filename": "PANEL\\Specializations\\Socket"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Learned5_2",
+     "fields": {
+      "rect": {
+       "x": 551,
+       "y": 1104
+      },
+      "filename": "PANEL\\Specializations\\RingLearned"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Icon5_2",
+     "fields": {
+      "rect": {
+       "x": 573,
+       "y": 1127
+      },
+      "filename": "Specializations\\archaeologist",
+      "frame": 13
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Locked5_2",
+     "fields": {
+      "rect": {
+       "x": 573,
+       "y": 1127
+      },
+      "filename": "PANEL\\Specializations\\Shade"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Glow5_3",
+     "fields": {
+      "rect": {
+       "x": 809,
+       "y": 1062
+      },
+      "filename": "PANEL\\Specializations\\Glow"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Socket5_3",
+     "fields": {
+      "rect": {
+       "x": 851,
+       "y": 1104
+      },
+      "filename": "PANEL\\Specializations\\Socket"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Learned5_3",
+     "fields": {
+      "rect": {
+       "x": 851,
+       "y": 1104
+      },
+      "filename": "PANEL\\Specializations\\RingLearned"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Icon5_3",
+     "fields": {
+      "rect": {
+       "x": 873,
+       "y": 1127
+      },
+      "filename": "Specializations\\archaeologist",
+      "frame": 14
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "Locked5_3",
+     "fields": {
+      "rect": {
+       "x": 873,
+       "y": 1127
+      },
+      "filename": "PANEL\\Specializations\\Shade"
+     }
+    }
+   ]
+  },
+  {
+   "type": "Widget",
+   "name": "Tip1_1",
+   "fields": {
+    "rect": {
+     "x": -589,
+     "y": 763,
+     "width": 720,
+     "height": 688
+    }
+   },
+   "children": [
+    {
+     "type": "ImageWidget",
+     "name": "TipBack1",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack1"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack2",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack2"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack3",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack3"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack4",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack4"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack5",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack5"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack6",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack6"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack7",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack7"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack8",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack8"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack9",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack9"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack10",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack10"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack11",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack11"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack12",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack12"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack13",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack13"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack14",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack14"
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipTitle",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 14,
+       "width": 672,
+       "height": 56
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGoldYellow",
+       "pointSize": "$XMediumLargeFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "center"
+       },
+       "dropShadow": "$DefaultDropShadow",
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipText",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 88,
+       "width": 672,
+       "height": 588
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorWhite",
+       "pointSize": "$XMediumFontSize",
+)SPLJ",
+R"SPLJ(       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint1",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 130,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint2",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 172,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint3",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 214,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint4",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 256,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint5",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 298,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint6",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 340,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint7",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 382,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint8",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 424,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint9",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 466,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint10",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 508,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint11",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 550,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint12",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 592,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint13",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 634,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    }
+   ]
+  },
+  {
+   "type": "Widget",
+   "name": "Tip1_2",
+   "fields": {
+    "rect": {
+     "x": -360,
+     "y": 763,
+     "width": 720,
+     "height": 688
+    }
+   },
+   "children": [
+    {
+     "type": "ImageWidget",
+     "name": "TipBack1",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack1"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack2",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack2"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack3",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack3"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack4",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack4"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack5",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack5"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack6",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack6"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack7",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack7"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack8",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack8"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack9",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack9"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack10",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack10"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack11",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack11"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack12",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack12"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack13",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack13"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack14",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack14"
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipTitle",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 14,
+       "width": 672,
+       "height": 56
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGoldYellow",
+       "pointSize": "$XMediumLargeFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "center"
+       },
+       "dropShadow": "$DefaultDropShadow",
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipText",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 88,
+       "width": 672,
+       "height": 588
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorWhite",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint1",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 130,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint2",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 172,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint3",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 214,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint4",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 256,
+       "width": 672,
+       "height": 84
+      },
+)SPLJ",
+R"SPLJ(      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint5",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 298,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint6",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 340,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint7",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 382,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint8",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 424,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint9",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 466,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint10",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 508,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint11",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 550,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint12",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 592,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint13",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 634,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    }
+   ]
+  },
+  {
+   "type": "Widget",
+   "name": "Tip1_3",
+   "fields": {
+    "rect": {
+     "x": -130,
+     "y": 763,
+     "width": 720,
+     "height": 688
+    }
+   },
+   "children": [
+    {
+     "type": "ImageWidget",
+     "name": "TipBack1",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack1"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack2",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack2"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack3",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack3"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack4",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack4"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack5",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack5"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack6",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack6"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack7",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack7"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack8",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack8"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack9",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack9"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack10",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack10"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack11",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack11"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack12",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack12"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack13",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack13"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack14",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack14"
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipTitle",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 14,
+       "width": 672,
+       "height": 56
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGoldYellow",
+       "pointSize": "$XMediumLargeFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "center"
+       },
+       "dropShadow": "$DefaultDropShadow",
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipText",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 88,
+       "width": 672,
+       "height": 588
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorWhite",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint1",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 130,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint2",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 172,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint3",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 214,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint4",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 256,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint5",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 298,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint6",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 340,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint7",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 382,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint8",
+)SPLJ",
+R"SPLJ(     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 424,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint9",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 466,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint10",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 508,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint11",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 550,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint12",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 592,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint13",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 634,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    }
+   ]
+  },
+  {
+   "type": "Widget",
+   "name": "Tip2_1",
+   "fields": {
+    "rect": {
+     "x": -589,
+     "y": 968,
+     "width": 720,
+     "height": 688
+    }
+   },
+   "children": [
+    {
+     "type": "ImageWidget",
+     "name": "TipBack1",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack1"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack2",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack2"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack3",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack3"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack4",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack4"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack5",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack5"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack6",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack6"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack7",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack7"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack8",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack8"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack9",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack9"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack10",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack10"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack11",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack11"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack12",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack12"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack13",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack13"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack14",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack14"
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipTitle",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 14,
+       "width": 672,
+       "height": 56
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGoldYellow",
+       "pointSize": "$XMediumLargeFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "center"
+       },
+       "dropShadow": "$DefaultDropShadow",
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipText",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 88,
+       "width": 672,
+       "height": 588
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorWhite",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint1",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 130,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint2",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 172,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint3",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 214,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint4",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 256,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint5",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 298,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint6",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 340,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint7",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 382,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint8",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 424,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint9",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 466,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint10",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 508,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint11",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 550,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+)SPLJ",
+R"SPLJ(        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint12",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 592,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint13",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 634,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    }
+   ]
+  },
+  {
+   "type": "Widget",
+   "name": "Tip2_2",
+   "fields": {
+    "rect": {
+     "x": -360,
+     "y": 968,
+     "width": 720,
+     "height": 688
+    }
+   },
+   "children": [
+    {
+     "type": "ImageWidget",
+     "name": "TipBack1",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack1"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack2",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack2"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack3",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack3"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack4",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack4"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack5",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack5"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack6",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack6"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack7",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack7"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack8",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack8"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack9",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack9"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack10",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack10"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack11",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack11"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack12",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack12"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack13",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack13"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack14",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack14"
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipTitle",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 14,
+       "width": 672,
+       "height": 56
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGoldYellow",
+       "pointSize": "$XMediumLargeFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "center"
+       },
+       "dropShadow": "$DefaultDropShadow",
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipText",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 88,
+       "width": 672,
+       "height": 588
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorWhite",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint1",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 130,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint2",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 172,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint3",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 214,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint4",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 256,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint5",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 298,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint6",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 340,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint7",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 382,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint8",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 424,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint9",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 466,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint10",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 508,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint11",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 550,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint12",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 592,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint13",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 634,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    }
+   ]
+  },
+  {
+   "type": "Widget",
+   "name": "Tip2_3",
+   "fields": {
+    "rect": {
+     "x": -130,
+     "y": 968,
+     "width": 720,
+     "height": 688
+    }
+   },
+   "children": [
+    {
+     "type": "ImageWidget",
+     "name": "TipBack1",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack1"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack2",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack2"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack3",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack3"
+     }
+    },
+)SPLJ",
+R"SPLJ(    {
+     "type": "ImageWidget",
+     "name": "TipBack4",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack4"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack5",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack5"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack6",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack6"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack7",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack7"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack8",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack8"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack9",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack9"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack10",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack10"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack11",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack11"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack12",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack12"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack13",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack13"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack14",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack14"
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipTitle",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 14,
+       "width": 672,
+       "height": 56
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGoldYellow",
+       "pointSize": "$XMediumLargeFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "center"
+       },
+       "dropShadow": "$DefaultDropShadow",
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipText",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 88,
+       "width": 672,
+       "height": 588
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorWhite",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint1",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 130,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint2",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 172,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint3",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 214,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint4",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 256,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint5",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 298,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint6",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 340,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint7",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 382,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint8",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 424,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint9",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 466,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint10",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 508,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint11",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 550,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint12",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 592,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint13",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 634,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    }
+   ]
+  },
+  {
+   "type": "Widget",
+   "name": "Tip3_1",
+   "fields": {
+    "rect": {
+     "x": -589,
+     "y": 1173,
+     "width": 720,
+     "height": 688
+    }
+   },
+   "children": [
+    {
+     "type": "ImageWidget",
+     "name": "TipBack1",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack1"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack2",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack2"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack3",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack3"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack4",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack4"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack5",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack5"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack6",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack6"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack7",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack7"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack8",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack8"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack9",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack9"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack10",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack10"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack11",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack11"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack12",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack12"
+     }
+    },
+    {
+)SPLJ",
+R"SPLJ(     "type": "ImageWidget",
+     "name": "TipBack13",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack13"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack14",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack14"
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipTitle",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 14,
+       "width": 672,
+       "height": 56
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGoldYellow",
+       "pointSize": "$XMediumLargeFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "center"
+       },
+       "dropShadow": "$DefaultDropShadow",
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipText",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 88,
+       "width": 672,
+       "height": 588
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorWhite",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint1",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 130,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint2",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 172,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint3",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 214,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint4",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 256,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint5",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 298,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint6",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 340,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint7",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 382,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint8",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 424,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint9",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 466,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint10",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 508,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint11",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 550,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint12",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 592,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint13",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 634,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    }
+   ]
+  },
+  {
+   "type": "Widget",
+   "name": "Tip3_2",
+   "fields": {
+    "rect": {
+     "x": -360,
+     "y": 1173,
+     "width": 720,
+     "height": 688
+    }
+   },
+   "children": [
+    {
+     "type": "ImageWidget",
+     "name": "TipBack1",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack1"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack2",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack2"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack3",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack3"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack4",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack4"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack5",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack5"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack6",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack6"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack7",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack7"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack8",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack8"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack9",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack9"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack10",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack10"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack11",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack11"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack12",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack12"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack13",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack13"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack14",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack14"
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipTitle",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 14,
+       "width": 672,
+       "height": 56
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGoldYellow",
+       "pointSize": "$XMediumLargeFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "center"
+       },
+       "dropShadow": "$DefaultDropShadow",
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipText",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 88,
+       "width": 672,
+       "height": 588
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorWhite",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint1",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 130,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+)SPLJ",
+R"SPLJ(        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint2",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 172,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint3",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 214,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint4",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 256,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint5",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 298,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint6",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 340,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint7",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 382,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint8",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 424,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint9",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 466,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint10",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 508,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint11",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 550,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint12",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 592,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint13",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 634,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    }
+   ]
+  },
+  {
+   "type": "Widget",
+   "name": "Tip3_3",
+   "fields": {
+    "rect": {
+     "x": -130,
+     "y": 1173,
+     "width": 720,
+     "height": 688
+    }
+   },
+   "children": [
+    {
+     "type": "ImageWidget",
+     "name": "TipBack1",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack1"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack2",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack2"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack3",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack3"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack4",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack4"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack5",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack5"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack6",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack6"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack7",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack7"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack8",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack8"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack9",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack9"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack10",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack10"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack11",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack11"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack12",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack12"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack13",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack13"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack14",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack14"
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipTitle",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 14,
+       "width": 672,
+       "height": 56
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGoldYellow",
+       "pointSize": "$XMediumLargeFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "center"
+       },
+       "dropShadow": "$DefaultDropShadow",
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipText",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 88,
+       "width": 672,
+       "height": 588
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorWhite",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint1",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 130,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint2",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 172,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint3",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 214,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint4",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 256,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint5",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 298,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+)SPLJ",
+R"SPLJ(       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint6",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 340,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint7",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 382,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint8",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 424,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint9",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 466,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint10",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 508,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint11",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 550,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint12",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 592,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint13",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 634,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    }
+   ]
+  },
+  {
+   "type": "Widget",
+   "name": "Tip4_1",
+   "fields": {
+    "rect": {
+     "x": -589,
+     "y": 1378,
+     "width": 720,
+     "height": 688
+    }
+   },
+   "children": [
+    {
+     "type": "ImageWidget",
+     "name": "TipBack1",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack1"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack2",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack2"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack3",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack3"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack4",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack4"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack5",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack5"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack6",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack6"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack7",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack7"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack8",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack8"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack9",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack9"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack10",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack10"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack11",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack11"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack12",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack12"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack13",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack13"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack14",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack14"
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipTitle",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 14,
+       "width": 672,
+       "height": 56
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGoldYellow",
+       "pointSize": "$XMediumLargeFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "center"
+       },
+       "dropShadow": "$DefaultDropShadow",
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipText",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 88,
+       "width": 672,
+       "height": 588
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorWhite",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint1",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 130,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint2",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 172,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint3",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 214,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint4",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 256,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint5",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 298,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint6",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 340,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint7",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 382,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint8",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 424,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint9",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 466,
+)SPLJ",
+R"SPLJ(       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint10",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 508,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint11",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 550,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint12",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 592,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint13",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 634,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    }
+   ]
+  },
+  {
+   "type": "Widget",
+   "name": "Tip4_2",
+   "fields": {
+    "rect": {
+     "x": -360,
+     "y": 1378,
+     "width": 720,
+     "height": 688
+    }
+   },
+   "children": [
+    {
+     "type": "ImageWidget",
+     "name": "TipBack1",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack1"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack2",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack2"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack3",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack3"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack4",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack4"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack5",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack5"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack6",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack6"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack7",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack7"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack8",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack8"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack9",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack9"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack10",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack10"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack11",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack11"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack12",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack12"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack13",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack13"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack14",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack14"
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipTitle",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 14,
+       "width": 672,
+       "height": 56
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGoldYellow",
+       "pointSize": "$XMediumLargeFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "center"
+       },
+       "dropShadow": "$DefaultDropShadow",
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipText",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 88,
+       "width": 672,
+       "height": 588
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorWhite",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint1",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 130,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint2",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 172,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint3",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 214,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint4",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 256,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint5",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 298,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint6",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 340,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint7",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 382,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint8",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 424,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint9",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 466,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint10",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 508,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint11",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 550,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint12",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 592,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+)SPLJ",
+R"SPLJ(     "type": "TextBoxWidget",
+     "name": "TipHint13",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 634,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    }
+   ]
+  },
+  {
+   "type": "Widget",
+   "name": "Tip4_3",
+   "fields": {
+    "rect": {
+     "x": -130,
+     "y": 1378,
+     "width": 720,
+     "height": 688
+    }
+   },
+   "children": [
+    {
+     "type": "ImageWidget",
+     "name": "TipBack1",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack1"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack2",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack2"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack3",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack3"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack4",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack4"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack5",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack5"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack6",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack6"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack7",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack7"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack8",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack8"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack9",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack9"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack10",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack10"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack11",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack11"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack12",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack12"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack13",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack13"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack14",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack14"
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipTitle",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 14,
+       "width": 672,
+       "height": 56
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGoldYellow",
+       "pointSize": "$XMediumLargeFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "center"
+       },
+       "dropShadow": "$DefaultDropShadow",
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipText",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 88,
+       "width": 672,
+       "height": 588
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorWhite",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint1",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 130,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint2",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 172,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint3",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 214,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint4",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 256,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint5",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 298,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint6",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 340,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint7",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 382,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint8",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 424,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint9",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 466,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint10",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 508,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint11",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 550,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint12",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 592,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint13",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 634,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    }
+   ]
+  },
+  {
+   "type": "Widget",
+   "name": "Tip5_1",
+   "fields": {
+    "rect": {
+     "x": -589,
+     "y": 1583,
+     "width": 720,
+     "height": 688
+    }
+   },
+   "children": [
+    {
+     "type": "ImageWidget",
+     "name": "TipBack1",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack1"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack2",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack2"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack3",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack3"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack4",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack4"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack5",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack5"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack6",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+)SPLJ",
+R"SPLJ(      "filename": "PANEL\\Specializations\\TipBack6"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack7",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack7"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack8",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack8"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack9",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack9"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack10",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack10"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack11",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack11"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack12",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack12"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack13",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack13"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack14",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack14"
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipTitle",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 14,
+       "width": 672,
+       "height": 56
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGoldYellow",
+       "pointSize": "$XMediumLargeFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "center"
+       },
+       "dropShadow": "$DefaultDropShadow",
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipText",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 88,
+       "width": 672,
+       "height": 588
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorWhite",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint1",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 130,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint2",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 172,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint3",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 214,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint4",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 256,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint5",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 298,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint6",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 340,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint7",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 382,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint8",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 424,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint9",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 466,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint10",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 508,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint11",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 550,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint12",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 592,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint13",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 634,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    }
+   ]
+  },
+  {
+   "type": "Widget",
+   "name": "Tip5_2",
+   "fields": {
+    "rect": {
+     "x": -360,
+     "y": 1583,
+     "width": 720,
+     "height": 688
+    }
+   },
+   "children": [
+    {
+     "type": "ImageWidget",
+     "name": "TipBack1",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack1"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack2",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack2"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack3",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack3"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack4",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack4"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack5",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack5"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack6",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack6"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack7",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack7"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack8",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack8"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack9",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack9"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack10",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack10"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack11",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack11"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack12",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack12"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack13",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack13"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack14",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack14"
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipTitle",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 14,
+       "width": 672,
+)SPLJ",
+R"SPLJ(       "height": 56
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGoldYellow",
+       "pointSize": "$XMediumLargeFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "center"
+       },
+       "dropShadow": "$DefaultDropShadow",
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipText",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 88,
+       "width": 672,
+       "height": 588
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorWhite",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint1",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 130,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint2",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 172,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint3",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 214,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint4",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 256,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint5",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 298,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint6",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 340,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint7",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 382,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint8",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 424,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint9",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 466,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint10",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 508,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint11",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 550,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint12",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 592,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint13",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 634,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    }
+   ]
+  },
+  {
+   "type": "Widget",
+   "name": "Tip5_3",
+   "fields": {
+    "rect": {
+     "x": -130,
+     "y": 1583,
+     "width": 720,
+     "height": 688
+    }
+   },
+   "children": [
+    {
+     "type": "ImageWidget",
+     "name": "TipBack1",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack1"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack2",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack2"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack3",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack3"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack4",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack4"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack5",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack5"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack6",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack6"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack7",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack7"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack8",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack8"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack9",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack9"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack10",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack10"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack11",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack11"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack12",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack12"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack13",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack13"
+     }
+    },
+    {
+     "type": "ImageWidget",
+     "name": "TipBack14",
+     "fields": {
+      "rect": {
+       "x": 0,
+       "y": 0
+      },
+      "filename": "PANEL\\Specializations\\TipBack14"
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipTitle",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 14,
+       "width": 672,
+       "height": 56
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGoldYellow",
+       "pointSize": "$XMediumLargeFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "center"
+       },
+       "dropShadow": "$DefaultDropShadow",
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipText",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 88,
+       "width": 672,
+       "height": 588
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorWhite",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint1",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 130,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint2",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 172,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+)SPLJ",
+R"SPLJ(      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint3",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 214,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint4",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 256,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint5",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 298,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint6",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 340,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint7",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 382,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint8",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 424,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint9",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 466,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint10",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 508,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint11",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 550,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint12",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 592,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    },
+    {
+     "type": "TextBoxWidget",
+     "name": "TipHint13",
+     "fields": {
+      "rect": {
+       "x": 24,
+       "y": 634,
+       "width": 672,
+       "height": 84
+      },
+      "text": "",
+      "style": {
+       "fontColor": "$FontColorGrey",
+       "pointSize": "$XMediumFontSize",
+       "alignment": {
+        "h": "center",
+        "v": "top"
+       },
+       "options": {
+        "lineWrap": true,
+        "newlineHandling": "standard"
+       }
+      }
+     }
+    }
+   ]
+  },
+  {
+   "type": "FocusableWidget",
+   "name": "Hover1_1",
+   "fields": {
+    "rect": {
+     "x": -366,
+     "y": 604,
+     "width": 132,
+     "height": 130
+    }
+   }
+  },
+  {
+   "type": "FocusableWidget",
+   "name": "Hover1_2",
+   "fields": {
+    "rect": {
+     "x": -66,
+     "y": 604,
+     "width": 132,
+     "height": 130
+    }
+   }
+  },
+  {
+   "type": "FocusableWidget",
+   "name": "Hover1_3",
+   "fields": {
+    "rect": {
+     "x": 234,
+     "y": 604,
+     "width": 132,
+     "height": 130
+    }
+   }
+  },
+  {
+   "type": "FocusableWidget",
+   "name": "Hover2_1",
+   "fields": {
+    "rect": {
+     "x": -366,
+     "y": 809,
+     "width": 132,
+     "height": 130
+    }
+   }
+  },
+  {
+   "type": "FocusableWidget",
+   "name": "Hover2_2",
+   "fields": {
+    "rect": {
+     "x": -66,
+     "y": 809,
+     "width": 132,
+     "height": 130
+    }
+   }
+  },
+  {
+   "type": "FocusableWidget",
+   "name": "Hover2_3",
+   "fields": {
+    "rect": {
+     "x": 234,
+     "y": 809,
+     "width": 132,
+     "height": 130
+    }
+   }
+  },
+  {
+   "type": "FocusableWidget",
+   "name": "Hover3_1",
+   "fields": {
+    "rect": {
+     "x": -366,
+     "y": 1014,
+     "width": 132,
+     "height": 130
+    }
+   }
+  },
+  {
+   "type": "FocusableWidget",
+   "name": "Hover3_2",
+   "fields": {
+    "rect": {
+     "x": -66,
+     "y": 1014,
+     "width": 132,
+     "height": 130
+    }
+   }
+  },
+  {
+   "type": "FocusableWidget",
+   "name": "Hover3_3",
+   "fields": {
+    "rect": {
+     "x": 234,
+     "y": 1014,
+     "width": 132,
+     "height": 130
+    }
+   }
+  },
+  {
+   "type": "FocusableWidget",
+   "name": "Hover4_1",
+   "fields": {
+    "rect": {
+     "x": -366,
+     "y": 1219,
+     "width": 132,
+     "height": 130
+    }
+   }
+  },
+  {
+   "type": "FocusableWidget",
+   "name": "Hover4_2",
+   "fields": {
+    "rect": {
+     "x": -66,
+     "y": 1219,
+     "width": 132,
+     "height": 130
+    }
+   }
+  },
+  {
+   "type": "FocusableWidget",
+   "name": "Hover4_3",
+   "fields": {
+    "rect": {
+     "x": 234,
+     "y": 1219,
+     "width": 132,
+     "height": 130
+    }
+   }
+  },
+  {
+   "type": "FocusableWidget",
+   "name": "Hover5_1",
+   "fields": {
+    "rect": {
+     "x": -366,
+     "y": 1424,
+     "width": 132,
+     "height": 130
+    }
+   }
+  },
+  {
+   "type": "FocusableWidget",
+   "name": "Hover5_2",
+   "fields": {
+    "rect": {
+     "x": -66,
+     "y": 1424,
+     "width": 132,
+     "height": 130
+    }
+   }
+  },
+  {
+   "type": "FocusableWidget",
+   "name": "Hover5_3",
+   "fields": {
+    "rect": {
+     "x": 234,
+     "y": 1424,
+     "width": 132,
+     "height": 130
+    }
+   }
+  }
+ ]
+}
+)SPLJ",
+};

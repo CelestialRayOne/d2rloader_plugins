@@ -2344,13 +2344,64 @@ auto __fastcall HookSkillHandler(std::uint8_t dataContext, std::uint8_t* operate
     return SkillRefresh(player);
 }
 
+// Alchemy (celestialrayone.alchemy) publishes "mana-burn-immunity"; from its
+// version 2 the table also says how much of a hit a unit takes (Blessed Vials:
+// less while a Healing Potion effect runs). That reduction is applied here,
+// next to the Armor shrine's and the same way, so both act before absorbs and
+// resistances. The service is looked up on the first hits and again every 256
+// until found, so the load order of the two plugins does not matter. Without
+// Alchemy nothing changes.
+struct AlchemyServiceTable {
+    std::uint32_t serviceSize;
+    std::uint32_t serviceVersion;
+    bool(__cdecl* manaBurnImmune)(void* player) noexcept;
+    std::int32_t(__cdecl* incomingDamagePercent)(void* unit) noexcept;
+};
+
+const AlchemyServiceTable* AlchemyService = nullptr;
+std::atomic<std::uint32_t> AlchemyLookups{ 0 };
+std::atomic<std::uint64_t> AlchemyReducedHits{ 0 };
+
+auto AlchemyDamagePercent(void* unit) noexcept -> std::int32_t {
+    if (AlchemyService == nullptr && (AlchemyLookups.fetch_add(1, std::memory_order_relaxed) % 256) == 0) {
+        const D2RL::PluginCommunicationService* communication = nullptr;
+        if (Context->QueryService(&communication) == D2RL::ServiceQueryResult::Success
+            && D2RL::HasPluginCommunicationServiceField(communication, D2RL::PluginCommunicationServiceRequiredSize)) {
+            const D2RL::PluginCommunication::AcquireServiceRequest request{
+                .structSize       = D2RL::PluginCommunication::AcquireServiceRequestSize,
+                .flags            = 0,
+                .providerPluginId = "celestialrayone.alchemy",
+                .name             = "mana-burn-immunity",
+                .minimumVersion   = 2,
+                .minimumTableSize = static_cast<std::uint32_t>(sizeof(AlchemyServiceTable)),
+            };
+            D2RL::PluginCommunication::AcquiredService acquired{};
+            acquired.structSize = D2RL::PluginCommunication::AcquiredServiceSize;
+            if (communication->acquireService(Context, &request, &acquired) == D2RL::PluginCommunication::Result::Success
+                && acquired.table != nullptr) {
+                AlchemyService = static_cast<const AlchemyServiceTable*>(acquired.table);
+                Context->LogInfo("ShrineRework: Alchemy found; Blessed Vials reduces damage here.");
+            }
+        }
+    }
+    if (AlchemyService == nullptr || AlchemyService->incomingDamagePercent == nullptr) return 100;
+    const std::int32_t percent = AlchemyService->incomingDamagePercent(unit);
+    return percent < 0 ? 0 : (percent > 100 ? 100 : percent);
+}
+
 auto __fastcall HookedUnitEvent(void* game, std::uint32_t eventId, void* unit, void* other,
                                 std::uint8_t* damage) noexcept -> std::int64_t {
     if (eventId == AbsorbDamageEvent && unit != nullptr && damage != nullptr
-        && RuleActive.load(std::memory_order_acquire) && ArmorActive.load(std::memory_order_relaxed)
-        && CheckState(unit, ChartState[ArmorCode]) != 0) {
-        ScaleIncomingDamage(damage, 100 - Config.armorReduction);
-        ReducedHits.fetch_add(1, std::memory_order_relaxed);
+        && RuleActive.load(std::memory_order_acquire)) {
+        if (ArmorActive.load(std::memory_order_relaxed) && CheckState(unit, ChartState[ArmorCode]) != 0) {
+            ScaleIncomingDamage(damage, 100 - Config.armorReduction);
+            ReducedHits.fetch_add(1, std::memory_order_relaxed);
+        }
+        const std::int32_t keep = AlchemyDamagePercent(unit);
+        if (keep < 100) {
+            ScaleIncomingDamage(damage, keep);
+            AlchemyReducedHits.fetch_add(1, std::memory_order_relaxed);
+        }
     }
     return UnitEvent(game, eventId, unit, other, damage);
 }
@@ -3139,6 +3190,10 @@ auto __cdecl StatusCommand(D2R::Game::Client*, const D2RL::ConsoleCommandContext
                   static_cast<unsigned long long>(ArmorClicks.load(std::memory_order_relaxed)),
                   static_cast<unsigned long long>(ReducedHits.load(std::memory_order_relaxed)));
     plugin->WriteConsoleMessage(line);
+    std::snprintf(line, sizeof(line), "Alchemy (Blessed Vials): %s | hits reduced %llu",
+                  AlchemyService != nullptr ? "found" : "not found yet",
+                  static_cast<unsigned long long>(AlchemyReducedHits.load(std::memory_order_relaxed)));
+    plugin->WriteConsoleMessage(line);
     std::snprintf(line, sizeof(line), "Combat %s: %u stat%s = %d | taken %llu", OnOff(CombatActive),
                   static_cast<unsigned>(Config.combatStats.size()), Config.combatStats.size() == 1 ? "" : "s",
                   Config.combatValue, static_cast<unsigned long long>(CombatClicks.load(std::memory_order_relaxed)));
@@ -3165,7 +3220,7 @@ constexpr D2RL::PluginInfo Info{
     .abiVersion  = D2RL_PLUGIN_ABI_VERSION,
     .id          = "celestialrayone.shrine-rework",
     .name        = "Shrine Rework",
-    .version     = "1.1.0",
+    .version     = "1.2.0",
     .author      = "CelestialRayOne",
     .description = "Takes chosen shrine types out of the game, reworks the Armor, Combat, Resist, Skill and Mana "
                    "Recharge shrines, and gives a clicked shrine's effect to everyone around it.",

@@ -1,8 +1,9 @@
 // Superior Affixes (celestialrayone.superior-affixes)
 //
-// Replaces the stock superior affix picker (qualityitems.txt) with a weighted
-// one, removes its 10-row limit, and adds optional itype/etype columns to
-// qualityitems.txt. Nothing in the save format changes.
+// Replaces the stock superior affix picker (qualityitems.txt) with one that
+// picks by the row's frequency, removes its 10-row limit, and adds optional
+// frequency, itype and etype columns to qualityitems.txt. Nothing in the save
+// format changes.
 //
 // Target: D2RLoader 1.3.1 running D2R 3.3. Every address and byte below was
 // read out of the dumped D2RLoader.exe image (md5 8af7a47c...) and decoded
@@ -62,7 +63,7 @@
 //   bow, 15 boots, 16 gloves, 19 belt. It reads only the item and the record.
 //
 // ---------------------------------------------------------------------------
-// 4. itype / etype columns
+// 4. frequency / itype / etype columns
 // ---------------------------------------------------------------------------
 //   CheckItemType is 373890 (item, itemtypes index): true when the item's
 //   items.txt type (record+302) or type2 (record+304) has the index set in the
@@ -88,6 +89,13 @@
 //       table 313DE0 hands the picker, so the right set is used per item.
 //   Anything that does not match is reported and simply not used.
 //
+//   The frequency column (named after, and working like, the column of
+//   magicprefix.txt and magicsuffix.txt) is read from that same matched file,
+//   row by row, so a frequency can only ever land on the row it was written
+//   on. Empty or 0 means the row never rolls. A bank with no matched file, or
+//   a matched file with no frequency column, gives every row the same odds
+//   (stock).
+//
 // ---------------------------------------------------------------------------
 // 5. The hook
 // ---------------------------------------------------------------------------
@@ -97,14 +105,15 @@
 //   PickSuperiorAffix does what the stock body does, in the same order and
 //   through the same native calls, except for the row choice:
 //     - no tried list: two passes over the rows instead, the first summing
-//       the weights of every row the item may use, the second walking to the
-//       rolled one; eligibility only reads, so asking twice changes nothing;
+//       the frequencies of every row the item may use, the second walking to
+//       the rolled one; eligibility only reads, so asking twice changes
+//       nothing;
 //     - one seed roll per Superior item (the stock picker rolls once per
 //       attempt), with the stock generator: low*0x6AC690C5 + high, then
 //       low % total;
 //     - when no row is usable the stock picker returns 0 without applying
 //       anything, and so does this one.
-//   Weights are 0..65535 and rows at most 65535, so the total fits 32 bits.
+//   Frequencies are 0..65535 and rows at most 65535, so the total fits 32 bits.
 
 #include <D2RLPlugin/api.h>
 
@@ -289,23 +298,27 @@ struct NativeCalls {
 // Configuration
 // ---------------------------------------------------------------------------
 
-constexpr std::uint32_t MaxRows            = 65'535;
-constexpr std::uint32_t MaxWeight          = 65'535;
-constexpr std::uint32_t UseDefaultWeight   = 0xFFFF'FFFF;
-constexpr char          MainSection[]      = "superior_affixes";
-constexpr char          WeightsSection[]   = "superior_affixes.weights";
-constexpr std::size_t   InitialConfigBytes = 16'384;
-constexpr std::size_t   MaximumConfigBytes = 4'194'304;
-constexpr std::size_t   ProblemSampleSize  = 6;
+constexpr std::uint32_t MaxRows                = 65'535;
+constexpr std::uint32_t MaxFrequency           = 65'535;
+constexpr std::uint32_t EqualOddsFrequency     = 1;   // every row, when there is no frequency data
+constexpr char          MainSection[]          = "superior_affixes";
+// Removed in 1.2.0 (row odds moved to the frequency column of qualityitems.txt).
+// Only recognised so that an old config says plainly that it is ignored.
+constexpr char          ObsoleteWeightsSection[] = "superior_affixes.weights";
+constexpr char          ObsoleteDefaultWeight[]  = "default_weight";
+constexpr std::size_t   InitialConfigBytes     = 16'384;
+constexpr std::size_t   MaximumConfigBytes     = 4'194'304;
+constexpr std::size_t   ProblemSampleSize      = 6;
+constexpr std::size_t   RowListSampleSize      = 24;
 
-static_assert(static_cast<std::uint64_t>(MaxRows) * MaxWeight <= 0xFFFF'FFFFull,
-    "The weight total must fit 32 bits.");
+static_assert(static_cast<std::uint64_t>(MaxRows) * MaxFrequency <= 0xFFFF'FFFFull,
+    "The frequency total must fit 32 bits.");
 
 constexpr char DefaultConfigToml[] =
     "# Superior Affixes\n"
     "#\n"
     "# Picks the superior affix row (qualityitems.txt) of every Superior item the\n"
-    "# game creates, with a weight per row, and removes the stock row limit.\n"
+    "# game creates by the row's frequency, and removes the stock row limit.\n"
     "#\n"
     "# ---------------------------------------------------------------------------\n"
     "# What happens when an item rolls Superior\n"
@@ -317,8 +330,25 @@ constexpr char DefaultConfigToml[] =
     "#   qualityitems.txt for that item afterwards.\n"
     "#\n"
     "#   Stock D2R gives every allowed row the same odds. This plugin gives each\n"
-    "#   row the odds set below. With every weight equal, the odds are exactly\n"
-    "#   the stock ones.\n"
+    "#   row the odds of its frequency column (below). Without a frequency\n"
+    "#   column, every row has the same odds, exactly the stock ones.\n"
+    "#\n"
+    "# ---------------------------------------------------------------------------\n"
+    "# frequency column in qualityitems.txt\n"
+    "# ---------------------------------------------------------------------------\n"
+    "#   Works like frequency in magicprefix.txt and magicsuffix.txt: a row's\n"
+    "#   odds on a given item are its frequency divided by the sum of the\n"
+    "#   frequencies of every row that item may use.\n"
+    "#   - A whole number from 0 to 65535.\n"
+    "#   - 0 or an empty cell: the row never rolls.\n"
+    "#   - Anything else (text, a sign, a decimal point, more than 65535): the\n"
+    "#     row never rolls, and the log names the row and the cell.\n"
+    "#   - No frequency column in the file: every row has the same odds (stock).\n"
+    "#   Example: an item may use three rows, with frequency 100, 25 and 0. They\n"
+    "#   roll 80%, 20% and never.\n"
+    "#   If every row an item may use has frequency 0, the item drops as a\n"
+    "#   Normal item instead of Superior (the game's own fallback when no row\n"
+    "#   fits).\n"
     "#\n"
     "# ---------------------------------------------------------------------------\n"
     "# Row limit\n"
@@ -366,10 +396,8 @@ constexpr char DefaultConfigToml[] =
     "# ---------------------------------------------------------------------------\n"
     "# Rows are numbered from 0\n"
     "# ---------------------------------------------------------------------------\n"
-    "#   Row 0 is the first line under the header of qualityitems.txt, row 1 the\n"
-    "#   second, and so on. Adding or removing a line in the middle of the file\n"
-    "#   moves every row below it, so update the weights below when you do.\n"
-    "#\n"
+    "#   The console command and the log name rows by number. Row 0 is the first\n"
+    "#   line under the header of qualityitems.txt, row 1 the second, and so on.\n"
     "#\n"
     "# ---------------------------------------------------------------------------\n"
     "# Item-type columns in qualityitems.txt (optional, no setting needed)\n"
@@ -388,55 +416,47 @@ constexpr char DefaultConfigToml[] =
     "#   Example, spears only, without Amazon spears: itype1 = spea, etype1 = aspe.\n"
     "#   Example, every weapon the weapon column allows except spears:\n"
     "#     weapon = 1, etype1 = spea.\n"
+    "#   An unknown code is skipped, and the log names its row and column. A row\n"
+    "#   whose itypes are all unknown never rolls.\n"
+    "#\n"
+    "# ---------------------------------------------------------------------------\n"
+    "# How the plugin reads the frequency, itype and etype columns\n"
+    "# ---------------------------------------------------------------------------\n"
     "#   The game itself skips columns it does not know, so the file stays valid.\n"
     "#   The plugin reads the same file the game loaded and, before using it,\n"
     "#   checks it row by row against what the game loaded (row count, the ten\n"
-    "#   item-class columns and every mod param/min/max). If anything differs, or\n"
-    "#   a code is unknown, the log says exactly where, and the columns are not\n"
-    "#   used for that table. Console command superior shows the result.\n"
+    "#   item-class columns and every mod param/min/max). If anything differs,\n"
+    "#   the log says exactly where, and none of these columns are used for that\n"
+    "#   table: every row has the same odds and the armor..belt columns decide.\n"
+    "#   Console command superior shows the result.\n"
     "#\n"
     "# Console command: superior (status, rows seen, items made, rolls per row)\n"
     "\n"
     "[superior_affixes]\n"
     "\n"
     "# Master switch. false installs nothing: the stock picker runs, with its\n"
-    "# 10-row limit.\n"
+    "# 10-row limit, and the frequency, itype and etype columns are not used.\n"
     "enabled = true\n"
-    "\n"
-    "# Weight of every row that is not listed under [superior_affixes.weights].\n"
-    "# 0 to 65535.\n"
-    "default_weight = 100\n"
     "\n"
     "# Stock rule: items whose own type has Throwable = 1 in itemtypes.txt, and\n"
     "# items with nodurability = 1 in weapons.txt or armor.txt, only ever look at\n"
     "# rows 0 to 3. true keeps the stock behaviour. false lets them use every row,\n"
-    "# by the same rules and weights as any other item.\n"
-    "first_four_rows_for_throwing_and_nodurability = true\n"
-    "\n"
-    "[superior_affixes.weights]\n"
-    "\n"
-    "# One line per row: row = weight, 0 to 65535. A row's odds on a given item\n"
-    "# are its weight divided by the sum of the weights of every row that item may\n"
-    "# use. Weight 0 means the row never rolls.\n"
-    "#\n"
-    "# Example with the default weight 100:\n"
-    "#   5 = 25     # row 5 rolls a quarter as often as a default row\n"
-    "#   7 = 0      # row 7 never rolls\n";
+    "# by the same rules and frequencies as any other item.\n"
+    "first_four_rows_for_throwing_and_nodurability = true\n";
 
 struct Settings {
-    bool          enabled       = true;
-    std::uint32_t defaultWeight = 100;
-    bool          firstFourRule = true;
+    bool enabled       = true;
+    bool firstFourRule = true;
 };
 
 struct ParseReport {
-    std::uint32_t weightLines = 0;
-    std::uint32_t problems    = 0;
+    std::uint32_t obsoleteLines = 0;   // default_weight and [superior_affixes.weights] (pre-1.2.0)
+    std::uint32_t problems      = 0;
     std::string   sample;
 };
 
 // ---------------------------------------------------------------------------
-// itype / etype data
+// frequency / itype / etype data
 // ---------------------------------------------------------------------------
 
 constexpr std::size_t ItypeColumns = 7;
@@ -453,17 +473,23 @@ constexpr const char* ModColumnNames[ModColumns] = {
 // Record offsets of the six mod numbers, from the stock loader's descriptors.
 constexpr std::uint32_t ModColumnOffsets[ModColumns] = { 16, 20, 24, 32, 36, 40 };
 
+constexpr char FrequencyColumnName[] = "frequency";
+
 struct ParsedRow {
     std::array<std::int32_t, FlagColumns>  flags{};
     std::array<std::int32_t, ModColumns>   mods{};
     std::array<std::string, ItypeColumns>  itypes;
     std::array<std::string, EtypeColumns>  etypes;
+    std::uint32_t                          frequency = 0;   // 0 also when the cell is invalid
+    bool                                   frequencyInvalid = false;
+    std::string                            frequencyCell;   // the cell as written, when invalid
 };
 
 struct ParsedFile {
     std::string            path;            // UTF-8, for messages
     std::vector<ParsedRow> rows;
     bool                   hasTypeColumns = false;
+    bool                   hasFrequencyColumn = false;
 };
 
 struct RowTypes {
@@ -480,6 +506,9 @@ struct BankBinding {
     std::uint32_t                      rowCount = 0;
     std::vector<RowTypes>              types;
     std::uint32_t                      rowsUsingTypes = 0;
+    std::vector<std::uint16_t>         frequency;              // per row; empty: no frequency column
+    std::uint32_t                      rowsThatCanRoll = 0;    // frequency above 0
+    std::uint32_t                      invalidFrequency = 0;   // cells that are not 0..65535
     std::string                        source;
     mutable std::atomic<const void*>   gameRows{};
 };
@@ -506,7 +535,6 @@ std::uintptr_t                                   Base{};
 NativeCalls                                      Native{};
 PickerFn                                         OriginalPicker{};
 Settings                                         Config{};
-std::array<std::uint32_t, MaxRows>               RowWeight{};
 bool                                             ConfigFileWasRead{};
 std::atomic<HookState>                           State{ HookState::NotAttempted };
 std::atomic<std::uint64_t>                       TableRowsSeen{};
@@ -520,11 +548,6 @@ const D2RL::DataTableService*                    DataTableApi{};
 D2RL::Lifecycle::ListenerHandle                  TablesListener{};
 std::atomic<const BindingSet*>                   Bindings{};
 std::vector<const BindingSet*>                   RetiredBindings;   // game thread only
-
-auto WeightOf(std::uint32_t row) noexcept -> std::uint32_t {
-    const std::uint32_t weight = RowWeight[row];
-    return weight == UseDefaultWeight ? Config.defaultWeight : weight;
-}
 
 // ---------------------------------------------------------------------------
 // Text helpers
@@ -607,7 +630,6 @@ void NoteProblem(ParseReport& report, std::string_view line) noexcept {
 }
 
 void ParseConfig(std::string_view text, ParseReport& report) noexcept {
-    RowWeight.fill(UseDefaultWeight);
     std::string_view section;
     std::size_t cursor = 0;
     while (cursor < text.size()) {
@@ -635,22 +657,15 @@ void ParseConfig(std::string_view text, ParseReport& report) noexcept {
         if (section == MainSection) {
             if (key == "enabled") {
                 if (!ParseBool(value, Config.enabled)) NoteProblem(report, line);
-            } else if (key == "default_weight") {
-                if (!ParseUnsigned(value, MaxWeight, Config.defaultWeight)) NoteProblem(report, line);
             } else if (key == "first_four_rows_for_throwing_and_nodurability") {
                 if (!ParseBool(value, Config.firstFourRule)) NoteProblem(report, line);
+            } else if (key == ObsoleteDefaultWeight) {
+                ++report.obsoleteLines;
             } else {
                 NoteProblem(report, line);
             }
-        } else if (section == WeightsSection) {
-            std::uint32_t row = 0;
-            std::uint32_t weight = 0;
-            if (!ParseUnsigned(key, MaxRows - 1, row) || !ParseUnsigned(value, MaxWeight, weight)) {
-                NoteProblem(report, line);
-                continue;
-            }
-            RowWeight[row] = weight;
-            ++report.weightLines;
+        } else if (section == ObsoleteWeightsSection) {
+            ++report.obsoleteLines;
         }
     }
 }
@@ -688,17 +703,21 @@ void ReadConfiguration() noexcept {
     ParseConfig(text, report);
     if (report.problems > 0) {
         D2RL::LogWarnF(Context,
-            "SuperiorAffixes: %u config line%s ignored (%s%s). Settings are true/false, "
-            "default_weight is 0 to 65535, and each weight line is row = weight with the row "
-            "0 to 65534 and the weight 0 to 65535.",
+            "SuperiorAffixes: %u config line%s ignored (%s%s). The settings are true or false.",
             report.problems, report.problems == 1 ? "" : "s", report.sample.c_str(),
             report.problems > ProblemSampleSize ? " | ..." : "");
     }
+    if (report.obsoleteLines > 0) {
+        D2RL::LogWarnF(Context,
+            "SuperiorAffixes: %u config line%s ignored: default_weight and "
+            "[superior_affixes.weights] are no longer read. Row odds come from the frequency "
+            "column of qualityitems.txt.",
+            report.obsoleteLines, report.obsoleteLines == 1 ? "" : "s");
+    }
     D2RL::LogInfoF(Context,
-        "SuperiorAffixes: config %s. default_weight %u, %u row weight%s set, "
-        "first-four-rows rule %s.",
-        ConfigFileWasRead ? "loaded" : "NOT READ (embedded defaults)", Config.defaultWeight,
-        report.weightLines, report.weightLines == 1 ? "" : "s",
+        "SuperiorAffixes: config %s. First-four-rows rule %s. Row odds come from the frequency "
+        "column of qualityitems.txt.",
+        ConfigFileWasRead ? "loaded" : "NOT READ (embedded defaults)",
         Config.firstFourRule ? "on (stock)" : "off");
 }
 
@@ -726,6 +745,14 @@ auto CellAt(const std::vector<std::string_view>& cells, int column) -> std::stri
     return cells[static_cast<std::size_t>(column)];
 }
 
+// A frequency cell: empty is 0; otherwise a whole number from 0 to 65535 and
+// nothing else (no sign, decimal point or text), blanks around it allowed.
+auto ParseFrequency(std::string_view cell, std::uint32_t& out) noexcept -> bool {
+    out = 0;
+    const std::string_view value = Trim(cell);
+    return value.empty() || ParseUnsigned(value, MaxFrequency, out);
+}
+
 // Header first, then one record per non-empty line, as the game reads it.
 void ParseQualityItemsText(std::string_view text, ParsedFile& out) {
     std::vector<std::string_view> cells;
@@ -735,6 +762,7 @@ void ParseQualityItemsText(std::string_view text, ParsedFile& out) {
     std::array<int, ModColumns>   modColumn{};
     std::array<int, ItypeColumns> itypeColumn{};
     std::array<int, EtypeColumns> etypeColumn{};
+    int frequencyColumn = -1;
     flagColumn.fill(-1);
     modColumn.fill(-1);
     itypeColumn.fill(-1);
@@ -768,6 +796,10 @@ void ParseQualityItemsText(std::string_view text, ParsedFile& out) {
                     std::snprintf(columnName, sizeof(columnName), "etype%zu", type + 1);
                     if (EqualsNoCase(name, columnName)) { etypeColumn[type] = index; out.hasTypeColumns = true; }
                 }
+                if (EqualsNoCase(name, FrequencyColumnName)) {
+                    frequencyColumn = index;
+                    out.hasFrequencyColumn = true;
+                }
             }
             continue;
         }
@@ -786,6 +818,14 @@ void ParseQualityItemsText(std::string_view text, ParsedFile& out) {
         }
         for (std::size_t type = 0; type < EtypeColumns; ++type) {
             row.etypes[type] = std::string(Trim(CellAt(cells, etypeColumn[type])));
+        }
+        if (frequencyColumn >= 0) {
+            const std::string_view cell = Trim(CellAt(cells, frequencyColumn));
+            if (!ParseFrequency(cell, row.frequency)) {
+                row.frequency = 0;
+                row.frequencyInvalid = true;
+                row.frequencyCell = std::string(cell.substr(0, cell.size() > 24 ? 24 : cell.size()));
+            }
         }
         out.rows.push_back(std::move(row));
     }
@@ -1005,16 +1045,17 @@ auto AppendUnknownCode(std::string& sample, std::uint32_t& unknown, std::uint32_
 void BuildFromViews(const std::vector<TableBankView>& views, const std::vector<ParsedFile>& files,
         const std::string& searched) {
     auto set = std::make_unique<BindingSet>();
-    std::string status = "item-type columns:";
+    std::string status = "qualityitems columns:";
     const auto separator = [&status]() { status += status.back() == ':' ? " " : " | "; };
     for (const TableBankView& view : views) {
         const char* bankName = BankName(view.bank);
         if (view.rowSize != QualityItemsRowSize) {
             D2RL::LogWarnF(Context, "SuperiorAffixes: %s qualityitems rows are %u bytes, not %u; its "
-                "itype/etype columns are not used.", bankName, view.rowSize, QualityItemsRowSize);
+                "frequency, itype and etype columns are not used, so every row has the same odds.",
+                bankName, view.rowSize, QualityItemsRowSize);
             separator();
             status += bankName;
-            status += " unexpected row size, not used";
+            status += " unexpected row size, not used (equal odds)";
             continue;
         }
 
@@ -1030,11 +1071,12 @@ void BuildFromViews(const std::vector<TableBankView>& views, const std::vector<P
         if (match == nullptr) {
             const std::string detail = files.empty() ? "Looked in: " + searched : reasons;
             D2RL::LogWarnF(Context, "SuperiorAffixes: %s qualityitems: no qualityitems.txt matched "
-                "what the game loaded, so its itype/etype columns are not used. %s", bankName,
-                detail.c_str());
+                "what the game loaded, so its frequency, itype and etype columns are not used and "
+                "every row has the same odds. %s", bankName, detail.c_str());
             separator();
             status += bankName;
-            status += files.empty() ? " file not found, see the log" : " file differs from the game's table, see the log";
+            status += files.empty() ? " file not found, see the log (equal odds)"
+                                    : " file differs from the game's table, see the log (equal odds)";
             continue;
         }
 
@@ -1088,16 +1130,73 @@ void BuildFromViews(const std::vector<TableBankView>& views, const std::vector<P
                 "the game's own weapon/armor columns are hardcoded to %d and %d.", bankName, weapon,
                 armor, WeaponTypeIndex, ArmorTypeIndex);
         }
-        D2RL::LogInfoF(Context, "SuperiorAffixes: %s qualityitems: %s matches the loaded table "
-            "(%u rows)%s; %u row%s use itype/etype.", bankName, binding->source.c_str(),
-            binding->rowCount, match->hasTypeColumns ? "" : ", it has no itype/etype columns",
-            binding->rowsUsingTypes, binding->rowsUsingTypes == 1 ? "" : "s");
+        std::uint32_t neverRoll = 0;
+        std::string neverRollSample;
+        std::string invalidSample;
+        if (match->hasFrequencyColumn) {
+            binding->frequency.resize(view.rowCount);
+            for (std::uint32_t index = 0; index < view.rowCount; ++index) {
+                const ParsedRow& row = match->rows[index];
+                binding->frequency[index] = static_cast<std::uint16_t>(row.frequency);
+                if (row.frequency > 0) {
+                    ++binding->rowsThatCanRoll;
+                    continue;
+                }
+                if (++neverRoll <= RowListSampleSize) {
+                    char entry[16]{};
+                    std::snprintf(entry, sizeof(entry), "%s%u", neverRollSample.empty() ? "" : ", ",
+                        index);
+                    neverRollSample += entry;
+                }
+                if (row.frequencyInvalid && ++binding->invalidFrequency <= ProblemSampleSize) {
+                    char entry[64]{};
+                    std::snprintf(entry, sizeof(entry), "%srow %u '%s'",
+                        invalidSample.empty() ? "" : ", ", index, row.frequencyCell.c_str());
+                    invalidSample += entry;
+                }
+            }
+        }
+        if (binding->invalidFrequency > 0) {
+            D2RL::LogErrorF(Context, "SuperiorAffixes: %s qualityitems: %u frequency cell%s not a "
+                "whole number from 0 to 65535 (%s%s). Such a row never rolls.", bankName,
+                binding->invalidFrequency, binding->invalidFrequency == 1 ? " is" : "s are",
+                invalidSample.c_str(), binding->invalidFrequency > ProblemSampleSize ? ", ..." : "");
+        }
+        if (neverRoll > 0) {
+            D2RL::LogInfoF(Context, "SuperiorAffixes: %s qualityitems: %u row%s never roll%s "
+                "(frequency 0, empty or invalid): %s%s.", bankName, neverRoll,
+                neverRoll == 1 ? "" : "s", neverRoll == 1 ? "s" : "", neverRollSample.c_str(),
+                neverRoll > RowListSampleSize ? ", ..." : "");
+        }
 
-        char text[112]{};
+        char frequencyText[96]{};
+        if (match->hasFrequencyColumn) {
+            std::snprintf(frequencyText, sizeof(frequencyText), "frequency: %u of %u rows can roll",
+                binding->rowsThatCanRoll, binding->rowCount);
+        } else {
+            std::snprintf(frequencyText, sizeof(frequencyText),
+                "no frequency column, so every row has the same odds");
+        }
+        D2RL::LogInfoF(Context, "SuperiorAffixes: %s qualityitems: %s matches the loaded table "
+            "(%u rows); %s; %u row%s use itype/etype%s.", bankName, binding->source.c_str(),
+            binding->rowCount, frequencyText, binding->rowsUsingTypes,
+            binding->rowsUsingTypes == 1 ? "" : "s",
+            match->hasTypeColumns ? "" : " (no itype/etype columns)");
+
+        char text[192]{};
         separator();
-        std::snprintf(text, sizeof(text), "%s %u row%s use itype/etype%s", bankName,
-            binding->rowsUsingTypes, binding->rowsUsingTypes == 1 ? "" : "s",
-            unknownCodes > 0 ? " (unknown codes, see the log)" : "");
+        if (match->hasFrequencyColumn) {
+            std::snprintf(text, sizeof(text), "%s frequency %u of %u rows can roll%s, %u row%s use "
+                "itype/etype%s", bankName, binding->rowsThatCanRoll, binding->rowCount,
+                binding->invalidFrequency > 0 ? " (invalid cells, see the log)" : "",
+                binding->rowsUsingTypes, binding->rowsUsingTypes == 1 ? "" : "s",
+                unknownCodes > 0 ? " (unknown codes, see the log)" : "");
+        } else {
+            std::snprintf(text, sizeof(text), "%s no frequency column (equal odds), %u row%s use "
+                "itype/etype%s", bankName, binding->rowsUsingTypes,
+                binding->rowsUsingTypes == 1 ? "" : "s",
+                unknownCodes > 0 ? " (unknown codes, see the log)" : "");
+        }
         status += text;
         set->banks.push_back(std::move(binding));
     }
@@ -1109,9 +1208,10 @@ void BuildFromViews(const std::vector<TableBankView>& views, const std::vector<P
 void BuildBindings() {
     if (DataTableApi == nullptr) {
         auto set = std::make_unique<BindingSet>();
-        set->status = "item-type columns: off, D2RLoader's data table service is unavailable";
-        Context->LogWarn("SuperiorAffixes: the data table service is unavailable, so the itype and "
-                         "etype columns cannot be used.");
+        set->status = "qualityitems columns: off, D2RLoader's data table service is unavailable "
+                      "(equal odds)";
+        Context->LogWarn("SuperiorAffixes: the data table service is unavailable, so the frequency, "
+                         "itype and etype columns cannot be used; every row has the same odds.");
         PublishBindings(std::move(set));
         return;
     }
@@ -1121,7 +1221,7 @@ void BuildBindings() {
         // Tables not loaded yet, or not on the game thread: the listener builds them.
         if (Bindings.load(std::memory_order_acquire) == nullptr) {
             auto set = std::make_unique<BindingSet>();
-            set->status = "item-type columns: waiting for the game's tables";
+            set->status = "qualityitems columns: waiting for the game's tables";
             PublishBindings(std::move(set));
         }
         return;
@@ -1137,8 +1237,8 @@ void __cdecl OnDataTablesLoaded(const D2RL::PluginContext*, const D2RL::Lifecycl
     try {
         BuildBindings();
     } catch (...) {
-        Context->LogError("SuperiorAffixes: reading the itype/etype columns failed (out of memory); "
-                          "the stock item-class columns are used.");
+        Context->LogError("SuperiorAffixes: reading the frequency, itype and etype columns failed "
+                          "(out of memory); equal odds and the stock item-class columns are used.");
     }
 }
 
@@ -1211,6 +1311,16 @@ auto RowUsable(std::uint8_t bank, void* item, std::uint32_t row, const BankBindi
     return !AnyTypeMatches(item, types.etypes.data(), types.etypeCount);
 }
 
+// The odds of `row` in this table: its frequency cell, or the same for every
+// row when no qualityitems.txt matched the table or the matched file has no
+// frequency column (stock odds).
+auto RowFrequency(const BankBinding* binding, std::uint32_t row) noexcept -> std::uint32_t {
+    if (binding == nullptr || binding->frequency.empty() || row >= binding->frequency.size()) {
+        return EqualOddsFrequency;
+    }
+    return binding->frequency[row];
+}
+
 auto PickSuperiorAffix(void* item, void* drop) noexcept -> std::int64_t {
     const std::uint8_t bank = Native.getItemBank(item);
     const QualityItemsTable* table = Native.getTable(bank);
@@ -1235,8 +1345,8 @@ auto PickSuperiorAffix(void* item, void* drop) noexcept -> std::int64_t {
     std::uint32_t total = 0;
     const void* record = nullptr;
     for (std::uint32_t row = 0; row < rowCount; ++row) {
-        const std::uint32_t weight = WeightOf(row);
-        if (weight != 0 && RowUsable(bank, item, row, binding, record)) total += weight;
+        const std::uint32_t frequency = RowFrequency(binding, row);
+        if (frequency != 0 && RowUsable(bank, item, row, binding, record)) total += frequency;
     }
     if (total == 0) {
         NoUsableRow.fetch_add(1, std::memory_order_relaxed);
@@ -1251,10 +1361,10 @@ auto PickSuperiorAffix(void* item, void* drop) noexcept -> std::int64_t {
     std::uint32_t roll = NextRandom(seed) % total;
 
     for (std::uint32_t row = 0; row < rowCount; ++row) {
-        const std::uint32_t weight = WeightOf(row);
-        if (weight == 0 || !RowUsable(bank, item, row, binding, record)) continue;
-        if (roll >= weight) {
-            roll -= weight;
+        const std::uint32_t frequency = RowFrequency(binding, row);
+        if (frequency == 0 || !RowUsable(bank, item, row, binding, record)) continue;
+        if (roll >= frequency) {
+            roll -= frequency;
             continue;
         }
         Native.setFileIndex(item, row);
@@ -1298,8 +1408,9 @@ void RegisterTablesListener() noexcept {
     if (Context->QueryService(&LifecycleApi) != D2RL::ServiceQueryResult::Success
             || !D2RL::HasLifecycleServiceField(LifecycleApi, D2RL::LifecycleServiceRequiredSize)) {
         LifecycleApi = nullptr;
-        Context->LogWarn("SuperiorAffixes: D2RLoader's lifecycle service is unavailable, so the itype "
-                         "and etype columns are not read; the stock item-class columns are used.");
+        Context->LogWarn("SuperiorAffixes: D2RLoader's lifecycle service is unavailable, so the "
+                         "frequency, itype and etype columns are not read; equal odds and the stock "
+                         "item-class columns are used.");
         return;
     }
     const D2RL::Lifecycle::DataTablesLoadedListener tables{
@@ -1311,8 +1422,9 @@ void RegisterTablesListener() noexcept {
     if (LifecycleApi->registerDataTablesLoadedListener(Context, &tables, &TablesListener)
             != D2RL::Lifecycle::Result::Success) {
         TablesListener = {};
-        Context->LogWarn("SuperiorAffixes: the table-load listener was refused, so the itype and "
-                         "etype columns are not read; the stock item-class columns are used.");
+        Context->LogWarn("SuperiorAffixes: the table-load listener was refused, so the frequency, "
+                         "itype and etype columns are not read; equal odds and the stock item-class "
+                         "columns are used.");
     }
 }
 
@@ -1344,12 +1456,13 @@ void InstallHook() noexcept {
     }
     State.store(HookState::Installed, std::memory_order_release);
     Context->LogInfo("SuperiorAffixes: installed. Superior items now pick their "
-                     "qualityitems.txt row by weight, with no row limit below 65535.");
+                     "qualityitems.txt row by its frequency column, with no row limit below 65535.");
     RegisterTablesListener();
     try {
         BuildBindings();   // tables already loaded: built now; otherwise the listener builds them
     } catch (...) {
-        Context->LogError("SuperiorAffixes: reading the itype/etype columns failed (out of memory).");
+        Context->LogError("SuperiorAffixes: reading the frequency, itype and etype columns failed "
+                          "(out of memory).");
     }
 }
 
@@ -1383,11 +1496,10 @@ auto __cdecl StatusCommand(D2R::Game::Client*, const D2RL::ConsoleCommandContext
 
     char header[512]{};
     std::snprintf(header, sizeof(header),
-        "Superior Affixes: %s | config %s | default weight %u | first-four-rows rule %s | "
-        "qualityitems rows %s | Superior items made %llu | no usable row %llu | native "
-        "lookups failed %llu",
+        "Superior Affixes: %s | config %s | first-four-rows rule %s | qualityitems rows %s | "
+        "Superior items made %llu | no usable row %llu | native lookups failed %llu",
         StateText(State.load(std::memory_order_acquire)),
-        ConfigFileWasRead ? "loaded" : "NOT READ (embedded defaults)", Config.defaultWeight,
+        ConfigFileWasRead ? "loaded" : "NOT READ (embedded defaults)",
         Config.firstFourRule ? "on" : "off", rowsText,
         static_cast<unsigned long long>(ItemsMade.load(std::memory_order_relaxed)),
         static_cast<unsigned long long>(NoUsableRow.load(std::memory_order_relaxed)),
@@ -1396,7 +1508,7 @@ auto __cdecl StatusCommand(D2R::Game::Client*, const D2RL::ConsoleCommandContext
 
     const BindingSet* set = Bindings.load(std::memory_order_acquire);
     plugin->WriteConsoleMessage(set != nullptr ? set->status.c_str()
-                                               : "item-type columns: not read yet");
+                                               : "qualityitems columns: not read yet");
 
     try {
         std::string line = "rolls by row:";
@@ -1426,9 +1538,9 @@ constexpr D2RL::PluginInfo Info{
     .abiVersion  = D2RL_PLUGIN_ABI_VERSION,
     .id          = "celestialrayone.superior-affixes",
     .name        = "Superior Affixes",
-    .version     = "1.1.0",
+    .version     = "1.2.0",
     .author      = "CelestialRayOne",
-    .description = "Superior items pick their qualityitems.txt row by a configurable weight, "
+    .description = "Superior items pick their qualityitems.txt row by its frequency column, "
                    "with no row limit and optional itype/etype columns. Saves are unchanged.",
     // Server: items are generated by the server only.
     .flags       = D2RL::PluginFlags::Server | D2RL::PluginFlags::NativeHooks,
@@ -1451,7 +1563,7 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
     // Registered first, and the load always succeeds, so the command can always
     // explain the state.
     if (!Context->RegisterConsoleCommand("superior", &StatusCommand,
-            "Reports Superior Affixes status, row count, item-type columns and rolls per row.")) {
+            "Reports Superior Affixes status, row count, qualityitems columns and rolls per row.")) {
         Context->LogWarn("SuperiorAffixes: the status console command was refused.");
     }
 

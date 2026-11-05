@@ -128,6 +128,22 @@
         "zhCN": "Alt + 左键点击制作{made}个{result}（需要{need}个，拥有{have}个）"
     },
     {
+        "Key": "MaterialUpgradeMoveToBelt",
+        "enUS": "{combo} to Move to Belt",
+        "zhTW": "{combo}以移至腰帶",
+        "deDE": "{combo}: In den Gürtel verschieben",
+        "esES": "{combo} para mover al cinturón",
+        "frFR": "{combo} pour déplacer vers la ceinture",
+        "itIT": "{combo} per spostare nella cintura",
+        "koKR": "{combo}으로 벨트로 이동",
+        "plPL": "{combo}, aby przenieść do pasa",
+        "esMX": "{combo} para mover al cinturón",
+        "jaJP": "{combo}でベルトに移動",
+        "ptBR": "{combo} para mover para o cinto",
+        "ruRU": "{combo}: переместить на пояс",
+        "zhCN": "{combo}以移至腰带"
+    },
+    {
         "Key": "MaterialUpgrade_gcv",
         "enUS": "Flawed Amethyst",
         "zhTW": "瑕疵紫水晶",
