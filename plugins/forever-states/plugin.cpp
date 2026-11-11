@@ -3,10 +3,12 @@
 // ===========================================================================
 //
 // Server side. A state that a skill grants (skills.txt aurastate) lasts while
-// the player has one of the stats its rule names, comes back after save and
+// the player has one of the stats its rules name, comes back after save and
 // exit, and Consume is no longer ended by binding demons. When the player
 // loses the stat (the item giving it is unequipped or swapped out), a state
 // the plugin was keeping ends on the next frame through the game's own expiry.
+// A rule can carry a marker stat: it then covers only a state whose own stats
+// hold the marker, so each book keeps only the Consume of its own demon.
 //
 // ---------------------------------------------------------------------------
 // 1. How a skill state ends (D2R 3.3.93847, D2RLoader 1.3.1 process image)
@@ -37,16 +39,31 @@
 // ---------------------------------------------------------------------------
 //   Keep (every frame). A player's stat regen event (type 3) reschedules itself
 //   every frame at 42E634 through EVENT_SetEvent. A relay on that call checks
-//   each rule state on the player after the event is set:
-//     - stat present: the end frame is kept at least HoldFrames ahead (2F7AB0),
-//       and the state is marked as kept;
-//     - stat gone on a kept state: the end frame becomes the current frame and
-//       an event 12 is set for the next frame, so the game's own expiry pass
-//       removes it (state bit, client update and remove callback included);
-//     - a state that was never kept keeps its normal timer.
-//   Consume. An inline hook on 521970 returns 1 in periodic mode while the
-//   player has the rule's stat, which is the value that branch returns when
-//   it removes nothing.
+//   each rule state on the player after the event is set. Which stats keep a
+//   state depends on its own stat list. A rule with a marker covers only a
+//   list holding that marker (read with the game's reader 2F5DF0, layer 0,
+//   above 0), and a list holding any of its skill's markers is judged by
+//   those rules alone. A list holding none is judged by the rules without a
+//   marker. For Consume the markers are the stats monpet.txt consumestat gives
+//   for the demon eaten (written by the cast at 521D57), so each book keeps
+//   only its own demon's Consume.
+//     - a stat that covers the state is present: the end frame is kept at
+//       least HoldFrames ahead (2F7AB0), and the state is marked as kept;
+//     - none present on a kept state: the end frame becomes the current frame
+//       and an event 12 is set for the next frame, so the game's own expiry
+//       pass removes it (state bit, client update and remove callback
+//       included);
+//     - none present on a list holding a marker, kept or not: it ends the same
+//       way, so a marked state never lasts a frame without its stat, cast
+//       without it included;
+//     - any other state that was never kept keeps its normal timer.
+//   A kept state remembers the markers its list held. Consume's cast removes
+//   the old list before it makes the new one (4370B0 at 521B34 clears every
+//   state of the aurastate's states.txt group, consume's own included), so a
+//   list holding other markers is a new cast and is judged anew.
+//   Consume. An inline hook on 521970 returns 1 in periodic mode while a stat
+//   that covers the player's Consume list is present, which is the value that
+//   branch returns when it removes nothing.
 //   Save. The player save 52F090 writes the bound demon area last through
 //   533AE0, once into a measuring buffer (call at 52F717) and once for real
 //   (52F830). Relays on both calls append one "FRVS" block after whatever
@@ -61,14 +78,15 @@
 //   the pets over it, run among others by the state remove callback 436240);
 //   with Consume rebuilt first, that never finds the cap halved. Item stats do
 //   not count at load, so the rule's stat is checked afterwards: the state is
-//   kept on probation until the stat counts, or ends 15 s after the player is
-//   in the world without it.
+//   kept on probation until a stat that covers it counts, or ends 15 s after
+//   the player is in the world without one. A saved state no rule can keep any
+//   more is not rebuilt.
 //   Every helper the plugin calls is proven through a game call that reaches
 //   it, never by its entry bytes, so plugins hooking those entries (crossbow-
 //   charges, damage-overflow-fix) do not switch this one off.
-//   Save rule. A state is written when the plugin keeps it or the player has
-//   the stat. If the game saves after a kept state is already gone, the copy
-//   the keep check takes every HoldFrames is written instead.
+//   Save rule. A state is written when the plugin keeps it or a stat that
+//   covers it is present. If the game saves after a kept state is already
+//   gone, the copy the keep check takes every HoldFrames is written instead.
 //   Rebuild. Exactly what Consume's cast does: 433D20, then j_SetWideListStat
 //   2F3030 for every saved stat, then 350B40 (the unit speed refresh Consume
 //   calls), the last one once the player is in a room (34B440). A state the
@@ -102,6 +120,7 @@
 
 #include <array>
 #include <atomic>
+#include <bitset>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -118,8 +137,9 @@ namespace {
 // harness compiles this part on its own.
 
 struct Rule {
-    std::int32_t skill = -1;
-    std::int32_t stat  = -1;
+    std::int32_t skill  = -1;
+    std::int32_t stat   = -1;
+    std::int32_t marker = -1;  // -1: the rule covers any list of its skill
 };
 
 struct Config {
@@ -254,7 +274,8 @@ private:
     std::size_t      pos_ = 0;
 };
 
-// rules = [[skill, stat], ...], or the flat form [skill, stat, skill, stat].
+// rules = [[skill, stat], [skill, stat, marker], ...], or the flat form
+// [skill, stat, skill, stat] (pairs only).
 inline auto ParseRules(std::string_view text, std::vector<Rule>& out, std::vector<std::string>& problems) -> bool {
     ArrayNode   root;
     std::string error;
@@ -267,7 +288,12 @@ inline auto ParseRules(std::string_view text, std::vector<Rule>& out, std::vecto
         problems.push_back("rules must be an array");
         return false;
     }
-    std::vector<std::pair<std::int64_t, std::int64_t>> pairs;
+    struct Entry {
+        std::int64_t skill  = -1;
+        std::int64_t stat   = -1;
+        std::int64_t marker = -1;
+    };
+    std::vector<Entry> entries;
     bool nested = !root.items.empty();
     bool flat   = true;
     for (const ArrayNode& item : root.items) {
@@ -283,34 +309,43 @@ inline auto ParseRules(std::string_view text, std::vector<Rule>& out, std::vecto
     }
     if (nested) {
         for (const ArrayNode& item : root.items) {
-            if (item.items.size() != 2 || item.items[0].isArray || item.items[1].isArray) {
-                problems.push_back("every rule must be [skill id, stat id]");
+            const std::size_t size = item.items.size();
+            bool              ok   = size == 2 || size == 3;
+            for (std::size_t k = 0; ok && k < size; ++k) ok = !item.items[k].isArray;
+            if (!ok) {
+                problems.push_back("every rule must be [skill id, stat id] or [skill id, stat id, marker stat id]");
                 return false;
             }
-            pairs.emplace_back(item.items[0].value, item.items[1].value);
+            entries.push_back({ item.items[0].value, item.items[1].value, size == 3 ? item.items[2].value : -1 });
         }
     } else if (flat && root.items.size() % 2 == 0) {
-        for (std::size_t i = 0; i < root.items.size(); i += 2) pairs.emplace_back(root.items[i].value, root.items[i + 1].value);
+        for (std::size_t i = 0; i < root.items.size(); i += 2) entries.push_back({ root.items[i].value, root.items[i + 1].value, -1 });
     } else {
-        problems.push_back("rules must be pairs: [[skill id, stat id], ...]");
+        problems.push_back("rules must be a list of rules: [[skill id, stat id], [skill id, stat id, marker stat id], ...]");
         return false;
     }
     out.clear();
-    for (const auto& pair : pairs) {
+    for (const Entry& entry : entries) {
         if (out.size() >= MaxRules) {
             problems.push_back("more than 256 rules; the rest are ignored");
             break;
         }
-        if (pair.first < 0 || pair.first > MaxSkillId) {
-            problems.push_back("rule skill " + std::to_string(pair.first) + " is not a skills.txt id; rule ignored");
+        if (entry.skill < 0 || entry.skill > MaxSkillId) {
+            problems.push_back("rule skill " + std::to_string(entry.skill) + " is not a skills.txt id; rule ignored");
             continue;
         }
-        if (pair.second < -1 || pair.second > MaxStatId) {
-            problems.push_back("rule stat " + std::to_string(pair.second) + " for skill " + std::to_string(pair.first)
+        if (entry.stat < -1 || entry.stat > MaxStatId) {
+            problems.push_back("rule stat " + std::to_string(entry.stat) + " for skill " + std::to_string(entry.skill)
                 + " is not an itemstatcost.txt id; rule ignored");
             continue;
         }
-        out.push_back({ static_cast<std::int32_t>(pair.first), static_cast<std::int32_t>(pair.second) });
+        if (entry.marker < -1 || entry.marker > MaxStatId) {
+            problems.push_back("rule marker " + std::to_string(entry.marker) + " for skill " + std::to_string(entry.skill)
+                + " is not an itemstatcost.txt id; rule ignored");
+            continue;
+        }
+        out.push_back({ static_cast<std::int32_t>(entry.skill), static_cast<std::int32_t>(entry.stat),
+            static_cast<std::int32_t>(entry.marker) });
     }
     return true;
 }
@@ -512,6 +547,132 @@ inline auto FindBlock(const std::uint8_t* begin, const std::uint8_t* end, std::v
         }
     }
     return 0;
+}
+
+// The rules of one skill. A list's markers are the rule markers its own stats
+// hold; a MarkerSet has one bit per entry of markers, in that order.
+using MarkerSet = std::bitset<MaxRules>;
+
+struct Keeper {
+    std::int32_t stat        = -1;
+    std::int32_t marker      = -1;  // -1: covers a list holding none of the markers
+    std::size_t  markerIndex = 0;   // into RuleSet::markers when marker >= 0
+};
+
+struct RuleSet {
+    std::vector<Keeper>       keepers;
+    std::vector<std::int32_t> markers;
+    bool                      anyUnmarked = false;
+
+    void Add(std::int32_t stat, std::int32_t marker) {
+        for (const Keeper& keeper : keepers) {
+            if (keeper.stat == stat && keeper.marker == marker) return;
+        }
+        Keeper keeper;
+        keeper.stat   = stat;
+        keeper.marker = marker < 0 ? -1 : marker;
+        if (keeper.marker >= 0) {
+            std::size_t index = 0;
+            while (index < markers.size() && markers[index] != keeper.marker) ++index;
+            if (index == markers.size()) markers.push_back(keeper.marker);
+            keeper.markerIndex = index;
+        } else {
+            anyUnmarked = true;
+        }
+        keepers.push_back(keeper);
+    }
+
+    // value(stat) is the list's own value of a stat (layer 0).
+    template <typename Value>
+    auto MarkersOfList(Value&& value) const -> MarkerSet {
+        MarkerSet on;
+        for (std::size_t i = 0; i < markers.size() && i < on.size(); ++i) {
+            if (value(markers[i]) > 0) on.set(i);
+        }
+        return on;
+    }
+
+    // The markers among a saved state's stats (layer 0, above 0).
+    auto MarkersOfSaved(const SavedState& saved) const -> MarkerSet {
+        MarkerSet on;
+        for (const SavedStat& stat : saved.stats) {
+            if (stat.layer != 0 || stat.value <= 0) continue;
+            for (std::size_t i = 0; i < markers.size() && i < on.size(); ++i) {
+                if (markers[i] == static_cast<std::int32_t>(stat.stat)) on.set(i);
+            }
+        }
+        return on;
+    }
+
+    // Whether a keeper covers a list with these markers: a list holding any
+    // marker belongs to the rules of the markers it holds, one holding none to
+    // the rules without a marker.
+    auto Covers(const Keeper& keeper, const MarkerSet& on) const noexcept -> bool {
+        if (on.any()) return keeper.marker >= 0 && keeper.markerIndex < on.size() && on.test(keeper.markerIndex);
+        return keeper.marker < 0;
+    }
+
+    // has(stat): the unit has the stat above 0.
+    template <typename Has>
+    auto Kept(const MarkerSet& on, Has&& has) const -> bool {
+        for (const Keeper& keeper : keepers) {
+            if (Covers(keeper, on) && has(keeper.stat)) return true;
+        }
+        return false;
+    }
+
+    // Some rule could keep a list with these markers.
+    auto CanKeep(const MarkerSet& on) const noexcept -> bool { return on.any() || anyUnmarked; }
+
+    // "527 (if it holds 528), 523 (if it holds 524), 999 (any)".
+    auto Describe() const -> std::string {
+        std::string text;
+        for (const Keeper& keeper : keepers) {
+            if (!text.empty()) text += ", ";
+            text += std::to_string(keeper.stat);
+            text += keeper.marker >= 0 ? " (if it holds " + std::to_string(keeper.marker) + ")" : std::string(" (any)");
+        }
+        return text;
+    }
+
+    // The keeper stats that cover a list with these markers, for the log.
+    auto CoveringStats(const MarkerSet& on) const -> std::string {
+        std::string text;
+        for (const Keeper& keeper : keepers) {
+            if (!Covers(keeper, on)) continue;
+            if (!text.empty()) text += ", ";
+            text += std::to_string(keeper.stat);
+        }
+        return text.empty() ? std::string("none") : text;
+    }
+
+    // The markers set in on, for the log.
+    auto MarkerNames(const MarkerSet& on) const -> std::string {
+        std::string text;
+        for (std::size_t i = 0; i < markers.size() && i < on.size(); ++i) {
+            if (!on.test(i)) continue;
+            if (!text.empty()) text += ", ";
+            text += std::to_string(markers[i]);
+        }
+        return text.empty() ? std::string("none") : text;
+    }
+};
+
+// What the per-frame check does with one state.
+enum class Verdict {
+    Keep,       // a stat that covers it is present
+    Probation,  // rebuilt at load, waiting for item stats to count
+    Lost,       // kept, and no stat that covers it is left
+    NoStat,     // holds a marker and no stat that covers it is present
+    Leave,      // never kept, no marker: its normal timer runs
+};
+
+inline auto Judge(bool kept, bool held, bool probation, bool marked, bool ending) noexcept -> Verdict {
+    if (kept) return Verdict::Keep;
+    if (held && probation) return Verdict::Probation;
+    if (held) return Verdict::Lost;
+    if (marked && !ending) return Verdict::NoStat;
+    return Verdict::Leave;
 }
 
 // PURE-END --------------------------------------------------------------------
@@ -773,7 +934,7 @@ auto At(std::uint64_t rva) noexcept -> Fn {
 
 struct Target {
     std::int32_t                                        skill = -1;
-    std::vector<std::int32_t>                           stats;
+    RuleSet                                             rules;
     std::array<std::atomic<std::int32_t>, ContextSlots> stateByContext{};
 };
 
@@ -792,6 +953,8 @@ struct Held {
     void*         game              = nullptr;
     std::uint32_t guid              = 0;
     std::int32_t  state             = -1;
+    std::int32_t  skill             = -1;
+    MarkerSet     markers;          // the markers its list held when it started being kept
     std::int32_t  snapshotFrame     = -1;
     bool          probation         = false;
     std::int32_t  probationDeadline = 0;  // game frame, 0 until the player is in a room
@@ -801,6 +964,7 @@ struct Held {
 
 struct HeldInfo {
     bool         held              = false;
+    MarkerSet    markers;
     std::int32_t snapshotFrame     = -1;
     bool         probation         = false;
     std::int32_t probationDeadline = 0;
@@ -826,6 +990,8 @@ std::atomic<bool> PersistActive{ false };
 
 std::atomic<std::uint64_t> HoldsStarted{ 0 };
 std::atomic<std::uint64_t> StatesReleased{ 0 };
+std::atomic<std::uint64_t> StatesRefused{ 0 };
+std::atomic<std::uint64_t> StatesRecast{ 0 };
 std::atomic<std::uint64_t> PeriodicSkips{ 0 };
 std::atomic<std::uint64_t> StatesSaved{ 0 };
 std::atomic<std::uint64_t> SnapshotsSaved{ 0 };
@@ -875,9 +1041,7 @@ void BuildTargets() {
             found->skill = rule.skill;
             for (auto& slot : found->stateByContext) slot.store(Unresolved, std::memory_order_relaxed);
         }
-        bool duplicate = false;
-        for (const std::int32_t stat : found->stats) duplicate = duplicate || stat == rule.stat;
-        if (!duplicate) found->stats.push_back(rule.stat);
+        found->rules.Add(rule.stat, rule.marker);
     }
 }
 
@@ -916,11 +1080,20 @@ auto FindTarget(std::int32_t skill) noexcept -> Target* {
     return nullptr;
 }
 
-auto HasAnyStat(void* unit, const Target& target) noexcept -> bool {
-    for (const std::int32_t stat : target.stats) {
-        if (GetUnitStat(unit, stat, 0) > 0) return true;
-    }
-    return false;
+// The rule markers a live list holds, read with the game's own reader.
+auto ListMarkers(std::uint8_t context, void* list, const Target& target) noexcept -> MarkerSet {
+    return target.rules.MarkersOfList([&](std::int32_t stat) noexcept { return ReadListStat(context, list, stat, 0); });
+}
+
+// A stat that covers a list with these markers is on the unit.
+auto Kept(void* unit, const Target& target, const MarkerSet& markers) noexcept -> bool {
+    return target.rules.Kept(markers, [unit](std::int32_t stat) noexcept { return GetUnitStat(unit, stat, 0) > 0; });
+}
+
+// The list already has its end at or before this frame (EndNow was run on it).
+auto Ending(void* list, std::int32_t frame) noexcept -> bool {
+    return (Read<std::uint32_t>(list, ListFlagsOffset) & ListTimedFlag) != 0
+        && Read<float>(list, ListExpireOffset) <= static_cast<float>(frame);
 }
 
 // The unit's list of this state when it came from this skill.
@@ -960,32 +1133,34 @@ auto ReadState(std::uint8_t context, void* list, std::int32_t state, std::int32_
     return true;
 }
 
-auto FindHeldIndex(void* game, std::uint32_t guid, std::int32_t state) noexcept -> std::size_t {
+auto FindHeldIndex(void* game, std::uint32_t guid, std::int32_t state, std::int32_t skill) noexcept -> std::size_t {
     for (std::size_t i = 0; i < HeldTable.size(); ++i) {
         const Held& entry = HeldTable[i];
-        if (entry.game == game && entry.guid == guid && entry.state == state) return i;
+        if (entry.game == game && entry.guid == guid && entry.state == state && entry.skill == skill) return i;
     }
     return HeldTable.size();
 }
 
 // -1 when not kept, otherwise the frame of the last snapshot (-1 is also "kept,
 // no snapshot yet", so the caller asks IsHeld first).
-auto IsHeld(void* game, std::uint32_t guid, std::int32_t state, std::int32_t* snapshotFrame = nullptr) noexcept -> bool {
+auto IsHeld(void* game, std::uint32_t guid, std::int32_t state, std::int32_t skill, std::int32_t* snapshotFrame = nullptr) noexcept
+        -> bool {
     AcquireSRWLockShared(&TableLock);
-    const std::size_t index = FindHeldIndex(game, guid, state);
+    const std::size_t index = FindHeldIndex(game, guid, state, skill);
     const bool        held  = index < HeldTable.size();
     if (held && snapshotFrame != nullptr) *snapshotFrame = HeldTable[index].snapshotFrame;
     ReleaseSRWLockShared(&TableLock);
     return held;
 }
 
-auto GetHeld(void* game, std::uint32_t guid, std::int32_t state) noexcept -> HeldInfo {
+auto GetHeld(void* game, std::uint32_t guid, std::int32_t state, std::int32_t skill) noexcept -> HeldInfo {
     HeldInfo info;
     AcquireSRWLockShared(&TableLock);
-    const std::size_t index = FindHeldIndex(game, guid, state);
+    const std::size_t index = FindHeldIndex(game, guid, state, skill);
     if (index < HeldTable.size()) {
         const Held& entry      = HeldTable[index];
         info.held              = true;
+        info.markers           = entry.markers;
         info.snapshotFrame     = entry.snapshotFrame;
         info.probation         = entry.probation;
         info.probationDeadline = entry.probationDeadline;
@@ -996,9 +1171,10 @@ auto GetHeld(void* game, std::uint32_t guid, std::int32_t state) noexcept -> Hel
 }
 
 // Sets the probation fields of a kept state; deadline < 0 leaves it alone.
-void SetProbation(void* game, std::uint32_t guid, std::int32_t state, bool probation, std::int32_t deadline, bool speedRefresh) {
+void SetProbation(void* game, std::uint32_t guid, std::int32_t state, std::int32_t skill, bool probation, std::int32_t deadline,
+        bool speedRefresh) {
     AcquireSRWLockExclusive(&TableLock);
-    const std::size_t index = FindHeldIndex(game, guid, state);
+    const std::size_t index = FindHeldIndex(game, guid, state, skill);
     if (index < HeldTable.size()) {
         HeldTable[index].probation    = probation;
         HeldTable[index].speedRefresh = speedRefresh;
@@ -1007,35 +1183,37 @@ void SetProbation(void* game, std::uint32_t guid, std::int32_t state, bool proba
     ReleaseSRWLockExclusive(&TableLock);
 }
 
-void Hold(void* game, std::uint32_t guid, std::int32_t state) {
+void Hold(void* game, std::uint32_t guid, std::int32_t state, std::int32_t skill, const MarkerSet& markers) {
     AcquireSRWLockExclusive(&TableLock);
-    if (FindHeldIndex(game, guid, state) == HeldTable.size()) {
+    if (FindHeldIndex(game, guid, state, skill) == HeldTable.size()) {
         for (std::size_t i = 0; i < HeldTable.size(); ++i) {
-            if (HeldTable[i].guid == guid && HeldTable[i].state == state) {
+            if (HeldTable[i].guid == guid && HeldTable[i].state == state && HeldTable[i].skill == skill) {
                 HeldTable.erase(HeldTable.begin() + static_cast<std::ptrdiff_t>(i));
                 break;
             }
         }
         if (HeldTable.size() >= MaxHeld) HeldTable.erase(HeldTable.begin());
         Held entry;
-        entry.game  = game;
-        entry.guid  = guid;
-        entry.state = state;
+        entry.game    = game;
+        entry.guid    = guid;
+        entry.state   = state;
+        entry.skill   = skill;
+        entry.markers = markers;
         HeldTable.push_back(std::move(entry));
     }
     ReleaseSRWLockExclusive(&TableLock);
 }
 
-void Unhold(void* game, std::uint32_t guid, std::int32_t state) {
+void Unhold(void* game, std::uint32_t guid, std::int32_t state, std::int32_t skill) {
     AcquireSRWLockExclusive(&TableLock);
-    const std::size_t index = FindHeldIndex(game, guid, state);
+    const std::size_t index = FindHeldIndex(game, guid, state, skill);
     if (index < HeldTable.size()) HeldTable.erase(HeldTable.begin() + static_cast<std::ptrdiff_t>(index));
     ReleaseSRWLockExclusive(&TableLock);
 }
 
-void StoreSnapshot(void* game, std::uint32_t guid, std::int32_t state, std::int32_t frame, SavedState&& snapshot) {
+void StoreSnapshot(void* game, std::uint32_t guid, std::int32_t state, std::int32_t skill, std::int32_t frame, SavedState&& snapshot) {
     AcquireSRWLockExclusive(&TableLock);
-    const std::size_t index = FindHeldIndex(game, guid, state);
+    const std::size_t index = FindHeldIndex(game, guid, state, skill);
     if (index < HeldTable.size()) {
         HeldTable[index].snapshotFrame = frame;
         HeldTable[index].snapshot      = std::move(snapshot);
@@ -1043,9 +1221,9 @@ void StoreSnapshot(void* game, std::uint32_t guid, std::int32_t state, std::int3
     ReleaseSRWLockExclusive(&TableLock);
 }
 
-auto CopySnapshot(void* game, std::uint32_t guid, std::int32_t state, SavedState& out) -> bool {
+auto CopySnapshot(void* game, std::uint32_t guid, std::int32_t state, std::int32_t skill, SavedState& out) -> bool {
     AcquireSRWLockShared(&TableLock);
-    const std::size_t index = FindHeldIndex(game, guid, state);
+    const std::size_t index = FindHeldIndex(game, guid, state, skill);
     const bool        found = index < HeldTable.size() && HeldTable[index].snapshotFrame >= 0;
     if (found) out = HeldTable[index].snapshot;
     ReleaseSRWLockShared(&TableLock);
@@ -1136,23 +1314,36 @@ void Tick(void* game, void* unit) noexcept {
     for (Target& target : Targets) {
         const std::int32_t state = ResolveState(target, context);
         if (state < 0) continue;
-        void*          list = OwnList(unit, state, target.skill);
-        const HeldInfo held = GetHeld(game, guid, state);
+        void*    list = OwnList(unit, state, target.skill);
+        HeldInfo held = GetHeld(game, guid, state, target.skill);
         if (list == nullptr) {
-            if (held.held) Unhold(game, guid, state);
+            if (held.held) Unhold(game, guid, state, target.skill);
             continue;
+        }
+        const MarkerSet markers = ListMarkers(context, list, target);
+        if (held.held && held.markers != markers) {
+            // Cast again with other stats (the cast replaces the list): the
+            // new list is judged on its own.
+            Unhold(game, guid, state, target.skill);
+            held = HeldInfo{};
+            StatesRecast.fetch_add(1, std::memory_order_relaxed);
+            D2RL::LogInfoF(Context, "ForeverStates: player %u, state %d (skill %d) was cast again with markers %s; it is judged anew.",
+                guid, state, target.skill, target.rules.MarkerNames(markers).c_str());
         }
         if (held.held && held.speedRefresh && placed()) {
             UnitSpeed(unit, SourceName, __LINE__);
-            SetProbation(game, guid, state, held.probation, -1, false);
+            SetProbation(game, guid, state, target.skill, held.probation, -1, false);
         }
-        if (HasAnyStat(unit, target)) {
+        const bool kept = Kept(unit, target, markers);
+        switch (Judge(kept, held.held, held.probation, markers.any(), Ending(list, frame))) {
+        case Verdict::Keep:
             if (!held.held) {
-                Hold(game, guid, state);
+                Hold(game, guid, state, target.skill, markers);
                 HoldsStarted.fetch_add(1, std::memory_order_relaxed);
-                D2RL::LogInfoF(Context, "ForeverStates: player %u, state %d (skill %d) is now kept.", guid, state, target.skill);
+                D2RL::LogInfoF(Context, "ForeverStates: player %u, state %d (skill %d, markers %s) is now kept.", guid, state,
+                    target.skill, target.rules.MarkerNames(markers).c_str());
             } else if (held.probation) {
-                SetProbation(game, guid, state, false, 0, false);
+                SetProbation(game, guid, state, target.skill, false, 0, false);
                 D2RL::LogInfoF(Context, "ForeverStates: player %u, the rule's stat counts now; state %d (skill %d) stays.", guid,
                     state, target.skill);
             }
@@ -1160,28 +1351,41 @@ void Tick(void* game, void* unit) noexcept {
             if (!held.held || held.snapshotFrame < 0 || frame - held.snapshotFrame >= HoldFrames || frame < held.snapshotFrame) {
                 SavedState snapshot;
                 if (ReadState(context, list, state, target.skill, snapshot)) {
-                    StoreSnapshot(game, guid, state, frame, std::move(snapshot));
+                    StoreSnapshot(game, guid, state, target.skill, frame, std::move(snapshot));
                 }
             }
-        } else if (held.held && held.probation) {
+            break;
+        case Verdict::Probation:
             KeepAhead(list, frame);
             if (!placed()) continue;
             if (held.probationDeadline == 0) {
-                SetProbation(game, guid, state, true, frame + RestoreWaitFrames, false);
+                SetProbation(game, guid, state, target.skill, true, frame + RestoreWaitFrames, false);
             } else if (frame >= held.probationDeadline) {
-                Unhold(game, guid, state);
+                Unhold(game, guid, state, target.skill);
                 EndNow(game, unit, list, frame);
                 StatesReleased.fetch_add(1, std::memory_order_relaxed);
-                SetSummary(LastRestore, "ForeverStates: player " + std::to_string(guid) + " had none of the rule's stats "
-                    + std::to_string(RestoreWaitFrames / 25) + " s after entering the world (item not equipped); state "
-                    + std::to_string(state) + " (skill " + std::to_string(target.skill) + ") ends now.", true);
+                SetSummary(LastRestore, "ForeverStates: player " + std::to_string(guid) + " had none of the stats that keep state "
+                    + std::to_string(state) + " (skill " + std::to_string(target.skill) + ": " + target.rules.CoveringStats(markers)
+                    + ") " + std::to_string(RestoreWaitFrames / 25) + " s after entering the world (item not equipped); it ends now.",
+                    true);
             }
-        } else if (held.held) {
-            Unhold(game, guid, state);
+            break;
+        case Verdict::Lost:
+            Unhold(game, guid, state, target.skill);
             EndNow(game, unit, list, frame);
             StatesReleased.fetch_add(1, std::memory_order_relaxed);
-            D2RL::LogInfoF(Context, "ForeverStates: player %u lost the stat, state %d (skill %d) ends now.", guid, state,
-                target.skill);
+            D2RL::LogInfoF(Context, "ForeverStates: player %u lost the stat (%s), state %d (skill %d) ends now.", guid,
+                target.rules.CoveringStats(markers).c_str(), state, target.skill);
+            break;
+        case Verdict::NoStat:
+            EndNow(game, unit, list, frame);
+            StatesRefused.fetch_add(1, std::memory_order_relaxed);
+            D2RL::LogInfoF(Context, "ForeverStates: player %u, state %d (skill %d) holds marker %s but the player has none of "
+                "its stats (%s); it ends now.", guid, state, target.skill, target.rules.MarkerNames(markers).c_str(),
+                target.rules.CoveringStats(markers).c_str());
+            break;
+        case Verdict::Leave:
+            break;
         }
     }
 }
@@ -1202,9 +1406,9 @@ auto CollectStates(void* game, void* player, std::string& notes, std::size_t& fr
         const std::int32_t state = ResolveState(target, context);
         if (state < 0) continue;
         void*      list = OwnList(player, state, target.skill);
-        const bool held = IsHeld(game, guid, state);
+        const bool held = IsHeld(game, guid, state, target.skill);
         if (list != nullptr) {
-            if (!held && !HasAnyStat(player, target)) continue;
+            if (!held && !Kept(player, target, ListMarkers(context, list, target))) continue;
             SavedState saved;
             if (!ReadState(context, list, state, target.skill, saved)) {
                 notes += " State " + std::to_string(state) + ": its stat records do not read back as expected, not saved.";
@@ -1213,7 +1417,7 @@ auto CollectStates(void* game, void* player, std::string& notes, std::size_t& fr
             states.push_back(std::move(saved));
         } else if (held) {
             SavedState saved;
-            if (CopySnapshot(game, guid, state, saved)) {
+            if (CopySnapshot(game, guid, state, target.skill, saved)) {
                 states.push_back(std::move(saved));
                 ++fromSnapshot;
             }
@@ -1246,12 +1450,17 @@ auto RestoreOne(void* game, void* player, std::uint8_t context, std::uint32_t gu
         note = "skill " + std::to_string(saved.skill) + " no longer grants state " + std::to_string(saved.state);
         return Outcome::Refused;
     }
+    const MarkerSet markers = target->rules.MarkersOfSaved(saved);
+    if (!target->rules.CanKeep(markers)) {
+        note = "no rule keeps a state of skill " + std::to_string(saved.skill) + " with these stats any more";
+        return Outcome::Refused;
+    }
     if (GetStatList(player, state) != nullptr) {
         note = "the player already has state " + std::to_string(state);
         return Outcome::Refused;
     }
-    if (!HasAnyStat(player, *target)) {
-        note = "the player does not have the rule's stat yet";
+    if (!Kept(player, *target, markers)) {
+        note = "the player does not have a stat that keeps it yet (" + target->rules.CoveringStats(markers) + ")";
         return Outcome::Wait;
     }
     ApplyArgs args{};
@@ -1271,9 +1480,9 @@ auto RestoreOne(void* game, void* player, std::uint8_t context, std::uint32_t gu
     }
     for (const SavedStat& stat : saved.stats) SetListStat(context, list, stat.stat, stat.value, stat.layer);
     UnitSpeed(player, SourceName, __LINE__);
-    Hold(game, guid, state);
+    Hold(game, guid, state, saved.skill, markers);
     SavedState copy = saved;
-    StoreSnapshot(game, guid, state, Read<std::int32_t>(game, GameFrameOffset), std::move(copy));
+    StoreSnapshot(game, guid, state, saved.skill, Read<std::int32_t>(game, GameFrameOffset), std::move(copy));
     note = "state " + std::to_string(state) + " (skill " + std::to_string(saved.skill) + ") restored with "
         + std::to_string(saved.stats.size()) + " stats";
     return Outcome::Restored;
@@ -1297,6 +1506,11 @@ auto RestoreAtLoad(void* game, void* player, std::uint8_t context, std::uint32_t
         note = "skill " + std::to_string(saved.skill) + " no longer grants state " + std::to_string(saved.state);
         return Outcome::Refused;
     }
+    const MarkerSet markers = target->rules.MarkersOfSaved(saved);
+    if (!target->rules.CanKeep(markers)) {
+        note = "no rule keeps a state of skill " + std::to_string(saved.skill) + " with these stats any more";
+        return Outcome::Refused;
+    }
     if (GetStatList(player, state) != nullptr) {
         note = "the player already has state " + std::to_string(state);
         return Outcome::Refused;
@@ -1317,10 +1531,10 @@ auto RestoreAtLoad(void* game, void* player, std::uint8_t context, std::uint32_t
         return Outcome::Wait;
     }
     for (const SavedStat& stat : saved.stats) SetListStat(context, list, stat.stat, stat.value, stat.layer);
-    Hold(game, guid, state);
-    SetProbation(game, guid, state, true, 0, true);
+    Hold(game, guid, state, saved.skill, markers);
+    SetProbation(game, guid, state, saved.skill, true, 0, true);
     SavedState copy = saved;
-    StoreSnapshot(game, guid, state, Read<std::int32_t>(game, GameFrameOffset), std::move(copy));
+    StoreSnapshot(game, guid, state, saved.skill, Read<std::int32_t>(game, GameFrameOffset), std::move(copy));
     note = "state " + std::to_string(state) + " (skill " + std::to_string(saved.skill) + " level " + std::to_string(saved.level)
         + ", " + std::to_string(saved.stats.size()) + " stats) rebuilt before the bound demons";
     return Outcome::Restored;
@@ -1377,16 +1591,22 @@ void TryRestore(void* game, void* player, const char* moment) {
 // Hook and relays
 // ---------------------------------------------------------------------------
 
-// 521970, srvdofunc 159. In periodic mode, a player with the rule's stat
-// keeps the state: return what that branch returns when it removes nothing.
+// 521970, srvdofunc 159. In periodic mode, a player with a stat that covers
+// the Consume list keeps the state: return what that branch returns when it
+// removes nothing. Without a list that branch removes nothing either.
 auto HookedConsume(void* game, void* unit, std::uint32_t skill, std::uint32_t level) -> std::uint64_t {
     if (BindActive.load(std::memory_order_relaxed) && game != nullptr && unit != nullptr
             && Read<std::uint32_t>(unit, 0) == PlayerUnitType
             && (Read<std::uint32_t>(unit, UnitFlagExOffset) & PeriodicRunFlag) != 0 && skill <= 0xFFFFu) {
-        const Target* target = FindTarget(static_cast<std::int32_t>(skill));
-        if (target != nullptr && HasAnyStat(unit, *target)) {
-            PeriodicSkips.fetch_add(1, std::memory_order_relaxed);
-            return 1;
+        Target* target = FindTarget(static_cast<std::int32_t>(skill));
+        if (target != nullptr) {
+            const std::uint8_t context = Read<std::uint8_t>(game, GameContextOffset);
+            const std::int32_t state   = ResolveState(*target, context);
+            void*              list    = state >= 0 ? OwnList(unit, state, target->skill) : nullptr;
+            if (list != nullptr && Kept(unit, *target, ListMarkers(context, list, *target))) {
+                PeriodicSkips.fetch_add(1, std::memory_order_relaxed);
+                return 1;
+            }
         }
     }
     return OriginalConsume(game, unit, skill, level);
@@ -1752,20 +1972,33 @@ constexpr const char* DefaultConfigToml = R"TOML(# =============================
 # ===========================================================================
 # Makes a state that a skill grants last while the player has a stat.
 #
-# Each rule is [skill id, stat id]:
-#   skill id  The skills.txt row (*Id) whose aurastate should last.
-#   stat id   The itemstatcost.txt row (*ID). While the player has this stat
-#             above 0, from any source (items, skills, states):
-#               - the skill's state does not run out,
-#               - it comes back after save and exit,
-#               - for Consume, binding demons no longer ends it.
+# Each rule is [skill id, stat id] or [skill id, stat id, marker stat id]:
+#   skill id   The skills.txt row (*Id) whose aurastate should last.
+#   stat id    The itemstatcost.txt row (*ID) that keeps it. While the player
+#              has this stat above 0, from any source (items, skills, states):
+#                - the skill's state does not run out,
+#                - it comes back after save and exit,
+#                - for Consume, binding demons no longer ends it.
+#   marker     Optional, an itemstatcost.txt row (*ID). The rule then covers
+#              only a state whose own stats hold the marker (above 0, no
+#              param). For Consume these are the stats monpet.txt consumestat
+#              gives for the demon eaten.
 #
-# When the player loses the stat (the item is unequipped or swapped out),
-# a state the plugin was keeping ends on the next frame. A state cast while
-# the player never had the stat keeps its normal timer.
+# A rule without a marker covers every state of its skill that holds none of
+# that skill's markers. When the player loses the stat (the item is unequipped
+# or swapped out), a state the plugin was keeping ends on the next frame. A
+# state cast while the player never had the stat keeps its normal timer.
 #
-# Several rules may name the same skill: any of their stats keeps it.
-# A stat id of -1 means "not set yet" and the rule does nothing.
+# A state that holds a marker belongs to the rules with that marker, and only
+# their stats keep it; rules without a marker do not. It never lasts without
+# one of those stats: it ends on the next frame when the player loses them,
+# and right after the cast when it was cast without them.
+#
+# Several rules may name the same skill: any of the stats that cover a state
+# keeps it. A stat id of -1 means "not set yet" and the rule does nothing.
+#
+# After save and exit, a restored state waits up to 15 s in the world for a
+# stat that keeps it, because item stats count a moment after entering.
 #
 # Death is untouched: the game's own death cleanup still applies.
 # Console command: foreverstates (rules, kept states, last save and load).
@@ -1801,9 +2034,8 @@ void ReadConfiguration() {
         D2RL::LogWarnF(Context, "ForeverStates: the rule for skill %d has no stat set (-1); it does nothing.", rule.skill);
     }
     for (const Target& target : Targets) {
-        std::string stats;
-        for (const std::int32_t stat : target.stats) stats += (stats.empty() ? "" : ", ") + std::to_string(stat);
-        D2RL::LogInfoF(Context, "ForeverStates: skill %d is kept while the player has stat %s.", target.skill, stats.c_str());
+        D2RL::LogInfoF(Context, "ForeverStates: skill %d is kept while the player has stat %s.", target.skill,
+            target.rules.Describe().c_str());
     }
 }
 
@@ -1845,13 +2077,12 @@ void RegisterListeners() {
 
 auto StatusCommand(D2R::Game::Client*, const D2RL::ConsoleCommandContext* command, void*) noexcept -> D2RL::ConsoleCommandResult {
     const auto say = [command](const std::string& text) { command->plugin->WriteConsoleMessage(text.c_str()); };
-    say("Forever States 1.2.0");
+    say("Forever States 1.3.0");
     say("  keep: " + HoldStatus);
     say("  Consume periodic check: " + BindStatus);
     say("  save and restore: " + SaveStatus);
     for (Target& target : Targets) {
-        std::string stats;
-        for (const std::int32_t stat : target.stats) stats += (stats.empty() ? "" : ", ") + std::to_string(stat);
+        const std::string stats = target.rules.Describe();
         std::string states;
         for (std::size_t c = 0; c < ContextSlots; ++c) {
             const std::int32_t state = target.stateByContext[c].load(std::memory_order_relaxed);
@@ -1864,7 +2095,8 @@ auto StatusCommand(D2R::Game::Client*, const D2RL::ConsoleCommandContext* comman
     AcquireSRWLockShared(&TableLock);
     std::vector<std::string> heldLines;
     for (const Held& entry : HeldTable) {
-        heldLines.push_back("    player " + std::to_string(entry.guid) + ", state " + std::to_string(entry.state)
+        heldLines.push_back("    player " + std::to_string(entry.guid) + ", state " + std::to_string(entry.state) + " (skill "
+            + std::to_string(entry.skill) + ")"
             + (entry.snapshotFrame >= 0 ? ", copy taken at frame " + std::to_string(entry.snapshotFrame) : ", no copy yet"));
     }
     const std::size_t pending = PendingTable.size();
@@ -1872,7 +2104,8 @@ auto StatusCommand(D2R::Game::Client*, const D2RL::ConsoleCommandContext* comman
     say("  kept now: " + std::to_string(heldLines.size()) + ", waiting to be restored: " + std::to_string(pending));
     for (const std::string& line : heldLines) say(line);
     say("  counters: kept " + std::to_string(HoldsStarted.load()) + ", ended on stat loss " + std::to_string(StatesReleased.load())
-        + ", Consume checks skipped " + std::to_string(PeriodicSkips.load()) + ", saved " + std::to_string(StatesSaved.load())
+        + ", ended for holding a marker without its stat " + std::to_string(StatesRefused.load()) + ", cast again with other markers "
+        + std::to_string(StatesRecast.load()) + ", Consume checks skipped " + std::to_string(PeriodicSkips.load()) + ", saved " + std::to_string(StatesSaved.load())
         + " (from the last copy " + std::to_string(SnapshotsSaved.load()) + "), loaded " + std::to_string(StatesLoaded.load())
         + ", restored " + std::to_string(StatesRestored.load()) + ", not restored " + std::to_string(RestoresRefused.load()));
     say("  last save: " + GetSummary(LastSave));
@@ -1886,10 +2119,10 @@ constexpr D2RL::PluginInfo PluginInfoData{
     .abiVersion  = D2RL_PLUGIN_ABI_VERSION,
     .id          = "celestialrayone.forever-states",
     .name        = "Forever States",
-    .version     = "1.2.0",
+    .version     = "1.3.0",
     .author      = "CelestialRayOne",
-    .description = "A skill's state lasts while the player has a configured stat, survives save and exit, and Consume is not "
-                   "ended by binding demons.",
+    .description = "A skill's state lasts while the player has a configured stat (optionally only a state holding a marker "
+                   "stat), survives save and exit, and Consume is not ended by binding demons.",
     .flags       = D2RL::PluginFlags::Server | D2RL::PluginFlags::NativeHooks,
     .reserved    = {},
 };
@@ -1927,7 +2160,7 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
     InstallHold(helpersOk);
     InstallBind();
     InstallPersist(helpersOk);
-    D2RL::LogInfoF(Context, "ForeverStates 1.2.0: keep %s; Consume periodic check %s; save and restore %s.", HoldStatus.c_str(),
+    D2RL::LogInfoF(Context, "ForeverStates 1.3.0: keep %s; Consume periodic check %s; save and restore %s.", HoldStatus.c_str(),
         BindStatus.c_str(), SaveStatus.c_str());
     return true;
 }

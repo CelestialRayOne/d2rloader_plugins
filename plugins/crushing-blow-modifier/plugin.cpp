@@ -78,12 +78,49 @@ namespace {
 //
 // The classification helpers below are native game-image functions; the
 // D2RCore core calls the same three monster queries.
+//
+// Crushing Blow effectiveness stat (1.2.0). [effectiveness] stat_id names an
+// itemstatcost row. On every Crushing Blow the hook reads it from pAttacker
+// with 0x2F5020, the game-image thunk to D2RCore!ReadWideUnitStat, called as
+// (unit, stat, layer 0): the same total stat('x'.accr) reads. It takes the
+// layer as a full 32-bit register and answers 0 for stat ids from 0x8000 up.
+//
+// The stat cannot go into the divisor: the core divides current life by an
+// integer, so 8 * 100 / 125 = 6.4 would round to 6 and turn +25 % into +33 %
+// against a monster at 50. The core therefore runs at the class divisor
+// exactly as before, and the stat then adds its share of the life the core
+// actually removed (after damage reduction), in 64 bits:
+//     extra = removed * value / 100,  life = max(life - extra, 0)
+// written with 0x2F7D10, the thunk to D2RCore!SetWideUnitStat
+// (unit, stat, value, layer), on stat 6 hitpoints layer 0, the stat and
+// writer the core itself uses. The core's own end steps are kept: life floors
+// at 0, and the will-die bit (0x0002 in the D2DamageStrc result flags at
+// +0x04, the word the critical-strike-damage plugin's verified 0x44C3C8 block
+// also writes) is set when the stat's share kills, or put back to its state
+// before the core when a negative value leaves alive a target the core had
+// killed. Overlay 147 and the kill credit stay the core's.
+//
+// pAttacker is the unit that rolled the Crushing Blow chance. Both game-image
+// paths D2RCore reimplements show it, read on the 1.3.1 image:
+//   EventFunc16 0x583150: the chance is read at 0x583194 with
+//     0x2F5C60(rdi, ...), and the core is called at 0x583257 with rdx = rdi.
+//   Mirrored Blades 0x51D7B0: the chance is read at 0x51D846 with
+//     0x2F5C60(rdi, ...), and the core is called at 0x51D950 with rdx = rdi.
+// A missile hit fires the damage event on the missile's owner (D2MOO
+// MissMode.cpp: SUNITDMG_ExecuteEvents(pGame, pOwner, ...)), so ranged
+// Crushing Blow reads the shooter's value.
+//
+// Re-checked on D2RLoader 1.3.1: the four helpers, the 0x581BD0 thunk and
+// the 0x2F5020 reader match the game image byte for byte. The D2RCore core is
+// still checked at load, as before.
 // ---------------------------------------------------------------------------
 
 constexpr std::uintptr_t GetUnitTypeRva           = 0x34B9D0;
 constexpr std::uintptr_t GetHirelingTypeIdRva     = 0x3AF240;
 constexpr std::uintptr_t IsBossRva                = 0x3AEFF0;
 constexpr std::uintptr_t CheckMonTypeFlagRva      = 0x38E870;
+constexpr std::uintptr_t GetUnitStatRva           = 0x2F5020;
+constexpr std::uintptr_t SetUnitStatRva           = 0x2F7D10;
 
 constexpr wchar_t CoreModuleName[] = L"D2RCore.dll";
 constexpr char    CoreExportName[] = "ApplyWideCrushingBlow";
@@ -156,6 +193,31 @@ constexpr std::array<std::uint8_t, 16> CheckMonTypeFlagExpected{
     0xEC, 0x20, 0x0F, 0xB7, 0xFA, 0x48, 0x8B, 0xD9,
 };
 
+// 0x2F5020 (unit in rcx, stat id in edx, layer in r8d), a loader import thunk:
+//   2F5020  FF 25 xx xx xx xx   jmp [rip+disp32]
+//   2F5026  90 90 90 90         nop x4
+//   2F502A  48 89 74 24 20 ...  the untouched remainder of the old body
+// disp32 locates the loader's import slot and moves between loader builds,
+// so it is not pinned. Only checked while the stat is on.
+constexpr std::uintptr_t GetUnitStatNopsRva = GetUnitStatRva + 6;
+constexpr std::uintptr_t GetUnitStatBodyRva = GetUnitStatRva + 10;
+constexpr std::array<std::uint8_t, 2> GetUnitStatThunkJump{0xFF, 0x25};
+constexpr std::array<std::uint8_t, 4> GetUnitStatThunkNops{
+    0x90, 0x90, 0x90, 0x90,
+};
+// mov [rsp+20h],rsi / push rdi / sub rsp,20h / movzx ebp,r8w / mov edi,edx /
+// mov rbx,rcx / test rcx,rcx
+constexpr std::array<std::uint8_t, 22> GetUnitStatBody{
+    0x48, 0x89, 0x74, 0x24, 0x20, 0x57, 0x48, 0x83,
+    0xEC, 0x20, 0x41, 0x0F, 0xB7, 0xE8, 0x8B, 0xFA,
+    0x48, 0x8B, 0xD9, 0x48, 0x85, 0xC9,
+};
+
+// 0x2F7D10, STATLIST_SetUnitStat, the same 10-byte loader thunk shape
+// (jmp [rip+disp32] / nop x4) into D2RCore!SetWideUnitStat. Only checked
+// while the stat is on.
+constexpr std::uintptr_t SetUnitStatNopsRva = SetUnitStatRva + 6;
+
 constexpr std::int32_t UnitTypePlayer  = 0;
 constexpr std::int32_t UnitTypeMonster = 1;
 
@@ -163,6 +225,12 @@ constexpr std::uint16_t MonTypeFlagSuperUnique = 0x0002;
 constexpr std::uint16_t MonTypeFlagChampion    = 0x0004;
 constexpr std::uint16_t MonTypeFlagUnique      = 0x0008;
 constexpr std::uint16_t MonTypeFlagMinion      = 0x0010;
+
+// Stat 6 hitpoints, and the D2DamageStrc result flags word with its will-die
+// bit, which the core sets when Crushing Blow takes the last of the life.
+constexpr std::int32_t  StatHitpoints           = 6;
+constexpr std::size_t   DamageResultFlagsOffset = 0x04;
+constexpr std::uint16_t DamageFlagWillDie       = 0x0002;
 
 #pragma pack(push, 8)
 struct CrushingBlowParams {
@@ -185,6 +253,11 @@ using GetUnitTypeFn       = std::int32_t(__fastcall*)(void*) noexcept;
 using GetHirelingTypeIdFn = std::int32_t(__fastcall*)(void*) noexcept;
 using IsBossFn            = std::uint8_t(__fastcall*)(void*, void*) noexcept;
 using CheckMonTypeFlagFn  = std::uint8_t(__fastcall*)(void*, std::uint16_t) noexcept;
+// The layer is a full 32-bit argument: D2RCore's reader keys its lookup on r8d.
+using GetUnitStatFn       =
+    std::int32_t(__fastcall*)(void*, std::int32_t, std::uint32_t) noexcept;
+using SetUnitStatFn       =
+    bool(__fastcall*)(void*, std::uint32_t, std::int32_t, std::uint32_t) noexcept;
 
 // ---------------------------------------------------------------------------
 // Target classes
@@ -223,6 +296,16 @@ constexpr std::int32_t MaximumDivisor       = 1 << 24;
 constexpr std::int32_t MaximumBase          = 1000000;
 constexpr std::int32_t VanillaRangedPercent = 5000;
 
+// [effectiveness] stat_id. -1 is off; D2RCore's reader answers 0 from 0x8000 up.
+constexpr std::int32_t StatIdOff     = -1;
+constexpr std::int32_t MaximumStatId = 0x7FFF;
+
+// The stat's effect in plain percent, 100 == unchanged. The bonus is capped so
+// 100 + value fits in 32 bits and removed * value stays far inside 64 bits;
+// any value that high already takes all current life.
+constexpr std::int32_t EffectNeutral    = 100;
+constexpr std::int32_t MaximumStatBonus = 1'000'000;
+
 struct Config {
     bool         enabled = true;
     std::int32_t percent[TargetClassCount]{
@@ -236,6 +319,7 @@ struct Config {
         5000,  // player
     };
     std::int32_t rangedPercent = VanillaRangedPercent;
+    std::int32_t statId        = StatIdOff;
 };
 
 constexpr char DefaultConfig[] = R"toml(# Crushing Blow
@@ -300,6 +384,22 @@ player = 50
 # 100 to make ranged Crushing Blow as strong as melee.
 ranged = 50
 
+[effectiveness]
+# An itemstatcost.txt stat that makes Crushing Blow stronger against every
+# target class at once. Its value is a percent increase on top of [targets]
+# and [attack]: at 25, every share above is multiplied by 1.25, so a monster
+# at 50 goes from 12.5 % to 15.6 % of current life, and an act boss at 16
+# goes from 2 % to 2.5 %. Negative values weaken it the same way, and at -100
+# or lower the attacker's Crushing Blow does nothing.
+#
+# The value is read from the unit that landed the Crushing Blow, the way
+# stat('...'.accr) reads it: gear, charms, skills and states all count. A
+# summon or a hireling uses its own value, not its owner's. Ranged Crushing
+# Blow counts too, because the game credits a missile's hit to its shooter.
+#
+# The itemstatcost.txt row of the stat, 0 to 32767. -1 leaves it off.
+stat_id = -1
+
 # Behaviour that is deliberately left native:
 #   - The /players setting still divides Crushing Blow further against
 #     monsters, exactly as it does in vanilla.
@@ -332,6 +432,8 @@ GetUnitTypeFn           GetUnitType{};
 GetHirelingTypeIdFn     GetHirelingTypeId{};
 IsBossFn                IsBoss{};
 CheckMonTypeFlagFn      CheckMonTypeFlag{};
+GetUnitStatFn           GetUnitStat{};
+SetUnitStatFn           SetUnitStat{};
 
 std::atomic_bool           Operational{};
 std::uint8_t*              CoreFunction{};
@@ -340,15 +442,18 @@ std::array<std::uint8_t, CorePatchSize> CoreOriginalBytes{};
 std::array<std::uint8_t, CorePatchSize> CorePatchBytes{};
 std::atomic<std::uint64_t> Applications[TargetClassCount]{};
 std::atomic<std::uint64_t> Suppressed{};
+std::atomic<std::uint64_t> StatApplied{};
+std::atomic<std::int32_t>  LastStatValue{};
 
 constexpr D2RL::PluginInfo Info{
     .infoSize    = D2RL::PluginInfoSize,
     .abiVersion  = D2RL_PLUGIN_ABI_VERSION,
     .id          = "celestialrayone.crushing-blow",
     .name        = "Crushing Blow",
-    .version     = "1.1.0",
+    .version     = "1.2.0",
     .author      = "CelestialRayOne",
-    .description = "Scales Crushing Blow per target class from a TOML file.",
+    .description = "Scales Crushing Blow per target class from a TOML file, "
+                   "plus an effectiveness stat.",
     .flags       = D2RL::PluginFlags::Server | D2RL::PluginFlags::NativeHooks,
 };
 
@@ -448,6 +553,23 @@ auto ParsePercent(std::string_view value, std::int32_t& out) noexcept -> bool {
     return true;
 }
 
+// Accepts -1 (off) or 0 to 32767.
+auto ParseStatId(std::string_view value, std::int32_t& out) noexcept -> bool {
+    if (value == "-1") {
+        out = StatIdOff;
+        return true;
+    }
+    if (value.empty() || value.size() > 5) return false;
+    std::int32_t parsed = 0;
+    for (const char digit : value) {
+        if (digit < '0' || digit > '9') return false;
+        parsed = parsed * 10 + (digit - '0');
+    }
+    if (parsed > MaximumStatId) return false;
+    out = parsed;
+    return true;
+}
+
 void WarnUnknown(std::string_view section, std::string_view key) noexcept {
     if (!Context) return;
     char message[256]{};
@@ -504,6 +626,12 @@ auto ParseToml(std::string_view text, Config& out) noexcept -> bool {
         } else if (section == "attack") {
             if (key == "ranged") {
                 if (!ParsePercent(value, parsed.rangedPercent)) return false;
+            } else {
+                WarnUnknown(section, key);
+            }
+        } else if (section == "effectiveness") {
+            if (key == "stat_id") {
+                if (!ParseStatId(value, parsed.statId)) return false;
             } else {
                 WarnUnknown(section, key);
             }
@@ -581,6 +709,18 @@ auto Classify(void* target) noexcept -> TargetClass {
     return TargetClass::Monster;
 }
 
+// The attacker's effectiveness in plain percent: 100 while the stat is off,
+// absent on the attacker or the attacker is unknown. 0 or less means no
+// Crushing Blow at all.
+auto EffectPercent(void* attacker) noexcept -> std::int32_t {
+    if (GetUnitStat == nullptr || attacker == nullptr) return EffectNeutral;
+    const std::int32_t value = GetUnitStat(attacker, Settings.statId, 0);
+    if (value == 0) return EffectNeutral;
+    StatApplied.fetch_add(1, std::memory_order_relaxed);
+    LastStatValue.store(value, std::memory_order_relaxed);
+    return EffectNeutral + std::clamp(value, -EffectNeutral, MaximumStatBonus);
+}
+
 // base is the divisor the engine would have started from. The returned value
 // leaves every later native multiplier intact, so the final ratio against
 // vanilla is exactly targetPercent * rangedPercent.
@@ -596,6 +736,45 @@ auto ScaleDivisor(std::int32_t base,
     if (scaled < 1) scaled = 1;
     if (scaled > MaximumDivisor) scaled = MaximumDivisor;
     return static_cast<std::int32_t>(scaled);
+}
+
+// Runs the core at the class divisor, then adds the stat's share of the life
+// the core actually removed, exactly. See the header for the end steps it
+// mirrors.
+auto CoreWithEffect(void*               game,
+                    void*               attacker,
+                    void*               target,
+                    CrushingBlowParams* params,
+                    std::int32_t        effectPercent) noexcept -> std::int32_t {
+    auto* flags = params->damage == nullptr
+        ? nullptr
+        : reinterpret_cast<std::uint16_t*>(
+              static_cast<std::uint8_t*>(params->damage) + DamageResultFlagsOffset);
+    const std::uint16_t flagsBefore = flags == nullptr ? std::uint16_t{0} : *flags;
+
+    const std::int32_t lifeBefore = GetUnitStat(target, StatHitpoints, 0);
+    const std::int32_t result     = OriginalCore(game, attacker, target, params);
+    const std::int32_t lifeAfter  = GetUnitStat(target, StatHitpoints, 0);
+
+    const std::int64_t removed = static_cast<std::int64_t>(lifeBefore) - lifeAfter;
+    if (removed <= 0) return result;
+    const std::int64_t extra =
+        removed * (effectPercent - EffectNeutral) / EffectNeutral;
+    if (extra == 0) return result;
+
+    std::int64_t lifeFinal = static_cast<std::int64_t>(lifeAfter) - extra;
+    if (lifeFinal < 0) lifeFinal = 0;
+    SetUnitStat(target, StatHitpoints, static_cast<std::int32_t>(lifeFinal), 0);
+
+    if (flags != nullptr) {
+        if (lifeFinal == 0) {
+            *flags = static_cast<std::uint16_t>(*flags | DamageFlagWillDie);
+        } else if (lifeAfter <= 0) {
+            *flags = static_cast<std::uint16_t>(
+                (*flags & ~DamageFlagWillDie) | (flagsBefore & DamageFlagWillDie));
+        }
+    }
+    return result;
 }
 
 std::int32_t __fastcall HookApplyCrushingBlowCore(
@@ -630,16 +809,23 @@ std::int32_t __fastcall HookApplyCrushingBlowCore(
 
     // The native ranged doubling is left alone while ranged sits at its
     // vanilla value, and only folded into the divisor once it is changed.
-    std::int32_t rangedPercent = PercentScale;
-    if (Settings.rangedPercent != VanillaRangedPercent
-            && params->rangedEvent != 0) {
-        if (Settings.rangedPercent <= 0) {
-            Suppressed.fetch_add(1, std::memory_order_relaxed);
-            return 0;
-        }
-        rangedPercent       = Settings.rangedPercent;
-        params->rangedEvent = 0;
+    const bool foldRanged = Settings.rangedPercent != VanillaRangedPercent
+        && params->rangedEvent != 0;
+    if (foldRanged && Settings.rangedPercent <= 0) {
+        Suppressed.fetch_add(1, std::memory_order_relaxed);
+        return 0;
     }
+    const std::int32_t rangedPercent =
+        foldRanged ? Settings.rangedPercent : PercentScale;
+
+    // Read last, so a Crushing Blow another setting already suppressed never
+    // counts as one the stat applied to. Nothing in params changes before it.
+    const std::int32_t effectPercent = EffectPercent(attacker);
+    if (effectPercent <= 0) {
+        Suppressed.fetch_add(1, std::memory_order_relaxed);
+        return 0;
+    }
+    if (foldRanged) params->rangedEvent = 0;
 
     const std::int32_t scaled =
         ScaleDivisor(base, targetPercent, rangedPercent);
@@ -648,7 +834,10 @@ std::int32_t __fastcall HookApplyCrushingBlowCore(
     params->hirelingDivisor = scaled;
 
     Applications[index].fetch_add(1, std::memory_order_relaxed);
-    return OriginalCore(game, attacker, target, params);
+    if (effectPercent == EffectNeutral) {
+        return OriginalCore(game, attacker, target, params);
+    }
+    return CoreWithEffect(game, attacker, target, params, effectPercent);
 }
 
 // ---------------------------------------------------------------------------
@@ -667,6 +856,15 @@ auto ValidateNativeContract() noexcept -> bool {
         {Matches(IsBossRva, IsBossExpected), "MONSTERS_IsBoss"},
         {Matches(CheckMonTypeFlagRva, CheckMonTypeFlagExpected),
          "MONSTERUNIQUE_CheckMonTypeFlag"},
+        {Settings.statId == StatIdOff
+             || (Matches(GetUnitStatRva, GetUnitStatThunkJump)
+                 && Matches(GetUnitStatNopsRva, GetUnitStatThunkNops)
+                 && Matches(GetUnitStatBodyRva, GetUnitStatBody)),
+         "STATLIST_GetUnitStat (ReadWideUnitStat thunk)"},
+        {Settings.statId == StatIdOff
+             || (Matches(SetUnitStatRva, GetUnitStatThunkJump)
+                 && Matches(SetUnitStatNopsRva, GetUnitStatThunkNops)),
+         "STATLIST_SetUnitStat (SetWideUnitStat thunk)"},
     };
     for (const auto& check : checks) {
         if (check.matched) continue;
@@ -859,13 +1057,24 @@ auto Status(D2R::Game::Client*,
     char ranged[16]{};
     FormatPercent(Settings.rangedPercent, ranged, sizeof(ranged));
 
-    char message[1400]{};
+    char stat[96]{};
+    if (Settings.statId == StatIdOff) {
+        std::snprintf(stat, sizeof(stat), "off");
+    } else {
+        std::snprintf(stat, sizeof(stat), "%d (applied=%llu, last=%+d%%)",
+            Settings.statId,
+            static_cast<unsigned long long>(
+                StatApplied.load(std::memory_order_relaxed)),
+            LastStatValue.load(std::memory_order_relaxed));
+    }
+
+    char message[1500]{};
     std::snprintf(
         message, sizeof(message),
-        "Crushing Blow 1.1.0: active=%s; source=%s; ranged=%s%%; %s; "
-        "applied %s; suppressed=%llu.",
+        "Crushing Blow 1.2.0: active=%s; source=%s; ranged=%s%%; "
+        "effectiveness stat=%s; %s; applied %s; suppressed=%llu.",
         Operational.load(std::memory_order_acquire) ? "true" : "false",
-        ConfigOrigin.c_str(), ranged, settings, counters,
+        ConfigOrigin.c_str(), ranged, stat, settings, counters,
         static_cast<unsigned long long>(
             Suppressed.load(std::memory_order_relaxed)));
     command->plugin->WriteConsoleMessage(message);
@@ -878,6 +1087,8 @@ void ResetState() noexcept {
         counter.store(0, std::memory_order_relaxed);
     }
     Suppressed.store(0, std::memory_order_relaxed);
+    StatApplied.store(0, std::memory_order_relaxed);
+    LastStatValue.store(0, std::memory_order_relaxed);
 }
 
 } // namespace
@@ -913,7 +1124,7 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(
 
     if (!Settings.enabled) {
         context->LogInfo(
-            "Crushing Blow 1.1.0 loaded disabled; no hook was installed.");
+            "Crushing Blow 1.2.0 loaded disabled; no hook was installed.");
         return true;
     }
     if (!ValidateNativeContract()) return false;
@@ -922,6 +1133,10 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(
     GetHirelingTypeId = At<GetHirelingTypeIdFn>(GetHirelingTypeIdRva);
     IsBoss            = At<IsBossFn>(IsBossRva);
     CheckMonTypeFlag  = At<CheckMonTypeFlagFn>(CheckMonTypeFlagRva);
+    if (Settings.statId != StatIdOff) {
+        GetUnitStat = At<GetUnitStatFn>(GetUnitStatRva);
+        SetUnitStat = At<SetUnitStatFn>(SetUnitStatRva);
+    }
 
     const std::uint8_t* core = LocateCore();
     if (core == nullptr) return false;
@@ -941,13 +1156,19 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(
     FormatPercent(
         Settings.percent[static_cast<std::size_t>(TargetClass::Player)],
         player, sizeof(player));
+    char stat[16]{};
+    if (Settings.statId == StatIdOff) {
+        std::snprintf(stat, sizeof(stat), "off");
+    } else {
+        std::snprintf(stat, sizeof(stat), "%d", Settings.statId);
+    }
     char message[512]{};
     std::snprintf(
         message, sizeof(message),
-        "Crushing Blow 1.1.0 by CelestialRayOne active; monster=%s%%; "
-        "act_boss=%s%%; player=%s%%; source=%s; installation=%s. "
-        "Type crushing-blow in the console for the full table.",
-        monster, boss, player, ConfigOrigin.c_str(),
+        "Crushing Blow 1.2.0 by CelestialRayOne active; monster=%s%%; "
+        "act_boss=%s%%; player=%s%%; effectiveness stat=%s; source=%s; "
+        "installation=%s. Type crushing-blow in the console for the full table.",
+        monster, boss, player, stat, ConfigOrigin.c_str(),
         context->loadScope == D2RL::LoadScope::Mod ? "mod-local" : "global");
     context->LogInfo(message);
     return true;
@@ -961,6 +1182,8 @@ D2RL_PLUGIN_EXPORT void D2RLoaderUnloadPlugin() noexcept {
     GetHirelingTypeId = nullptr;
     IsBoss            = nullptr;
     CheckMonTypeFlag  = nullptr;
+    GetUnitStat       = nullptr;
+    SetUnitStat       = nullptr;
     OriginalCore      = nullptr;
     Context           = nullptr;
     Base              = nullptr;

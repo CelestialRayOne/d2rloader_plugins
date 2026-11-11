@@ -66,7 +66,10 @@
 //          (0x495DCF);
 //        - every other monster rolls the main list on its name seed (0x38E370):
 //          state (seed, 666), one step seed * 6AC690C5h + 666, the low 32 bits
-//          modulo the total weight of the records at or under its level;
+//          modulo the total weight of the records at or under its level. A
+//          monster without a name seed (0, prime evils for one) would get the
+//          same record every time, so it takes the same step on D2RCore's
+//          per-monster value instead (game+12Ch xor unit id, see 9b);
 //        - the skill goes in at (mlvl + offset) * multiplier / divisor, kept
 //          in 1..99 (0x433910, mode 1) and becomes the right-hand skill
 //          (0x438A70), which starts the aura;
@@ -79,6 +82,29 @@
 //      (4). A list the TOML does not set is read from the game's table at roll
 //      time, so a static patch on it still counts. The lists in use are
 //      published as the "aura-enchanted" service for Monster Display.
+//      The helpers the replacement calls are identified by the calls to them
+//      inside 0x495CD0 (each call's target is checked), never by their first
+//      bytes: other plugins hook some of them (curse-cap hooks 0x2F5810), and a
+//      hooked helper is still the one the game itself calls.
+//
+//  9b. HERALD ENCOUNTER AURAS: D2RCore!ApplyAuraEnchanted (D2RCore.dll 1.3.1,
+//      SHA-256 2a868d01...) first asks D2RLoader's encounter rules about the
+//      monster (+0x820046 calls +0x40C790, rule record at rbp-30h). A monster
+//      with a rule (record +14h set: terror zone heralds and the bosses given
+//      herald modifiers) never reaches 0x495CD0: D2RCore rolls 0 to 2 auras
+//      itself from its own list (98, 368, 108, 365, 123, 122, 369, 113, 115,
+//      428 at +0x62C6F8, divisors at +0x62C6D0), gives the first as skill and
+//      right-hand aura, the second as stat 151, and logs "Encounter auras".
+//      Only its pick (+0x820056..+0x82032F) is replaced: a 15-byte absolute
+//      jump at +0x820056 to a stub that calls EncounterPick(rule, unit, pairs)
+//      and resumes at +0x820330 with r13 = unit, where D2RCore's own code gives
+//      both auras and logs them. EncounterPick keeps D2RCore's rules: how many
+//      (rule +28h min, +2Ch max, never more than the slots allowed in +24h,
+//      slot 40h only from monster level 20), the level cap (+30h, 0 = 99) and
+//      the random value ((game+12Ch xor unit id) * 6AC690C5h + 29Ah, one step
+//      per aura). The first aura comes from the main list, the second from the
+//      herald list. Summon Enhancements' detour on the export's first 19
+//      bytes is a different place and is not touched.
 //
 //  10. HIGH LEVEL MONSTERS: past high_level_start, every monster level (stat
 //      12) raises Extra Strong's two bonuses and Magic Resistant's +50 by a
@@ -108,10 +134,21 @@
 // PluginSDK 0.3.0. Every hook site and patch site is checked byte for byte before
 // anything is written; nothing is installed for a feature whose check fails.
 
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+
 #include <D2RLPlugin/api.h>
 
+#include <Windows.h>
+
+#include <algorithm>
 #include <array>
 #include <atomic>
+#include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -232,6 +269,9 @@ constexpr std::uint8_t  AuraEnchantedPrologue[] {
 constexpr std::uint8_t AuraUberBody[] {
 	0xB9, 0xC0, 0x02, 0x00, 0x00, 0x66, 0x3B, 0xC1, 0x48, 0x8B, 0xCF, 0x75, 0x32, 0xBA, 0x7B, 0x00,
 	0x00, 0x00, 0x44, 0x8D, 0x4A, 0x86, 0x44, 0x8D, 0x42, 0x99 };
+// 0x495D36  the monstats row helper call: mov rcx,rdi / call 0x349860
+constexpr std::uint8_t AuraClassCallBody[] {
+	0x48, 0x8B, 0xCF, 0xE8, 0x22, 0x3B, 0xEB, 0xFF };
 // 0x495D97  monster level (stat 12), at least 1
 constexpr std::uint8_t AuraLevelBody[] {
 	0x41, 0x8D, 0x50, 0x0C, 0xE8, 0x80, 0xF2, 0xE5, 0xFF, 0x85, 0xC0, 0x8B, 0xF0, 0x41, 0xBE, 0x01,
@@ -294,6 +334,66 @@ constexpr std::uint8_t AuraStatWriteBody[] {
 	0x48, 0x8B, 0xCF, 0xE8, 0xAD, 0x3F, 0xEB, 0xFF, 0x0F, 0xB7, 0x4D, 0xDC, 0x44, 0x8B, 0xCE, 0x90,
 	0x89, 0x4C, 0x24, 0x20, 0x41, 0xB8, 0x97, 0x00, 0x00, 0x00, 0x0F, 0xB6, 0xC8, 0x48, 0x8B, 0xD3,
 	0xE8, 0xB0, 0x1A, 0xE6, 0xFF };
+
+// D2RCore!ApplyAuraEnchanted (D2RCore.dll 1.3.1), offsets from its export
+// (+0x81FFC0 in the DLL). Checked in memory, not through the loader.
+// +7Ch..+ACh: the encounter rule lookup and the first instructions of the pick.
+//   lea rcx,[rbp-30h] / mov rdx,rax / mov r8,rsi / call +0x40C790 / nop /
+//   cmp byte [rbp-1Ch],0 / je (no rule) / mov r12d,[rbp-0Ch] (allowed slots) /
+//   mov r14d,[rbp-8] (min) / mov r15d,[rbp-4] (max) / mov ebx,[rbp] (level cap)
+//   / mov r13,[rbp+0B0h] (unit)
+constexpr std::size_t  CoreRuleOffset = 0x7C;
+constexpr std::uint8_t CoreRuleWindow[] {
+	0x48, 0x8D, 0x4D, 0xD0, 0x48, 0x89, 0xC2, 0x49, 0x89, 0xF0, 0xE8, 0x45, 0xC7, 0xBE, 0xFF, 0x90,
+	0x80, 0x7D, 0xE4, 0x00, 0x0F, 0x84, 0x2C, 0x04, 0x00, 0x00, 0x44, 0x8B, 0x65, 0xF4, 0x44, 0x8B,
+	0x75, 0xF8, 0x44, 0x8B, 0x7D, 0xFC, 0x8B, 0x5D, 0x00, 0x4C, 0x8B, 0xAD, 0xB0, 0x00, 0x00, 0x00 };
+// +96h: the first byte of the pick. Its 15 bytes (mov r12d / mov r14d /
+// mov r15d / mov ebx, above) become jmp qword [rip] + the stub + nop. No branch
+// in the function lands inside them.
+constexpr std::size_t CorePickOffset = 0x96;
+constexpr std::size_t CorePickSize   = 15;
+// +370h..+4C2h: gives the two auras from [rbp+0A0h..0ACh] (skill, level, skill,
+// level; -1 = none) with r13 = unit: the first through set skill and right-hand
+// skill, the second as stat 151 in the stat list flagged 10000h; then logs
+// "Encounter auras" and jumps to the epilogue. Nothing else is live here.
+constexpr std::size_t  CoreApplyOffset = 0x370;
+constexpr std::uint8_t CoreApplyWindow[] {
+	0x8B, 0xB5, 0xA0, 0x00, 0x00, 0x00, 0x85, 0xF6, 0x78, 0x35, 0x44, 0x8B, 0x85, 0xA4, 0x00, 0x00,
+	0x00, 0x4C, 0x89, 0xE9, 0x89, 0xF2, 0x41, 0xB9, 0x01, 0x00, 0x00, 0x00, 0xFF, 0x15, 0x7E, 0xEE,
+	0xEE, 0xFF, 0x90, 0x4C, 0x89, 0xE9, 0x31, 0xD2, 0x41, 0x89, 0xF0, 0x41, 0xB9, 0xFF, 0xFF, 0xFF,
+	0xFF, 0xFF, 0x15, 0x81, 0xEE, 0xEE, 0xFF, 0x90, 0xEB, 0x05, 0xBE, 0xFF, 0xFF, 0xFF, 0xFF, 0x44,
+	0x8B, 0xB5, 0xA8, 0x00, 0x00, 0x00, 0x8B, 0xBD, 0xAC, 0x00, 0x00, 0x00, 0x45, 0x85, 0xF6, 0x78,
+	0x7F, 0x4C, 0x89, 0xE9, 0xBA, 0x00, 0x00, 0x01, 0x00, 0xFF, 0x15, 0x81, 0xE9, 0xED, 0xFF, 0x90,
+	0x48, 0x89, 0xC3, 0x48, 0x85, 0xC0, 0x74, 0x14, 0x41, 0x0F, 0xB6, 0x8D, 0xBD, 0x01, 0x00, 0x00,
+	0x48, 0x89, 0xDA, 0xFF, 0x15, 0x9F, 0xEA, 0xED, 0xFF, 0x90, 0xEB, 0x2E, 0x45, 0x8B, 0x45, 0x00,
+	0x45, 0x8B, 0x4D, 0x08, 0x31, 0xC9, 0x31, 0xD2, 0xFF, 0x15, 0x6A, 0xE9, 0xED, 0xFF, 0x90, 0x48,
+	0x89, 0xC3, 0x48, 0x85, 0xC0, 0x74, 0x39, 0x4C, 0x89, 0xE9, 0x48, 0x89, 0xDA, 0x41, 0xB8, 0x01,
+	0x00, 0x00, 0x00, 0xFF, 0x15, 0x67, 0xE9, 0xED, 0xFF, 0x90, 0x48, 0x8B, 0x05, 0x07, 0xEA, 0xED,
+	0xFF, 0x41, 0x0F, 0xB7, 0xD6, 0x41, 0x0F, 0xB6, 0x8D, 0xBD, 0x01, 0x00, 0x00, 0x89, 0x54, 0x24,
+	0x20, 0x48, 0x89, 0xDA, 0x41, 0xB8, 0x97, 0x00, 0x00, 0x00, 0x41, 0x89, 0xF9, 0xFF, 0xD0, 0x90,
+	0x0F, 0x57, 0xC0, 0x0F, 0x29, 0x85, 0x80, 0x00, 0x00, 0x00, 0x0F, 0x29, 0x45, 0x70, 0x0F, 0x29,
+	0x45, 0x60, 0x0F, 0x29, 0x45, 0x50, 0x0F, 0x29, 0x45, 0x40, 0x0F, 0x29, 0x45, 0x30, 0x0F, 0x29,
+	0x45, 0x20, 0x0F, 0x29, 0x45, 0x10, 0x0F, 0x29, 0x45, 0x00, 0x0F, 0x29, 0x45, 0xF0, 0x0F, 0x29,
+	0x45, 0xE0, 0x0F, 0x29, 0x45, 0xD0, 0x8B, 0x85, 0xA4, 0x00, 0x00, 0x00, 0x41, 0x8B, 0x4D, 0x04,
+	0x45, 0x8B, 0x4D, 0x08, 0x89, 0x7C, 0x24, 0x40, 0x44, 0x89, 0x74, 0x24, 0x38, 0x89, 0x44, 0x24,
+	0x30, 0x89, 0x74, 0x24, 0x28, 0x89, 0x4C, 0x24, 0x20, 0x4C, 0x8D, 0x05, 0x60, 0xC0, 0xE0, 0xFF,
+	0x48, 0x8D, 0x75, 0xD0, 0xBA, 0xC0, 0x00, 0x00, 0x00, 0x48, 0x89, 0xF1, 0xE8, 0x6F, 0xE7, 0x99,
+	0xFF, 0x48, 0x8D, 0x0D, 0xB4, 0xAA, 0xDD, 0xFF, 0x48, 0x89, 0xF2, 0xE8, 0xB0, 0x39, 0x7F, 0xFF,
+	0xEB, 0x78 };
+// The stub (keystone-assembled, capstone-checked):
+//   lea rcx,[rbp-30h] / mov rdx,[rbp+0B0h] / lea r8,[rbp+0A0h] /
+//   mov rax,EncounterPick / call rax / mov r13,[rbp+0B0h] / jmp qword [rip]
+//   followed by the address of +370h. rsp is 16-byte aligned at +96h (eight
+//   pushes, sub rsp,148h) and [rsp..rsp+20h) is the frame's own home area.
+constexpr std::uint8_t EncounterStubTemplate[] {
+	0x48, 0x8D, 0x4D, 0xD0, 0x48, 0x8B, 0x95, 0xB0, 0x00, 0x00, 0x00, 0x4C, 0x8D, 0x85, 0xA0, 0x00,
+	0x00, 0x00, 0x48, 0xB8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xD0, 0x4C, 0x8B,
+	0xAD, 0xB0, 0x00, 0x00, 0x00, 0xFF, 0x25, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	0x00, 0x00, 0x00 };
+constexpr std::size_t EncounterStubFunction = 20;  // imm64 of mov rax
+constexpr std::size_t EncounterStubResume   = 43;  // the jmp's target
+static_assert(sizeof(CoreRuleWindow) == 48 && sizeof(CoreApplyWindow) == 0x152 && sizeof(EncounterStubTemplate) == 51);
+static_assert(CoreRuleOffset + 0x1A == CorePickOffset && CorePickOffset + CorePickSize + 7 == CoreRuleOffset + 48);
 
 // ---------------------------------------------------------------------------
 // Game functions
@@ -411,32 +511,6 @@ constexpr std::uint64_t AttachStatListRva = 0x002F2CB0;  // loader thunk, (unit,
 constexpr std::uint64_t DataContextRva    = 0x0034A0E0;  // (unit) -> byte at unit+1BDh
 constexpr std::uint64_t SetListStatRva    = 0x002F7C00;  // loader thunk, (context, list, stat, value, layer)
 
-constexpr std::uint8_t ClassIdBytes[] {
-	0x48, 0x83, 0xEC, 0x28, 0x48, 0x85, 0xC9, 0x75, 0x1D, 0x88, 0x4C, 0x24, 0x30, 0x48, 0x8D, 0x4C,
-	0x24, 0x30, 0xE8, 0x49, 0xCB, 0xFF, 0xFF, 0x84, 0xC0, 0x74, 0x01, 0xCC, 0xB8, 0xFF, 0xFF, 0xFF,
-	0xFF, 0x48, 0x83, 0xC4, 0x28, 0xC3, 0x8B, 0x41, 0x04 };
-constexpr std::uint8_t NameSeedBytes[] {
-	0x40, 0x53, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x8B, 0xD9, 0x48, 0x85, 0xC9, 0x74, 0x0A, 0xE8, 0x4D,
-	0xD6, 0xFB, 0xFF, 0x83, 0xF8, 0x01, 0x74, 0x19 };
-constexpr std::uint8_t SuperUniqueBytes[] {
-	0x40, 0x53, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x8B, 0xD9, 0x48, 0x85, 0xC9, 0x74, 0x0A, 0xE8, 0xED,
-	0xD5, 0xFB, 0xFF, 0x83, 0xF8, 0x01, 0x74, 0x19 };
-constexpr std::uint8_t SetSkillBytes[] {
-	0x48, 0x89, 0x5C, 0x24, 0x18, 0x55, 0x56, 0x41, 0x54, 0x41, 0x56, 0x41, 0x57, 0x48, 0x83, 0xEC,
-	0x50, 0x45, 0x8B, 0xE1, 0x4C, 0x63, 0xF2, 0x45, 0x8B, 0xF8, 0x48, 0x8B, 0xE9 };
-constexpr std::uint8_t SelectSkillBytes[] {
-	0x41, 0x83, 0xF8, 0x05, 0x0F, 0x84, 0x28, 0x02, 0x00, 0x00, 0x44, 0x89, 0x4C, 0x24, 0x20, 0x55,
-	0x41, 0x56, 0x41, 0x57, 0x48, 0x83, 0xEC, 0x40 };
-constexpr std::uint8_t FindStatListBytes[] {
-	0x48, 0x89, 0x5C, 0x24, 0x10, 0x57, 0x48, 0x83, 0xEC, 0x20, 0x8B, 0xFA, 0x48, 0x8B, 0xD9, 0x48,
-	0x85, 0xC9, 0x75, 0x13 };
-constexpr std::uint8_t AllocStatListBytes[] {
-	0x48, 0x89, 0x5C, 0x24, 0x10, 0x48, 0x89, 0x74, 0x24, 0x18, 0x48, 0x89, 0x7C, 0x24, 0x20, 0x89,
-	0x4C, 0x24, 0x08, 0x55, 0x41, 0x54, 0x41, 0x55, 0x41, 0x56, 0x41, 0x57 };
-constexpr std::uint8_t DataContextBytes[] {
-	0x48, 0x83, 0xEC, 0x28, 0x48, 0x85, 0xC9, 0x75, 0x1A, 0x88, 0x4C, 0x24, 0x30, 0x48, 0x8D, 0x4C,
-	0x24, 0x30, 0xE8, 0x49, 0xC7, 0xFF, 0xFF, 0x84, 0xC0, 0x74, 0x01, 0xCC, 0x32, 0xC0, 0x48, 0x83,
-	0xC4, 0x28, 0xC3, 0x0F, 0xB6, 0x81, 0xBD, 0x01, 0x00, 0x00 };
 
 using AuraEnchantedFn  = void(__fastcall*)(void* unit, std::uint32_t mod, std::uint32_t flag) noexcept;
 using ClassIdFn        = std::uint32_t(__fastcall*)(void* unit, const char* file, std::int32_t line) noexcept;
@@ -685,6 +759,7 @@ bool SpectralActive  = false;
 bool CursedActive    = false;
 bool ManaBurnActive  = false;
 bool AuraHookInstalled = false;
+bool EncounterInstalled = false;
 bool RateHookInstalled = false;
 bool FastFramesActive  = false;
 
@@ -716,6 +791,8 @@ std::atomic<std::uint64_t> AuraHeraldGiven { 0 };
 std::atomic<std::uint64_t> AuraFixedGiven { 0 };
 std::atomic<std::uint64_t> AuraNoEntry { 0 };
 std::atomic<std::uint64_t> AuraBadSkill { 0 };
+std::atomic<std::uint64_t> AuraEncounterGiven { 0 };
+std::atomic<std::uint64_t> AuraNoSeedRolls { 0 };
 std::atomic<std::uint64_t> FastFramesGiven { 0 };
 std::atomic<std::uint64_t> FastFramesChanged { 0 };
 std::atomic<std::uint64_t> FastFramesHeldBack { 0 };
@@ -1506,24 +1583,44 @@ auto EffectiveList(const AuraList& configured, std::uint64_t tableRva, std::uint
 }
 
 // The game's own pick (0x495E00..0x495EC0): records at or under the monster
-// level with a positive weight count; state (seed, 666), one step, the low 32
-// bits modulo the total weight, walked through the records in order.
-auto PickAura(const AuraList& list, std::uint16_t seed, std::int32_t monsterLevel) noexcept -> const AuraRecord* {
+// level with a positive weight count; the random value modulo their total
+// weight, walked through the records in order. A record of the skill in
+// exclude (the aura a monster already got from this roll) does not count.
+auto PickAuraValue(const AuraList& list, std::uint32_t value, std::int32_t monsterLevel, std::int32_t exclude) noexcept
+	-> const AuraRecord* {
+	const auto counts = [&](const AuraRecord& record) noexcept {
+		return record.minLevel <= monsterLevel && record.weight > 0 && (exclude == NoSkill || record.skill != exclude);
+	};
 	std::uint32_t total = 0;
 	for (std::uint32_t i = 0; i < list.count; ++i) {
-		const AuraRecord& record = list.records[i];
-		if (record.minLevel <= monsterLevel && record.weight > 0) total += static_cast<std::uint32_t>(record.weight);
+		if (counts(list.records[i])) total += static_cast<std::uint32_t>(list.records[i].weight);
 	}
 	if (total == 0) return nullptr;
 
-	std::uint32_t pick = (static_cast<std::uint32_t>(seed) * AuraSeedMultiplier + AuraSeedHigh) % total;
+	std::uint32_t pick = value % total;
 	for (std::uint32_t i = 0; i < list.count; ++i) {
 		const AuraRecord& record = list.records[i];
-		if (record.minLevel > monsterLevel || record.weight <= 0) continue;
+		if (!counts(record)) continue;
 		if (pick < static_cast<std::uint32_t>(record.weight)) return &record;
 		pick -= static_cast<std::uint32_t>(record.weight);
 	}
 	return nullptr;
+}
+
+// The game's value for a seed: state (seed, 666), one step, the low 32 bits.
+constexpr auto SeedValue(std::uint32_t seed) noexcept -> std::uint32_t {
+	return seed * AuraSeedMultiplier + AuraSeedHigh;
+}
+
+// D2RCore's per-monster random base, the one its encounter pick starts from
+// (+0x8200A1): the dword at game+12Ch xor the unit id at unit+8.
+constexpr std::size_t GameRandomOffset = 0x12C;
+constexpr std::size_t UnitIdField      = 0x08;
+
+auto MonsterRandomBase(void* unit) noexcept -> std::uint32_t {
+	void* game = UnitGame(unit);
+	const std::uint32_t gameValue = game != nullptr ? ReadField<std::uint32_t>(game, GameRandomOffset) : 0;
+	return gameValue ^ ReadField<std::uint32_t>(unit, UnitIdField);
 }
 
 // (monster level + offset) * multiplier / divisor, kept between 1 and 99.
@@ -1612,7 +1709,12 @@ void __fastcall HookAuraEnchanted(void* unit, std::uint32_t mod, std::uint32_t f
 
 	std::int32_t monsterLevel = GetUnitStat(unit, StatLevel, 0);
 	if (monsterLevel <= 0) monsterLevel = 1;
-	const std::uint16_t seed = NameSeed(unit);
+	// The game rolls on the name seed. A monster without one (0) would get the
+	// same record every time, so it rolls on its own random base instead. Both
+	// rolls share the value, as the game's two rolls share the name seed.
+	const std::uint16_t seed  = NameSeed(unit);
+	std::uint32_t       value = SeedValue(seed);
+	if (seed == 0) value = SeedValue(MonsterRandomBase(unit));
 
 	AuraList stock {};
 	if (SuperUnique(unit) == LordDeSeisSuperUnique) {
@@ -1625,7 +1727,8 @@ void __fastcall HookAuraEnchanted(void* unit, std::uint32_t mod, std::uint32_t f
 		}
 	} else {
 		const AuraList&   list   = EffectiveList(Config.auraMain, MainAuraTableRva, MainAuraRecords, stock);
-		const AuraRecord* picked = PickAura(list, seed, monsterLevel);
+		const AuraRecord* picked = PickAuraValue(list, value, monsterLevel, NoSkill);
+		if (seed == 0) AuraNoSeedRolls.fetch_add(1, std::memory_order_relaxed);
 		if (picked == nullptr) {
 			AuraNoEntry.fetch_add(1, std::memory_order_relaxed);
 		} else if (AuraSkillUsable(unit, picked->skill)) {
@@ -1636,11 +1739,159 @@ void __fastcall HookAuraEnchanted(void* unit, std::uint32_t mod, std::uint32_t f
 
 	if (HasRankFlag(unit, HeraldRank) == 0) return;
 	const AuraList&   heraldList = EffectiveList(Config.auraHerald, HeraldAuraTableRva, HeraldAuraRecords, stock);
-	const AuraRecord* extra      = PickAura(heraldList, seed, monsterLevel);
+	const AuraRecord* extra      = PickAuraValue(heraldList, value, monsterLevel, NoSkill);
 	if (extra != nullptr && AuraSkillUsable(unit, extra->skill)) {
 		GiveHeraldAura(unit, extra->skill, AuraLevel(*extra, monsterLevel));
 		AuraHeraldGiven.fetch_add(1, std::memory_order_relaxed);
 	}
+}
+
+// D2RCore's encounter rule record (rbp-30h in ApplyAuraEnchanted).
+constexpr std::size_t   RuleAllowedSlots   = 0x24;
+constexpr std::size_t   RuleMinAuras       = 0x28;
+constexpr std::size_t   RuleMaxAuras       = 0x2C;
+constexpr std::size_t   RuleLevelCap       = 0x30;
+constexpr std::uint32_t RuleLevelGateSlot  = 0x40;   // slot 6 counts only from monster level 20
+constexpr std::int32_t  RuleLevelGate      = 20;
+constexpr std::uint32_t EncounterSeedHigh  = 0x29A;
+constexpr std::uint32_t EncounterAuras     = 2;      // D2RCore has room for two
+
+// Replaces D2RCore's encounter pick (+0x820056..+0x82032F, see 9b). pairs is
+// [rbp+0A0h]: skill and level of the first aura, then of the second, -1 for
+// none. D2RCore gives them itself from +0x820330.
+void __fastcall EncounterPick(const std::uint8_t* rule, void* unit, std::int32_t* pairs) noexcept {
+	for (std::uint32_t i = 0; i < EncounterAuras * 2; ++i) pairs[i] = -1;
+	if (rule == nullptr || unit == nullptr) return;
+
+	const std::uint32_t allowed  = ReadField<std::uint32_t>(rule, RuleAllowedSlots);
+	const std::uint32_t minimum  = ReadField<std::uint32_t>(rule, RuleMinAuras);
+	const std::uint32_t maximum  = ReadField<std::uint32_t>(rule, RuleMaxAuras);
+	const std::uint32_t levelCap = ReadField<std::uint32_t>(rule, RuleLevelCap);
+
+	// D2RCore's count: min + value % (max - min + 1), never more than the
+	// allowed slots, the level-gated slot dropped below level 20.
+	const std::int32_t  level = GetUnitStat(unit, StatLevel, 0);
+	const std::uint32_t slots = level >= RuleLevelGate ? allowed : (allowed & ~RuleLevelGateSlot);
+	std::uint64_t       state = static_cast<std::uint64_t>(MonsterRandomBase(unit)) * AuraSeedMultiplier + EncounterSeedHigh;
+	const std::uint32_t span  = maximum - minimum + 1;
+	std::uint32_t       count = (span != 0 ? static_cast<std::uint32_t>(state) % span : 0) + minimum;
+	count = std::min(count, static_cast<std::uint32_t>(std::popcount(slots)));
+	count = std::min(count, EncounterAuras);
+
+	const std::int32_t cap          = levelCap != 0 ? static_cast<std::int32_t>(levelCap) : 99;
+	const std::int32_t monsterLevel = level < 1 ? 1 : level;
+	AuraList           stock {};
+	std::int32_t       first = NoSkill;
+	for (std::uint32_t i = 0; i < count; ++i) {
+		state = static_cast<std::uint64_t>(static_cast<std::uint32_t>(state)) * AuraSeedMultiplier + (state >> 32);
+		const AuraList& list = i == 0 ? EffectiveList(Config.auraMain, MainAuraTableRva, MainAuraRecords, stock)
+		                              : EffectiveList(Config.auraHerald, HeraldAuraTableRva, HeraldAuraRecords, stock);
+		const AuraRecord* picked = PickAuraValue(list, static_cast<std::uint32_t>(state), monsterLevel, first);
+		if (picked == nullptr) {
+			AuraNoEntry.fetch_add(1, std::memory_order_relaxed);
+			continue;
+		}
+		if (!AuraSkillUsable(unit, picked->skill)) continue;
+		pairs[i * 2]     = picked->skill;
+		pairs[i * 2 + 1] = std::max(1, std::min(AuraLevel(*picked, monsterLevel), cap));
+		if (i == 0) first = picked->skill;
+		AuraEncounterGiven.fetch_add(1, std::memory_order_relaxed);
+	}
+}
+
+std::uint8_t*                         EncounterSite = nullptr;
+std::uint8_t*                         EncounterStub = nullptr;
+std::array<std::uint8_t, CorePickSize> EncounterOriginal {};
+std::array<std::uint8_t, CorePickSize> EncounterWritten {};
+
+// D2RCore bytes, compared in memory: the range must be committed and readable.
+auto CoreBytesMatch(const std::uint8_t* at, const std::uint8_t* expected, std::size_t size) noexcept -> bool {
+	MEMORY_BASIC_INFORMATION info {};
+	if (VirtualQuery(at, &info, sizeof(info)) != sizeof(info) || info.State != MEM_COMMIT
+	    || (info.Protect & (PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_READONLY | PAGE_READWRITE)) == 0
+	    || reinterpret_cast<std::uintptr_t>(at) + size
+	           > reinterpret_cast<std::uintptr_t>(info.BaseAddress) + info.RegionSize) {
+		return false;
+	}
+	return std::memcmp(at, expected, size) == 0;
+}
+
+auto WriteCode(std::uint8_t* at, const std::uint8_t* bytes, std::size_t size) noexcept -> bool {
+	DWORD previous = 0;
+	if (!VirtualProtect(at, size, PAGE_EXECUTE_READWRITE, &previous)) return false;
+	std::memcpy(at, bytes, size);
+	DWORD ignored = 0;
+	VirtualProtect(at, size, previous, &ignored);
+	FlushInstructionCache(GetCurrentProcess(), at, size);
+	return std::memcmp(at, bytes, size) == 0;
+}
+
+void InstallEncounterAuras() noexcept {
+	if (!Config.auraMain.configured && !Config.auraHerald.configured) {
+		LogInfo("Herald encounter auras: no aura list in the TOML; D2RCore keeps its own list.");
+		return;
+	}
+	const HMODULE core = GetModuleHandleW(L"D2RCore.dll");
+	auto*         entry =
+		core != nullptr ? reinterpret_cast<std::uint8_t*>(reinterpret_cast<void*>(GetProcAddress(core, "ApplyAuraEnchanted")))
+		                : nullptr;
+	if (entry == nullptr) {
+		LogError("Herald encounter auras: D2RCore!ApplyAuraEnchanted not found; heralds keep D2RCore's own auras.");
+		return;
+	}
+	if (!CoreBytesMatch(entry + CoreRuleOffset, CoreRuleWindow, sizeof(CoreRuleWindow))
+	    || !CoreBytesMatch(entry + CoreApplyOffset, CoreApplyWindow, sizeof(CoreApplyWindow))) {
+		LogError("Herald encounter auras: D2RCore!ApplyAuraEnchanted is not the D2RCore 1.3.1 code (or another plugin "
+		         "changed it); heralds keep D2RCore's own auras.");
+		return;
+	}
+
+	auto* stub = static_cast<std::uint8_t*>(
+		VirtualAlloc(nullptr, sizeof(EncounterStubTemplate), MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE));
+	if (stub == nullptr) {
+		LogError("Herald encounter auras: no memory for the stub; heralds keep D2RCore's own auras.");
+		return;
+	}
+	std::memcpy(stub, EncounterStubTemplate, sizeof(EncounterStubTemplate));
+	const auto function = reinterpret_cast<std::uint64_t>(&EncounterPick);
+	const auto resume   = reinterpret_cast<std::uint64_t>(entry + CoreApplyOffset);
+	std::memcpy(stub + EncounterStubFunction, &function, sizeof(function));
+	std::memcpy(stub + EncounterStubResume, &resume, sizeof(resume));
+	DWORD previous = 0;
+	if (!VirtualProtect(stub, sizeof(EncounterStubTemplate), PAGE_EXECUTE_READ, &previous)) {
+		VirtualFree(stub, 0, MEM_RELEASE);
+		LogError("Herald encounter auras: the stub could not be made executable; heralds keep D2RCore's own auras.");
+		return;
+	}
+	FlushInstructionCache(GetCurrentProcess(), stub, sizeof(EncounterStubTemplate));
+
+	std::uint8_t* site = entry + CorePickOffset;
+	std::memcpy(EncounterOriginal.data(), site, CorePickSize);
+	EncounterWritten = { 0xFF, 0x25, 0x00, 0x00, 0x00, 0x00 };
+	const auto target = reinterpret_cast<std::uint64_t>(stub);
+	std::memcpy(EncounterWritten.data() + 6, &target, sizeof(target));
+	EncounterWritten[14] = 0x90;
+	if (!WriteCode(site, EncounterWritten.data(), CorePickSize)) {
+		WriteCode(site, EncounterOriginal.data(), CorePickSize);
+		VirtualFree(stub, 0, MEM_RELEASE);
+		LogError("Herald encounter auras: D2RCore's pick could not be rewritten; heralds keep D2RCore's own auras.");
+		return;
+	}
+	EncounterSite      = site;
+	EncounterStub      = stub;
+	EncounterInstalled = true;
+	LogInfo("Herald encounter auras: D2RCore's pick (ApplyAuraEnchanted+96h) now takes the first aura from "
+	        "aura_enchanted_skills and the second from herald_aura_skills.");
+}
+
+void RemoveEncounterAuras() noexcept {
+	if (EncounterSite != nullptr && std::memcmp(EncounterSite, EncounterWritten.data(), CorePickSize) == 0) {
+		WriteCode(EncounterSite, EncounterOriginal.data(), CorePickSize);
+	}
+	if (EncounterStub != nullptr) VirtualFree(EncounterStub, 0, MEM_RELEASE);
+	EncounterSite      = nullptr;
+	EncounterStub      = nullptr;
+	EncounterInstalled = false;
 }
 
 // ---------------------------------------------------------------------------
@@ -2127,7 +2378,12 @@ mana_burn_cooldown_percent_per_level = 5
 # AURA ENCHANTED (at spawn)
 #   Replaces the game's own Aura Enchanted roll, the one D2RLoader runs while
 #   d2rloader.toml has d2rcore.game_rules.aura_enchanted_selection = "3.1".
-#   At "3.2" D2RLoader rolls its own built-in list and none of this applies.
+#   At "3.2" D2RLoader rolls its own built-in list for ordinary monsters.
+#   Terror zone heralds, and the bosses D2RLoader gives herald modifiers, get
+#   their auras from D2RLoader's encounter rules instead, with either setting.
+#   The rules still decide how many (0 to 2) and the level cap; the first aura
+#   (the active one) comes from aura_enchanted_skills, the second (stat 151,
+#   item_aura) from herald_aura_skills.
 #   With none of the keys below set, the game's roll runs untouched.
 #
 #   List entries are { skill = N, divisor = N, min_level = N } or a bare
@@ -2137,6 +2393,8 @@ mana_burn_cooldown_percent_per_level = 5
 #     min_level  the entry only counts for monsters of at least this level
 #   Every entry that counts is equally likely; list a skill twice to make it
 #   twice as likely. The pick comes from the monster's name seed, as before.
+#   A monster without one (seed 0, prime evils for example) would always get
+#   the same entry, so it rolls on a random value of its own instead.
 #   A list that is missing, empty or cannot be read uses the game's own:
 #     aura list    98, 368, 108, 365, 123, 122 and 369 (369 from level 20)
 #     herald list  113, 115 and 428 (or what a static patch put there)
@@ -2466,6 +2724,7 @@ void InstallAuraEnchanted() noexcept {
 		const char*         name;
 	};
 	const AuraWitness witnesses[] {
+		{ 0x00495D36, AuraClassCallBody, ByteCount(AuraClassCallBody), "Aura Enchanted, monstats row call" },
 		{ 0x00495D3E, AuraUberBody, ByteCount(AuraUberBody), "Aura Enchanted, row 704 branch" },
 		{ 0x00495D97, AuraLevelBody, ByteCount(AuraLevelBody), "Aura Enchanted, monster level" },
 		{ 0x00495DB1, AuraSeedBody, ByteCount(AuraSeedBody), "Aura Enchanted, seed and superunique" },
@@ -2484,22 +2743,47 @@ void InstallAuraEnchanted() noexcept {
 		{ 0x004960E7, AuraListNewBody, ByteCount(AuraListNewBody), "Aura Enchanted, new stat list" },
 		{ 0x0049611D, AuraListAttachBody, ByteCount(AuraListAttachBody), "Aura Enchanted, stat list attach" },
 		{ 0x0049612B, AuraStatWriteBody, ByteCount(AuraStatWriteBody), "Aura Enchanted, stat 151 write" },
-		{ ClassIdRva, ClassIdBytes, ByteCount(ClassIdBytes), "monstats row helper" },
-		{ NameSeedRva, NameSeedBytes, ByteCount(NameSeedBytes), "name seed helper" },
-		{ SuperUniqueRva, SuperUniqueBytes, ByteCount(SuperUniqueBytes), "superunique row helper" },
-		{ SetSkillRva, SetSkillBytes, ByteCount(SetSkillBytes), "set skill" },
-		{ SelectSkillRva, SelectSkillBytes, ByteCount(SelectSkillBytes), "right-hand skill" },
-		{ FindStatListRva, FindStatListBytes, ByteCount(FindStatListBytes), "stat list lookup" },
-		{ AllocStatListRva, AllocStatListBytes, ByteCount(AllocStatListBytes), "stat list allocation" },
-		{ AttachStatListRva, LoaderThunkBytes, ByteCount(LoaderThunkBytes), "stat list attach" },
-		{ DataContextRva, DataContextBytes, ByteCount(DataContextBytes), "data context" },
-		{ SetListStatRva, LoaderThunkBytes, ByteCount(LoaderThunkBytes), "stat list write" },
 	};
 	for (const AuraWitness& witness : witnesses) {
 		if (!Context->CheckExpectedBytes(witness.rva, witness.bytes, witness.size)) {
 			char message[224] {};
 			std::snprintf(message, sizeof(message), "%s at 0x%llX does not match; Aura Enchanted keeps the game's own roll.",
 			              witness.name, static_cast<unsigned long long>(witness.rva));
+			LogError(message);
+			return;
+		}
+	}
+
+	// The helpers are the functions the routine itself calls: each call above
+	// (already byte-checked) must reach the expected one. Their own first bytes
+	// are not checked, other plugins hook some of them (curse-cap: 0x2F5810).
+	struct AuraCall {
+		std::uint64_t site;
+		std::uint64_t target;
+		const char*   name;
+	};
+	const AuraCall calls[] {
+		{ 0x00495D39, ClassIdRva, "monstats row helper" },
+		{ 0x00495DB1, NameSeedRva, "name seed helper" },
+		{ 0x00495DBD, SuperUniqueRva, "superunique row helper" },
+		{ 0x00495F50, SetSkillRva, "set skill" },
+		{ 0x00495F64, SelectSkillRva, "right-hand skill" },
+		{ 0x004960DA, FindStatListRva, "stat list lookup" },
+		{ 0x00496110, AllocStatListRva, "stat list allocation" },
+		{ 0x00496126, AttachStatListRva, "stat list attach" },
+		{ 0x0049612E, DataContextRva, "data context" },
+		{ 0x0049614B, SetListStatRva, "stat list write" },
+	};
+	for (const AuraCall& call : calls) {
+		const auto*  site = reinterpret_cast<const std::uint8_t*>(Base + call.site);
+		std::int32_t rel  = 0;
+		std::memcpy(&rel, site + 1, sizeof(rel));
+		const std::uint64_t reached = call.site + 5 + static_cast<std::int64_t>(rel);
+		if (site[0] != 0xE8 || reached != call.target) {
+			char message[224] {};
+			std::snprintf(message, sizeof(message),
+			              "The call at 0x%llX does not reach the %s at 0x%llX; Aura Enchanted keeps the game's own roll.",
+			              static_cast<unsigned long long>(call.site), call.name, static_cast<unsigned long long>(call.target));
 			LogError(message);
 			return;
 		}
@@ -2520,6 +2804,7 @@ void InstallAuraEnchanted() noexcept {
 	                         reinterpret_cast<void**>(&OriginalAuraEnchanted), "the Aura Enchanted routine");
 	if (!AuraHookInstalled) return;
 	PublishAuraService();
+	InstallEncounterAuras();
 
 	char message[384] {};
 	std::snprintf(message, sizeof(message),
@@ -2748,12 +3033,16 @@ auto __cdecl StatusCommand(D2R::Game::Client*, const D2RL::ConsoleCommandContext
 	plugin->WriteConsoleMessage(line);
 
 	std::snprintf(line, sizeof(line),
-	              "aura enchanted %s | given: main list %llu, herald %llu, fixed %llu | no entry %llu | skill missing "
-	              "%llu | uber mephisto %d at level %d | lord de seis %d",
+	              "aura enchanted %s, herald encounters %s | given: main list %llu, herald %llu, fixed %llu, herald "
+	              "encounter %llu | rolled without a name seed %llu | no entry %llu | skill missing %llu | uber mephisto "
+	              "%d at level %d | lord de seis %d",
 	              AuraHookInstalled ? "on" : (AuraWanted() ? "OFF (see the log)" : "stock (no aura key)"),
+	              EncounterInstalled ? "on" : (AuraHookInstalled ? "D2RCore's list (see the log)" : "off"),
 	              static_cast<unsigned long long>(AuraMainGiven.load(std::memory_order_relaxed)),
 	              static_cast<unsigned long long>(AuraHeraldGiven.load(std::memory_order_relaxed)),
 	              static_cast<unsigned long long>(AuraFixedGiven.load(std::memory_order_relaxed)),
+	              static_cast<unsigned long long>(AuraEncounterGiven.load(std::memory_order_relaxed)),
+	              static_cast<unsigned long long>(AuraNoSeedRolls.load(std::memory_order_relaxed)),
 	              static_cast<unsigned long long>(AuraNoEntry.load(std::memory_order_relaxed)),
 	              static_cast<unsigned long long>(AuraBadSkill.load(std::memory_order_relaxed)),
 	              Config.uberMephistoSkill != NoSkill ? Config.uberMephistoSkill : StockUberAuraSkill,
@@ -2771,12 +3060,12 @@ constexpr D2RL::PluginInfo MonsterAffixesInfo {
 	.abiVersion  = D2RL_PLUGIN_ABI_VERSION,
 	.id          = "celestialrayone.monster-affixes",
 	.name        = "Monster Affixes",
-	.version     = "1.7.0",
+	.version     = "1.8.0",
 	.author      = "CelestialRayOne",
 	.description = "Monster affix rework: skills cast when struck (enchanted, Stone Skin, Teleportation), no enchanted "
 	               "death effects, Spectral Hit skills on attack and cast with per-skill lockouts, Cursed skill pool "
 	               "shared with minions, new Extra Strong, Extra Fast and Mana Burn bonuses, localdelay lockouts, no "
-	               "affix resistances, a new Magic Resistant that minions share, Aura Enchanted auras from TOML lists, and "
+	               "affix resistances, a new Magic Resistant that minions share, Aura Enchanted and herald encounter auras from TOML lists, and "
 	               "level scaling past level 100 for Extra Strong, Extra Fast, Mana Burn and Magic Resistant.",
 	.flags       = D2RL::PluginFlags::Shared | D2RL::PluginFlags::NativeHooks,
 };
@@ -2836,6 +3125,7 @@ D2RL_PLUGIN_EXPORT void D2RLoaderUnloadPlugin() noexcept {
 	FastFramesActive       = false;
 	RateHookInstalled      = false;
 	OriginalRateNotify     = nullptr;
+	RemoveEncounterAuras();
 	AuraHookInstalled      = false;
 	OriginalAuraEnchanted  = nullptr;
 	Context                = nullptr;

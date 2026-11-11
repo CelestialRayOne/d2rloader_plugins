@@ -24,7 +24,8 @@
 //                       elite one 15% of the time, chaining
 //    Crystal Upgrade    a dropped chipped or flawed crystal is the normal one
 //                       2% of the time
-//    Magic Runewords    the character can make runewords in magic items
+//    Magic Runewords    the character can make runewords in magic items,
+//                       except ones with a gem among their ingredients
 //    Mass Dig           the perk gives the skill (an oskill while the perk
 //                       stat is held); its own server skill function runs
 //                       Find Item on every monster corpse in a radius
@@ -279,7 +280,7 @@
 namespace CelestialRayOne::Archaeology {
 namespace {
 
-constexpr char PluginVersion[] = "1.6.0";
+constexpr char PluginVersion[] = "1.7.0";
 
 constexpr const char DefaultConfigToml[] = R"TOML(# celestialrayone.archaeology
 #
@@ -670,9 +671,16 @@ perk_stat = 981
 #   lets a magic item through while this character socket items. The item
 #   keeps its magic modifiers and gains the runeword's. Once made, a magic
 #   runeword stays one for everyone (saved, traded, shown).
+#   exclude_ingredient_types: a runes.txt row with an item of one of these
+#   itemtypes.txt types among Rune1 to Rune6 can't be made in a magic item;
+#   normal and superior items still take it. "gem" is every gem, skulls and
+#   obsidians included, so it keeps out every gemword, also the ones that mix
+#   gems with runes or jewels. [] keeps nothing out. A magic runeword that
+#   already exists stays as it is.
 [magic_runewords]
 enabled = true
 perk_stat = 988
+exclude_ingredient_types = ["gem"]
 
 # Mass Dig (archaeology_14)
 #   A server skill function of its own, srvdofunc below (D2R 3.3 fills 0 to
@@ -2013,8 +2021,9 @@ struct ScrollConfig {
 };
 
 struct RunewordConfig {
-    bool         enabled{ true };
-    std::int32_t stat{ 988 };
+    bool                     enabled{ true };
+    std::int32_t             stat{ 988 };
+    std::vector<std::string> excludeTypes{ "gem" };
 };
 
 struct SellConfig {
@@ -2221,6 +2230,7 @@ std::atomic<std::uint64_t> CouponsUpgraded{};
 std::atomic<std::uint64_t> CouponsToElite{};
 std::atomic<std::uint64_t> CrystalsUpgraded{};
 std::atomic<std::uint64_t> MagicRunewordsAllowed{};
+std::atomic<std::uint64_t> MagicRunewordsExcluded{};
 std::atomic<std::uint64_t> MassDigCasts{};
 std::atomic<std::uint64_t> MassDigCorpses{};
 std::atomic<std::uint64_t> MassDigFinds{};
@@ -2496,6 +2506,7 @@ void ParseConfig(std::string_view text) {
             RunewordConfig& k = Settings.runewords;
             if (key == "enabled") ok = ParseBool(value, k.enabled);
             else if (key == "perk_stat") ok = ParseInt(value, k.stat);
+            else if (key == "exclude_ingredient_types") ok = ParseStrings(value, k.excludeTypes);
             else known = false;
         } else if (section == "crystal_upgrade") {
             CrystalConfig& k = Settings.crystal;
@@ -3280,7 +3291,8 @@ auto ItemCodeOf(void* item) noexcept -> std::uint32_t {
 }
 
 // ---------------------------------------------------------------------------
-// Drop tables: the item types and classes the drop perks use, per data context
+// Drop tables: the item types and classes the drop perks use (and the
+// ingredient types Magic Runewords excludes), per data context
 // ---------------------------------------------------------------------------
 auto CodeMatches(const std::uint8_t* row, const std::string& code) noexcept -> bool {
     if (code.empty() || code.size() > 4) return false;
@@ -3325,7 +3337,7 @@ auto ItemMatches(void* item, const std::vector<std::int32_t>& types) noexcept ->
 
 struct DropTables {
     const std::uint8_t*        tables{};
-    std::vector<std::int32_t>  socketTypes, sellTypes, couponTypes, excludeEtherealTypes;
+    std::vector<std::int32_t>  socketTypes, sellTypes, couponTypes, excludeEtherealTypes, runewordExcludeTypes;
     std::int32_t               weapon{ -1 }, armor{ -1 };
     std::int32_t               goldClass{ -1 };
     std::vector<std::uint32_t> normalCoupons, exceptionalCoupons, eliteCoupons;  // sorted classes
@@ -3354,6 +3366,7 @@ auto DropTablesFor(std::uint8_t context) -> const DropTables* {
     d.sellTypes            = ResolveCodes(tables, Settings.sell.types);
     d.couponTypes          = ResolveCodes(tables, Settings.couponEthereal.couponTypes);
     d.excludeEtherealTypes = ResolveCodes(tables, Settings.couponEthereal.excludeTypes);
+    d.runewordExcludeTypes = ResolveCodes(tables, Settings.runewords.excludeTypes);
     d.weapon               = ResolveCode(tables, "weap");
     d.armor                = ResolveCode(tables, "armo");
     const std::int32_t normal      = ResolveCode(tables, Settings.couponUpgrade.normalType);
@@ -3606,12 +3619,35 @@ auto __fastcall HookSocketInsert(void* game, void* player, std::uint32_t socketa
     return result;
 }
 
+// Whether an item socketed in the host has an excluded ingredient type. The
+// rune match compares every item in the host's inventory, in order, with the
+// row's Rune1 to Rune6, so a row only matches when all of them are among its
+// ingredients: one excluded item socketed means every row that could match
+// has an excluded ingredient.
+auto HoldsExcludedIngredient(void* host, const DropTables& d) noexcept -> bool {
+    if (d.runewordExcludeTypes.empty()) return false;
+    void* const sockets = GetInventory(host, "archaeology", 1);
+    void* child = sockets != nullptr ? FirstItem(sockets) : nullptr;
+    for (std::size_t guard = 0; child != nullptr && guard < MaxSocketedItems; ++guard) {
+        if (UnitType(child) != UnitItem) break;
+        if (ItemMatches(child, d.runewordExcludeTypes)) return true;
+        child = NextItem(child);
+    }
+    return false;
+}
+
 // Entered from the relay at 37246C for a magic item. 1 lets the rune match go on.
 auto __fastcall AllowMagicRuneword(void* item) noexcept -> std::int32_t {
     if (!Ready || !Settings.enabled || !Settings.runewords.enabled || item == nullptr) return 0;
     if ((ItemFlags(item) & RunewordFlag) != 0) return 1;  // already a magic runeword: keep resolving it
     void* const player = SocketingPlayer;
     if (!HasStatPerk(player, true, Settings.runewords.stat)) return 0;
+    const DropTables* d = DropTablesFor(GetDataContext(item));
+    if (d == nullptr) return 0;
+    if (HoldsExcludedIngredient(item, *d)) {
+        MagicRunewordsExcluded.fetch_add(1, std::memory_order_relaxed);
+        return 0;
+    }
     MagicRunewordsAllowed.fetch_add(1, std::memory_order_relaxed);
     return 1;
 }
@@ -5178,9 +5214,13 @@ auto __cdecl StatusCommand(D2R::Game::Client*, const D2RL::ConsoleCommandContext
         StateText(Settings.crystal.enabled, BuilderHooked, BuilderProblem).c_str(), Settings.crystal.stat, Settings.crystal.chance,
         static_cast<unsigned long long>(CrystalsUpgraded.load()));
     plugin->WriteConsoleMessage(text);
-    std::snprintf(text, sizeof(text), "Magic Runewords: %s, stat %d | magic items let through %llu",
+    std::string excludedTypes;
+    for (const std::string& code : Settings.runewords.excludeTypes) excludedTypes += (excludedTypes.empty() ? "" : ", ") + code;
+    std::snprintf(text, sizeof(text), "Magic Runewords: %s, stat %d, excluded ingredient types: %s | magic items let through %llu, "
+        "refused for an excluded ingredient %llu",
         StateText(Settings.runewords.enabled, RunewordPatched && SocketInsertHooked, RunewordProblem).c_str(), Settings.runewords.stat,
-        static_cast<unsigned long long>(MagicRunewordsAllowed.load()));
+        excludedTypes.empty() ? "none" : excludedTypes.c_str(), static_cast<unsigned long long>(MagicRunewordsAllowed.load()),
+        static_cast<unsigned long long>(MagicRunewordsExcluded.load()));
     plugin->WriteConsoleMessage(text);
     std::snprintf(text, sizeof(text), "Mass Dig: %s, srvdofunc %d, radius %s, chance %s, skill %d level %d with stat %d | casts %llu, "
         "corpses searched %llu, finds %llu, casts with no aurarangecalc radius %llu",

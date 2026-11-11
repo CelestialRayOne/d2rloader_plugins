@@ -71,20 +71,46 @@
 // -----------------------------------------------------------------------------
 //  AN ITEM'S MODIFIERS
 // -----------------------------------------------------------------------------
-//  The (stat, layer) pairs an item carries come from its full stats array, read
-//  where D2RCore!VisitWideUnitStats reads it: ex = unit +88h, full stats +A8h,
-//  count +B0h, 16-byte entries {layer u32, stat u16 at +4, value i32 at +8},
-//  key = stat << 32 | layer. A pair's modifier value is
-//      total (0x2F5020) - base (0x2F48C0) - every plugin bonus list on the item
+//  An item's modifiers are read from the stat lists that hold them, never from
+//  its full stats array (ex = unit +88h, +A8h, count +B0h, the array
+//  D2RCore!VisitWideUnitStats reads, and the one 0x2F5020 reads). That array
+//  is the engine's cache of each stat's total, and for a stat with an
+//  itemstatcost op the engine stops keeping it current: when such a stat
+//  changes, its own total is committed only while every op target on the same
+//  item is 0, or while the op does not apply there (D2MOO sub_6FDB64A0, D2RCore
+//  +3DBEB0, see the enhanced-damage-fix plugin). Otherwise the total keeps the
+//  value it had before, so a bonus written next to the stat never shows in it.
+//  passive_summ_mastery_total (op 1) on a ring that also has
+//  passive_summ_mastery kept the 10 it had when the ring was loaded while this
+//  plugin took its own addition back out of it every pass: 10, 20, 10, 20 at
+//  100%, and a swing that grew without end above 100%. The op 13 stats
+//  (item_armor_percent, item_maxdamage_percent, item_mindamage_percent,
+//  item_maxdurability_percent) on an item with the base value they multiply,
+//  and the op 4 and 5 per-level stats on an equipped item, are held back the
+//  same way. The array also holds what the engine derives through an op (a
+//  weapon's enhanced damage on its base damage, per-level defense), which is
+//  not a modifier of the item at all.
+//
+//  The values come from the item's active child chain instead (ex +90h, next
+//  at +68h), summed the way the engine sums them for the item: the stats of
+//  every plain list there (+30h, count +38h, 16-byte entries {layer u32, stat
+//  u16 at +4, value i32 at +8}), and for every item socketed in it (an extended
+//  list in the chain, flag 80000000h) that item's full stats (+A8h, count
+//  +B0h), which is what the engine adds into the host for it; both are the
+//  layouts the pinned VisitWideUnitStats reads. A socketed item's stats never
+//  change after it is socketed, so its totals are current. A list with flag
+//  2000h is linked into the other chain (+98h) by the D2RCore attach and counts
+//  for nothing, as for the engine. The item's own base values (+30h of the ex
+//  itself) are not modifiers and stay out. A pair's modifier value is
+//      list total - every plugin bonus list on the item
 //  where a plugin bonus list is any plain list with flag 10000h in the item's
-//  active child chain (ex +90h, next at +68h; a plain list keeps its stats at
-//  +30h, count +38h, same entries): the jeweler's own list and any other
-//  plugin's (the blacksmith carries Unbreakable Gear and Extended Reach on a
-//  ring or the amulet when no armor piece is worn). No bonus ever feeds on
-//  itself or on another plugin's bonus. The total holds the item's affixes,
-//  unique and set item modifiers, the active set bonus lines (state lists on
-//  the set item, switched by 0x3D62C0 through D2RCore SuppressWideStateStats),
-//  a runeword's or gemword's list, and the items socketed in it.
+//  chain: the jeweler's own list and any other plugin's (the blacksmith carries
+//  Unbreakable Gear and Extended Reach on a ring or the amulet when no armor
+//  piece is worn). No bonus ever feeds on itself or on another plugin's bonus.
+//  The total holds the item's affixes, unique and set item modifiers, the
+//  active set bonus lines (state lists on the set item, switched by 0x3D62C0
+//  through D2RCore SuppressWideStateStats), a runeword's or gemword's list,
+//  and the items socketed in it.
 //
 // -----------------------------------------------------------------------------
 //  SOCKETED JEWELS AND GEMS
@@ -276,7 +302,7 @@
 namespace CelestialRayOne::Jeweler {
 namespace {
 
-constexpr char PluginVersion[] = "1.5.3";
+constexpr char PluginVersion[] = "1.5.4";
 
 constexpr const char DefaultConfigToml[] = R"TOML(# celestialrayone.jeweler
 #
@@ -1412,8 +1438,6 @@ constexpr std::uint32_t UnitPlayer          = 0;
 constexpr std::uint32_t UnitItem            = 4;
 constexpr std::int32_t  FirstBodyLoc        = 1;
 constexpr std::int32_t  LastBodyLoc         = 12;
-constexpr std::int32_t  StatMaxDamagePct    = 17;
-constexpr std::int32_t  StatMinDamagePct    = 18;
 constexpr std::int32_t  ChargedSkill        = 204;  // item_charged_skill: its value packs charges and maximum charges
 constexpr std::int32_t  MaxStatId           = 0x8000;  // D2RCore's stat id limit (SetWideListStat cmp esi,8000h)
 constexpr std::size_t   MaxChainNodes       = 512;
@@ -2538,66 +2562,66 @@ auto ExOf(void* unit) noexcept -> const std::uint8_t* {
     return ex != nullptr && Read<std::int32_t>(ex, ListFlags) < 0 ? ex : nullptr;
 }
 
-// The (stat, layer) pairs of an item's full stats array whose stat is in one
-// of the mask's sets.
-void ItemPairs(void* item, std::uint8_t mask, std::vector<StatKey>& out) noexcept {
-    out.clear();
-    const std::uint8_t* ex = ExOf(item);
-    if (ex == nullptr) return;
-    const auto* entries = Read<const std::uint8_t*>(ex, ExFullStats);
-    const auto  count   = Read<std::uint64_t>(ex, ExFullStatsCount);
+// A list's stats added into out: a plain list's own (+30h, count +38h), or an
+// extended list's full stats (+A8h, count +B0h).
+void AddListEntries(const std::uint8_t* list, std::size_t at, std::vector<StatValue>& out) noexcept {
+    const auto* entries = Read<const std::uint8_t*>(list, at);
+    const auto  count   = Read<std::uint64_t>(list, at + 8);
     if (entries == nullptr || count > 8192) return;
     for (std::uint64_t i = 0; i < count; ++i) {
         const std::uint8_t* entry = entries + i * StatEntrySize;
-        const std::int32_t stat = Read<std::uint16_t>(entry, StatEntryStat);
-        if ((MaskOf(stat) & mask) == 0) continue;
-        out.push_back({ stat, static_cast<std::int32_t>(Read<std::uint32_t>(entry, StatEntryLayer)) });
+        AddValue(out, Read<std::uint16_t>(entry, StatEntryStat),
+            static_cast<std::int32_t>(Read<std::uint32_t>(entry, StatEntryLayer)), Read<std::int32_t>(entry, StatEntryValue));
     }
 }
 
-// Every (stat, layer) pair of an item's full stats array but the Mirrored Ring
-// exclusions.
-void AllPairs(void* item, std::vector<StatKey>& out) {
+// What an item's stat lists hold, per (stat, layer) pair (see AN ITEM'S
+// MODIFIERS): every list in its active child chain (+90h, next at +68h), and
+// for an item socketed in it (an extended list in the chain) the full stats the
+// engine itself adds into the host. Never the item's base values, never what
+// the engine derives through an op on the item, never a total it stopped
+// keeping current.
+void ListTotals(void* item, std::vector<StatValue>& out) noexcept {
     out.clear();
     const std::uint8_t* ex = ExOf(item);
     if (ex == nullptr) return;
-    const auto* entries = Read<const std::uint8_t*>(ex, ExFullStats);
-    const auto  count   = Read<std::uint64_t>(ex, ExFullStatsCount);
-    if (entries == nullptr || count > 8192) return;
-    for (std::uint64_t i = 0; i < count; ++i) {
-        const std::uint8_t* entry = entries + i * StatEntrySize;
-        const std::int32_t stat = Read<std::uint16_t>(entry, StatEntryStat);
-        if (std::find(Settings.mirror.exclude.begin(), Settings.mirror.exclude.end(), stat) != Settings.mirror.exclude.end()) continue;
-        out.push_back({ stat, static_cast<std::int32_t>(Read<std::uint32_t>(entry, StatEntryLayer)) });
+    const auto* node = Read<const std::uint8_t*>(ex, ExChildren);
+    for (std::size_t guard = 0; node != nullptr && guard < MaxChainNodes; ++guard) {
+        AddListEntries(node, Read<std::int32_t>(node, ListFlags) < 0 ? ExFullStats : ListStats, out);
+        node = Read<const std::uint8_t*>(node, ListNext);
     }
 }
 
-// Every plugin bonus list (plain, flag 10000h) in the item's active child
-// chain, summed per pair: the jeweler's own and any other plugin's.
-
-// A pair's modifier value on an item: its total without its base and without
-// the plugin bonus lists. A weapon's flat damage also loses what op 13 adds to
-// its base damage (never the case for jewelry, jewels or gems, whose base
-// damage is 0).
-auto OwnValue(void* item, const StatKey& key, const std::vector<StatValue>& plugin) noexcept -> std::int64_t {
-    const std::int64_t base = ReadOwnStat(item, key.stat, key.layer);
-    std::int64_t own = static_cast<std::int64_t>(ReadUnitStat(item, key.stat, key.layer)) - base - Lookup(plugin, key.stat, key.layer);
-    if (key.layer == 0 && base != 0) {
-        switch (key.stat) {
-        case 22: case 24: case 160: own -= base * ReadUnitStat(item, StatMaxDamagePct, 0) / 100; break;
-        case 21: case 23: case 159: own -= base * ReadUnitStat(item, StatMinDamagePct, 0) / 100; break;
-        default: break;
-        }
+// The pairs of an item's list totals whose stat is in one of the mask's sets.
+void ItemPairs(const std::vector<StatValue>& totals, std::uint8_t mask, std::vector<StatKey>& out) noexcept {
+    out.clear();
+    for (const StatValue& v : totals) {
+        if ((MaskOf(v.stat) & mask) != 0) out.push_back({ v.stat, v.layer });
     }
-    return own;
+}
+
+// Every pair of an item's list totals but the Mirrored Ring exclusions.
+void AllPairs(const std::vector<StatValue>& totals, std::vector<StatKey>& out) {
+    out.clear();
+    for (const StatValue& v : totals) {
+        if (std::find(Settings.mirror.exclude.begin(), Settings.mirror.exclude.end(), v.stat) != Settings.mirror.exclude.end()) continue;
+        out.push_back({ v.stat, v.layer });
+    }
+}
+
+// A pair's modifier value on an item: its list total without the plugin bonus
+// lists (and on the client without what this plugin merged into the item's
+// magic list), both as PluginListValues reads them.
+auto OwnValue(const std::vector<StatValue>& totals, const StatKey& key, const std::vector<StatValue>& plugin) noexcept -> std::int64_t {
+    return static_cast<std::int64_t>(Lookup(totals, key.stat, key.layer)) - Lookup(plugin, key.stat, key.layer);
 }
 
 // An own_sockets Gem Effect stat's value on a host: its own value, read the
-// way a modifier is (total less base and every plugin bonus list), so the
-// items socketed in it count and no plugin bonus does.
-auto HostEffectValue(void* item, std::int32_t stat, const std::vector<StatValue>& plugin, std::uint64_t rows) noexcept -> std::int32_t {
+// way a modifier is (list total less every plugin bonus list), so the items
+// socketed in it count and no plugin bonus does.
+auto HostEffectValue(const std::vector<StatValue>& totals, std::int32_t stat, const std::vector<StatValue>& plugin, std::uint64_t rows) noexcept -> std::int32_t {
     if (stat < 0 || Settings.socketed.stats.empty() || static_cast<std::uint64_t>(stat) >= rows) return 0;
-    return static_cast<std::int32_t>(std::clamp<std::int64_t>(OwnValue(item, { stat, 0 }, plugin), INT32_MIN, INT32_MAX));
+    return static_cast<std::int32_t>(std::clamp<std::int64_t>(OwnValue(totals, { stat, 0 }, plugin), INT32_MIN, INT32_MAX));
 }
 
 // ---------------------------------------------------------------------------
@@ -3415,6 +3439,7 @@ void ProcessCharacter(BonusSide& side, void* game, void* player) noexcept {
     thread_local std::vector<PoolTerm>               gemTerms;
     thread_local std::vector<StatValue>              plugin;
     thread_local std::vector<StatKey>                pairs;
+    thread_local std::vector<StatValue>              totals;
     thread_local std::vector<Child>                  children;
     thread_local std::vector<std::int32_t>           hostValues;
     thread_local std::vector<std::uint32_t>          carriers;
@@ -3435,29 +3460,37 @@ void ProcessCharacter(BonusSide& side, void* game, void* player) noexcept {
         const bool equipped = holders[h].loc != 0;
         const std::int64_t copies = item == mirrored ? 2 : 1;  // the mirror adds a second identical ring
         const auto poolFor = [&](std::int32_t stat) noexcept { return PoolFor(holders, h, stat); };
-        if (item == mirrored) {
+        // The item's lists and plugin bonuses, read once for the perks below.
+        bool read = false;
+        const auto readItem = [&]() noexcept {
+            if (read) return;
             PluginListValues(item, plugin);
-            AllPairs(item, pairs);
+            ListTotals(item, totals);
+            read = true;
+        };
+        if (item == mirrored) {
+            readItem();
+            AllPairs(totals, pairs);
             for (const StatKey& key : pairs) {
                 if (static_cast<std::uint64_t>(key.stat) >= rows) continue;
-                AddValue(wanted[h], key.stat, key.layer, OwnValue(item, key, plugin) * Settings.mirror.percent / 100);
+                AddValue(wanted[h], key.stat, key.layer, OwnValue(totals, key, plugin) * Settings.mirror.percent / 100);
             }
             ++mirroredRings;
         }
         if (equipped && amulet && ItemMatches(item, types->amulet)) {
-            PluginListValues(item, plugin);
-            ItemPairs(item, MaskAmulet, pairs);
+            readItem();
+            ItemPairs(totals, MaskAmulet, pairs);
             for (const StatKey& key : pairs) {
                 if (static_cast<std::uint64_t>(key.stat) >= rows) continue;
-                AddValue(wanted[h], key.stat, key.layer, OwnValue(item, key, plugin) * Settings.amulet.percent / 100);
+                AddValue(wanted[h], key.stat, key.layer, OwnValue(totals, key, plugin) * Settings.amulet.percent / 100);
             }
         }
         if (equipped && ring && ItemMatches(item, types->ring)) {
-            PluginListValues(item, plugin);
-            ItemPairs(item, MaskRing, pairs);
+            readItem();
+            ItemPairs(totals, MaskRing, pairs);
             for (const StatKey& key : pairs) {
                 if (static_cast<std::uint64_t>(key.stat) >= rows) continue;
-                const std::int64_t own = OwnValue(item, key, plugin);
+                const std::int64_t own = OwnValue(totals, key, plugin);
                 if (own != 0) ringTerms.push_back({ poolFor(key.stat), key.stat, key.layer, h, own * Settings.ring.percent * copies });
             }
             if (holders[h].counts) pooledRings += static_cast<std::uint32_t>(copies);
@@ -3469,10 +3502,10 @@ void ProcessCharacter(BonusSide& side, void* game, void* player) noexcept {
             // stats come from this item itself.
             hostValues.assign(effectValues.begin(), effectValues.end());
             if (ownSockets) {
-                PluginListValues(item, plugin);
+                readItem();
                 for (std::size_t e = 0; e < EffectStats.size() && e < hostValues.size(); ++e) {
                     if (!EffectStats[e].ownSockets) continue;
-                    hostValues[e] = HostEffectValue(item, EffectStats[e].stat, plugin, rows);
+                    hostValues[e] = HostEffectValue(totals, EffectStats[e].stat, plugin, rows);
                     if (hostValues[e] != 0) ++carriers[e];
                 }
             }
@@ -3548,7 +3581,8 @@ void ProcessCharacter(BonusSide& side, void* game, void* player) noexcept {
         const std::int32_t selfPercent = GemPercent(perks);
         if (percent == 0 && selfPercent == 0) continue;
         PluginListValues(c.item, plugin);
-        ItemPairs(c.item, MaskSocketed, pairs);
+        ListTotals(c.item, totals);
+        ItemPairs(totals, MaskSocketed, pairs);
         for (const StatKey& key : pairs) {
             if (static_cast<std::uint64_t>(key.stat) >= rows) continue;
             const std::int32_t keyPercent = (MaskOf(key.stat) & MaskEffect) != 0 ? selfPercent : percent;
@@ -3556,7 +3590,7 @@ void ProcessCharacter(BonusSide& side, void* game, void* player) noexcept {
             // A jewel's only plugin list is its Primordial Jewels modifier, which
             // its percent raises too (Amplification, and Gem Effect when its
             // types include jewels; a jewel gets no other gem perk).
-            std::int64_t own = OwnValue(c.item, key, plugin);
+            std::int64_t own = OwnValue(totals, key, plugin);
             if (c.primordial) own += Lookup(plugin, key.stat, key.layer);
             if (own != 0) gemTerms.push_back({ PoolFor(holders, c.holder, key.stat), key.stat, key.layer, c.holder, own * keyPercent * c.copies });
         }

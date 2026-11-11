@@ -1,0 +1,5 @@
+Stat	*ID	*Notes	Send Other	Signed	Send Bits	Send Param Bits	UpdateAnimRate	Saved	CSvSigned	CSvBits	CSvParam	fCallback	fMin	MinAccr	Encode	Add	Multiply	ValShift	1.09-Save Bits	1.09-Save Add	Save Bits	Save Add	Save Param Bits	keepzero	op	op param	op base	op stat1	op stat2	op stat3	direct	maxstat	damagerelated	itemevent1	itemeventfunc1	itemevent2	itemeventfunc2	descpriority	descfunc	descval	descstrpos	descstrneg	descstr2	dgrp	dgrpfunc	dgrpval	dgrpstrpos	dgrpstrneg	dgrpstr2	stuff	advdisplay	*eol
+ascendancy	1064				8			1	0	8																																										0
+ascendancy_progress	1065				8			1	0	8																																										0
+ascendancy_soulstones	1066				8			1	0	8																																										0
+ascendancy_orb	1067				8			1	0	8																																										0

@@ -21,6 +21,9 @@
 //                              Whirlwind
 //   whirlwind_hit_interval     a new formula for the frames between a
 //                              player's Whirlwind hits (off by default)
+//   pierce_idx_while_whirlwinding
+//                              every few Whirlwind hits count as one attack
+//                              for pierce_idx, on the server and the client
 //
 // Every address is an RVA against the executable base. Nothing is written
 // unless the bytes at the site, and at every game function the part calls,
@@ -439,6 +442,48 @@ constexpr Witness HitIntervalWitnesses[] = {
 	{0x56AC00ULL, W_IntervalHelper_56AC00, 399, "IntervalHelper"},
 };
 
+// pierce_idx while Whirlwinding. Read out of the 3.3.93847 image as hosted by
+// D2RLoader 1.3.1.
+// pierce_idx (stat 328) goes up by 1 only when a player starts an attack or a
+// cast. Server: in the mode starts 0042D2C0 (at a location) and 0042D020 (on a
+// unit), at 0042D39E and 0042D240. Client: in the command issuer 000FABE0 at
+// 000FB004 (W_IssuerTail_FAFFE), and in 0012A7C0, which starts an attack the
+// server ordered, at 0012A852 (below). Every site reads the base value through
+// 002F48C0(unit, 328, 0) and writes it plus 1 through 002F7D10(unit, 328,
+// value, 0), so the client keeps its own copy, raised at the same moments as
+// the server's.
+// 0012A842..0012A870, in 0012A7C0: the mode start 000FB730, then the read at
+// 0012A852 and the write at 0012A867, rcx = rbx = unit.
+constexpr std::uint8_t W_OrderedAttackPierce_12A842[] = {0xE8,0xE9,0x0E,0xFD,0xFF,0x45,0x33,0xC0,0xBA,0x48,0x01,0x00,0x00,0x48,0x8B,0xCB,0xE8,0x69,0xA0,0x1C,0x00,0x44,0x0F,0xB7,0xCF,0xBA,0x48,0x01,0x00,0x00,0x48,0x8B,0xCB,0x44,0x8D,0x40,0x01,0xE8,0xA4,0xD4,0x1C,0x00,0x44,0x8D,0x4F,0x01};
+// Server: at 0056924A, inside W_TickHead_5691C4, the Whirlwind do-function
+// 00568F40 calls the target search 004331D0(game, unit, 0, 0, 5, 3, GUID of
+// the last unit struck, 0) at the top of every strike, whether a target is in
+// range or not: once per hit frame, twice when both hands strike. rcx = r13 =
+// game, rdx = rbx = unit, the four stack arguments at rsp+20h..38h
+// (00569225..00569242).
+// 002F48C0 / 002F7D10: jmp qword [rip+disp32] into D2RCore ReadWideUnitBaseStat
+// and SetWideUnitStat, then the loader's four NOPs. disp32 is loader-owned.
+constexpr std::uint8_t W_StatThunkHead[] = {0xFF,0x25};
+constexpr std::uint8_t W_StatThunkPad[] = {0x90,0x90,0x90,0x90};
+constexpr Witness PierceClientWitnesses[] = {
+	{0x0FAFFEULL, W_IssuerTail_FAFFE, 52, "IssuerTail"},
+	{0x12A842ULL, W_OrderedAttackPierce_12A842, 46, "OrderedAttack"},
+	{0x230A90ULL, W_LocalPlayer_230A90, 68, "LocalPlayer"},
+	{0x34A330ULL, W_GetUnitId_34A330, 46, "GetUnitId"},
+	{0x2F48C0ULL, W_StatThunkHead, 2, "ReadBaseStatThunk"},
+	{0x2F48C6ULL, W_StatThunkPad, 4, "ReadBaseStatThunk"},
+	{0x2F7D10ULL, W_StatThunkHead, 2, "SetStatThunk"},
+	{0x2F7D16ULL, W_StatThunkPad, 4, "SetStatThunk"},
+};
+constexpr Witness PierceServerWitnesses[] = {
+	{0x5691C4ULL, W_TickHead_5691C4, 156, "TickHead"},
+	{0x34A330ULL, W_GetUnitId_34A330, 46, "GetUnitId"},
+	{0x2F48C0ULL, W_StatThunkHead, 2, "ReadBaseStatThunk"},
+	{0x2F48C6ULL, W_StatThunkPad, 4, "ReadBaseStatThunk"},
+	{0x2F7D10ULL, W_StatThunkHead, 2, "SetStatThunk"},
+	{0x2F7D16ULL, W_StatThunkPad, 4, "SetStatThunk"},
+};
+
 // ---------------------------------------------------------------------------
 // Part bookkeeping
 // ---------------------------------------------------------------------------
@@ -464,6 +509,8 @@ enum class Part : std::size_t {
 	GoldWhileWhirlwindingClient,
 	CycloneController,
 	WhirlwindHitInterval,
+	PierceIdxClient,
+	PierceIdxServer,
 	Count,
 };
 
@@ -486,6 +533,8 @@ constexpr std::array<const char*, static_cast<std::size_t>(Part::Count)> PartNam
 	"Gold while Whirlwinding (client)",
 	"Cyclone (controller)",
 	"Whirlwind hit interval (server)",
+	"pierce_idx while Whirlwinding (client)",
+	"pierce_idx while Whirlwinding (server)",
 };
 
 std::array<PartState, static_cast<std::size_t>(Part::Count)> g_parts {};
@@ -504,7 +553,7 @@ auto PartIs(Part part, PartState state) noexcept -> bool {
 
 constexpr const char* DefaultConfigToml = R"toml(# Whirlwind - Whirlwind rework for Diablo II: Resurrected 3.3
 #
-# Eleven parts, each behind its own switch:
+# Twelve parts, each behind its own switch:
 #   [ctc_while_uninterruptible]  item procs (chance to cast) fire while the
 #                                caster is Uninterruptible, optionally filtered
 #   [proc_start_fix]             a proc no longer takes over the caster's skill
@@ -527,6 +576,9 @@ constexpr const char* DefaultConfigToml = R"toml(# Whirlwind - Whirlwind rework 
 #                                Whirlwind
 #   [whirlwind_hit_interval]     a new formula for the frames between a
 #                                player's Whirlwind hits (off by default)
+#   [pierce_idx_while_whirlwinding]
+#                                every few Whirlwind hits count as one attack
+#                                for pierce_idx
 #
 # Safety: the plugin verifies the original bytes of every site it touches, and
 # of every game function it calls, before it installs anything. On a game build
@@ -822,6 +874,48 @@ max_rate = 300
 # max_rate is lowered to max_rate.
 # Default: 15
 min_rate = 15
+
+
+[pierce_idx_while_whirlwinding]
+
+# pierce_idx (stat 328) is the game's attack counter. It goes up by 1 each time
+# a player starts an attack or a cast, softcode reads it for "every Nth attack"
+# effects, and the game seeds missile pierce rolls with it. A Whirlwind is one
+# cast, so the counter stays where the cast left it for as long as the
+# Whirlwind lasts, and with cyclone that can be forever. With this on, every
+# hits_per_attack Whirlwind hits count as one attack: once a value has lasted
+# that many hits, the counter goes up by 1 right before the next hit strikes,
+# so that hit already sees the new value.
+#
+# What counts as a hit:
+#   - one Whirlwind hit frame. When both hands strike in the same frame, that
+#     is one hit.
+#   - a hit with nothing in range still counts, the same way a normal swing
+#     that misses still counts as an attack.
+#   - the cast itself already counted as an attack, so every new Whirlwind
+#     starts over: its first hits_per_attack hits keep the value the cast gave.
+#   - players only, with or without cyclone, for every skill that uses
+#     Whirlwind's server do-function (srvdofunc 76). Monsters never count.
+#
+# An effect that checks pierce_idx on every hit keeps the same share of hits:
+# with 3 here and an "every 3rd attack" check, 3 hits in a row out of every 9
+# get it, instead of 1 out of every 3. A one-shot "every Nth attack" effect
+# that is checked on hit fires on each of those 3 hits.
+#
+# The client keeps its own copy of pierce_idx, which the game raises at the
+# same moments as the server's, so the two always match. Every raise this part
+# makes on the server is added to the client's copy right before the client
+# raises it itself (your next attack or cast), so they keep matching. If the
+# client part cannot be installed, the server part is not installed either.
+# The whirlwind console command shows how many hits were counted, how many
+# raises the server made and how many reached the client's copy.
+# Sites: RVA 0056924A (server); RVA 000FB004, 0012A852 (client).
+# Default: true
+enabled = true
+
+# Whirlwind hits that count as one attack. 1 raises pierce_idx on every hit.
+# Default: 3
+hits_per_attack = 3
 )toml";
 
 struct Config {
@@ -848,6 +942,8 @@ struct Config {
 	int  minFrames          = 6;
 	int  maxRate            = 300;
 	int  minRate            = 15;
+	bool pierceEnabled      = true;
+	int  pierceHitsPerAttack = 3;
 };
 
 Config                      g_config {};
@@ -945,7 +1041,7 @@ void LoadConfiguration(const D2RL::PluginContext* context) noexcept {
 	if (!context->EnsureConfig(DefaultConfigToml)) {
 		context->LogWarn("Could not create or open celestialrayone.whirlwind.toml. Built-in defaults are used.");
 	}
-	static std::array<char, 16384> buffer {};
+	static std::array<char, 32768> buffer {};
 	std::uint32_t                  required = 0;
 	if (!context->ReadConfig(buffer.data(), static_cast<std::uint32_t>(buffer.size() - 1), &required)) {
 		context->LogWarn("Could not read celestialrayone.whirlwind.toml. Built-in defaults are used.");
@@ -977,6 +1073,8 @@ void LoadConfiguration(const D2RL::PluginContext* context) noexcept {
 		ReadInt(t, "whirlwind_hit_interval", "min_frames", g_config.minFrames, 0, 250);
 		ReadInt(t, "whirlwind_hit_interval", "max_rate", g_config.maxRate, 1, 1000);
 		ReadInt(t, "whirlwind_hit_interval", "min_rate", g_config.minRate, 1, 1000);
+		ReadBool(t, "pierce_idx_while_whirlwinding", "enabled", g_config.pierceEnabled);
+		ReadInt(t, "pierce_idx_while_whirlwinding", "hits_per_attack", g_config.pierceHitsPerAttack, 1, 1000);
 	}
 	if (g_config.minRate > g_config.maxRate) {
 		g_config.minRate = g_config.maxRate;
@@ -993,6 +1091,7 @@ void LoadConfiguration(const D2RL::PluginContext* context) noexcept {
 	D2RL::LogInfoF(context, "config: hit_interval=%d attackrate_weight=%d interval_stretch=%d min_frames=%d max_rate=%d min_rate=%d",
 		g_config.hitIntervalEnabled, g_config.attackRateWeight, g_config.intervalStretch, g_config.minFrames, g_config.maxRate,
 		g_config.minRate);
+	D2RL::LogInfoF(context, "config: pierce_idx=%d hits_per_attack=%d", g_config.pierceEnabled, g_config.pierceHitsPerAttack);
 }
 
 // ---------------------------------------------------------------------------
@@ -1026,6 +1125,8 @@ constexpr std::size_t RelaySequenceFallback = 0x140;
 constexpr std::size_t RelayClickGate        = 0x160;
 constexpr std::size_t RelayControllerUpdate = 0x180;
 constexpr std::size_t RelayHitInterval      = 0x1A0;   // 0x40 bytes
+constexpr std::size_t RelayPierceStrike     = 0x1E0;
+constexpr std::size_t RelayPierceRead       = 0x200;
 
 std::uint8_t* g_relayPage = nullptr;
 
@@ -1201,6 +1302,12 @@ struct Native {
 	std::uint8_t (*modeCheck)(void*, std::int32_t)                      = nullptr; // 000F99B0
 	std::int64_t (*setNeutral)(void*, std::int32_t)                     = nullptr; // 000F9860
 	std::int64_t (*procTail)(void*, std::int32_t)                       = nullptr; // 0034E790
+	void* (*targetSearch)(void*, void*, std::int64_t, std::int64_t, std::int64_t, std::int64_t, std::int64_t, std::int64_t) = nullptr; // 004331D0
+	// pierce_idx while Whirlwinding: D2RLoader jumps into D2RCore
+	// ReadWideUnitBaseStat and SetWideUnitStat, called the way the native raise
+	// calls them (0042D39E / 0042D3B3).
+	std::int32_t (*readBaseStat)(void*, std::int32_t, std::int32_t)      = nullptr; // 002F48C0
+	void (*writeStat)(void*, std::int32_t, std::int32_t, std::int32_t)   = nullptr; // 002F7D10
 };
 
 Native g_native {};
@@ -1259,6 +1366,9 @@ void BindNatives(std::uintptr_t base) noexcept {
 	Bind(g_native.modeCheck, base, 0x0F99B0);
 	Bind(g_native.setNeutral, base, 0x0F9860);
 	Bind(g_native.procTail, base, 0x34E790);
+	Bind(g_native.targetSearch, base, 0x4331D0);
+	Bind(g_native.readBaseStat, base, 0x2F48C0);
+	Bind(g_native.writeStat, base, 0x2F7D10);
 }
 
 auto IsWhirlwindSkill(void* skill) noexcept -> bool {
@@ -2279,6 +2389,170 @@ std::int32_t __fastcall WhirlwindHitInterval(void* unit, std::int32_t attackRate
 }
 
 // ---------------------------------------------------------------------------
+// pierce_idx while Whirlwinding
+// ---------------------------------------------------------------------------
+
+constexpr std::int32_t StatPierceIdx = 328; // itemstatcost.txt pierce_idx, 0042D393: mov edx,148h
+
+bool g_pierceServerActive = false;
+
+std::atomic<std::uint64_t> g_pierceHits {0};
+std::atomic<std::uint64_t> g_pierceRaises {0};
+std::atomic<std::uint64_t> g_pierceClientAdded {0};
+std::atomic<std::uint64_t> g_pierceClientDropped {0};
+
+// Raises the server made that the client's copy has not received yet. High
+// half: the player's unit id plus 1, 0 when empty. Low half: how many. The
+// server thread adds to it, the client thread takes from it.
+std::atomic<std::uint64_t> g_pierceForClient {0};
+
+// Server thread only: one counter per player.
+struct PierceCounter {
+	void*         unit      = nullptr;
+	void*         game      = nullptr;
+	std::uint32_t lastFrame = 0;   // game frame of the last hit counted
+	std::int32_t  value     = 0;   // pierce_idx as this counter last saw or left it
+	std::int32_t  hits      = 0;   // hits made with that value
+};
+
+std::array<PierceCounter, 8> g_pierceCounters {};
+std::size_t                  g_pierceNextCounter = 0;
+
+auto FreePierceCounter() noexcept -> PierceCounter& {
+	for (PierceCounter& c : g_pierceCounters) {
+		if (c.unit == nullptr) {
+			return c;
+		}
+	}
+	PierceCounter& oldest = g_pierceCounters[g_pierceNextCounter];
+	g_pierceNextCounter   = (g_pierceNextCounter + 1) % g_pierceCounters.size();
+	return oldest;
+}
+
+void PassRaiseToClient(void* unit) noexcept {
+	const std::uint32_t id = g_native.getUnitId(unit);
+	if (id == 0xFFFFFFFFU) {
+		return;
+	}
+	const std::uint64_t key     = static_cast<std::uint64_t>(id) + 1;
+	std::uint64_t       current = g_pierceForClient.load(std::memory_order_relaxed);
+	for (;;) {
+		const std::uint64_t next = (current >> 32) == key ? current + 1 : ((key << 32) | 1);
+		if (g_pierceForClient.compare_exchange_weak(current, next, std::memory_order_acq_rel, std::memory_order_relaxed)) {
+			return;
+		}
+	}
+}
+
+// One Whirlwind hit frame of a player. The first strike of the frame counts;
+// the second strike of a dual-wield hit comes in the same frame and does not.
+// A pierce_idx that is not where this counter left it was moved by a cast (the
+// mode starts raise it before the skill starts), so that hit is the first one
+// with the new value. After hits_per_attack hits with one value, the next hit
+// raises it before it strikes, with the same read and write plus 1 the mode
+// starts make.
+void CountWhirlwindHit(void* game, void* unit) noexcept {
+	const std::uint32_t frame   = GameFrame(game);
+	PierceCounter*      counter = nullptr;
+	for (PierceCounter& c : g_pierceCounters) {
+		if (c.unit == unit && c.game == game) {
+			counter = &c;
+			break;
+		}
+	}
+	if (counter != nullptr && counter->lastFrame == frame) {
+		return;
+	}
+	const std::int32_t value = g_native.readBaseStat(unit, StatPierceIdx, 0);
+	g_pierceHits.fetch_add(1, std::memory_order_relaxed);
+	if (counter == nullptr || frame < counter->lastFrame || value != counter->value) {
+		if (counter == nullptr) {
+			counter = &FreePierceCounter();
+		}
+		counter->unit      = unit;
+		counter->game      = game;
+		counter->lastFrame = frame;
+		counter->value     = value;
+		counter->hits      = 1;
+		return;
+	}
+	counter->lastFrame = frame;
+	if (++counter->hits <= g_config.pierceHitsPerAttack) {
+		return;
+	}
+	g_native.writeStat(unit, StatPierceIdx, value + 1, 0);
+	counter->value = value + 1;
+	counter->hits  = 1;
+	g_pierceRaises.fetch_add(1, std::memory_order_relaxed);
+	PassRaiseToClient(unit);
+}
+
+// Redirected call at 0056924A: the target search at the top of every strike of
+// the Whirlwind do-function 00568F40. Counts the hit, then searches exactly as
+// the game would; all eight arguments go through untouched.
+void* __fastcall OnWhirlwindStrikeSearch(void* game, void* unit, std::int64_t a3, std::int64_t a4, std::int64_t a5,
+	std::int64_t a6, std::int64_t a7, std::int64_t a8) noexcept {
+	if (g_pierceServerActive && game != nullptr && unit != nullptr && UnitType(unit) == 0) {
+		CountWhirlwindHit(game, unit);
+	}
+	return g_native.targetSearch(game, unit, a3, a4, a5, a6, a7, a8);
+}
+
+// Client thread only.
+struct ClientPierce {
+	void*        unit      = nullptr;
+	std::int32_t nextValue = 0;   // the value this side left, plus the raise that follows it
+};
+
+ClientPierce g_clientPierce {};
+
+// Adds the raises the server made to the local player's client copy, right
+// before the client raises that copy itself. pierce_idx is not saved, so both
+// copies start every game at 0, and within a game the client's copy only goes
+// up. A different local player unit, or a value below the one this side left,
+// means a new game: whatever is still waiting belongs to the old one.
+void AddServerRaisesToClient(void* unit) noexcept {
+	if (UnitType(unit) != 0 || unit != LocalPlayer()) {
+		return;
+	}
+	const std::uint32_t id      = g_native.getUnitId(unit);
+	const std::int32_t  value   = g_native.readBaseStat(unit, StatPierceIdx, 0);
+	const bool          newGame = unit != g_clientPierce.unit || value < g_clientPierce.nextValue;
+	std::uint32_t       taken   = 0;
+	if (id != 0xFFFFFFFFU) {
+		const std::uint64_t key     = static_cast<std::uint64_t>(id) + 1;
+		std::uint64_t       current = g_pierceForClient.load(std::memory_order_acquire);
+		while ((current >> 32) == key && (current & 0xFFFFFFFFULL) != 0) {
+			if (g_pierceForClient.compare_exchange_weak(current, key << 32, std::memory_order_acq_rel, std::memory_order_acquire)) {
+				taken = static_cast<std::uint32_t>(current & 0xFFFFFFFFULL);
+				break;
+			}
+		}
+	}
+	std::int32_t synced = value;
+	if (taken != 0) {
+		if (newGame) {
+			g_pierceClientDropped.fetch_add(taken, std::memory_order_relaxed);
+		} else {
+			synced = value + static_cast<std::int32_t>(taken);
+			g_native.writeStat(unit, StatPierceIdx, synced, 0);
+			g_pierceClientAdded.fetch_add(taken, std::memory_order_relaxed);
+		}
+	}
+	g_clientPierce.unit      = unit;
+	g_clientPierce.nextValue = synced + 1; // both client sites raise right after their read
+}
+
+// Redirected calls at 000FB004 and 0012A852: the client's own pierce_idx read,
+// right before it writes that value plus 1.
+std::int32_t __fastcall OnClientPierceRead(void* unit, std::int32_t stat, std::int32_t layer) noexcept {
+	if (stat == StatPierceIdx && layer == 0 && unit != nullptr) {
+		AddServerRaisesToClient(unit);
+	}
+	return g_native.readBaseStat(unit, stat, layer);
+}
+
+// ---------------------------------------------------------------------------
 // Installation
 // ---------------------------------------------------------------------------
 
@@ -2307,6 +2581,19 @@ constexpr CallSite SiteUseItemState     {0x4F4140, {0xE8, 0x6B, 0x10, 0xE4, 0xFF
 constexpr CallSite SiteItemLockState    {0x1C738C, {0xE8, 0x1F, 0xDE, 0x16, 0x00}, RelayItemLockState};
 constexpr CallSite SiteClickGate        {0x0FE689, {0xE8, 0x32, 0xC2, 0xF9, 0xFF}, RelayClickGate};
 constexpr CallSite SiteControllerUpdate {0x14B89D, {0xE8, 0x9E, 0x0C, 0x00, 0x00}, RelayControllerUpdate};
+constexpr CallSite SitePierceStrike     {0x56924A, {0xE8, 0x81, 0x9F, 0xEC, 0xFF}, RelayPierceStrike};
+constexpr CallSite SitePierceIssuer     {0x0FB004, {0xE8, 0xB7, 0x98, 0x1F, 0x00}, RelayPierceRead};
+constexpr CallSite SitePierceOrdered    {0x12A852, {0xE8, 0x69, 0xA0, 0x1C, 0x00}, RelayPierceRead};
+
+// Where a call site's rel32 lands.
+constexpr auto CallTarget(const CallSite& site) noexcept -> std::uint64_t {
+	const std::uint32_t raw = static_cast<std::uint32_t>(site.original[1]) | (static_cast<std::uint32_t>(site.original[2]) << 8)
+		| (static_cast<std::uint32_t>(site.original[3]) << 16) | (static_cast<std::uint32_t>(site.original[4]) << 24);
+	return site.rva + 5 + static_cast<std::uint64_t>(static_cast<std::int64_t>(static_cast<std::int32_t>(raw)));
+}
+static_assert(CallTarget(SitePierceStrike) == 0x4331D0, "0056924A calls the target search");
+static_assert(CallTarget(SitePierceIssuer) == 0x2F48C0, "000FB004 calls the base stat read");
+static_assert(CallTarget(SitePierceOrdered) == 0x2F48C0, "0012A852 calls the base stat read");
 
 auto PrepareRelayPage(const D2RL::PluginContext* context) noexcept -> bool {
 	const auto base = static_cast<std::uintptr_t>(context->exeBase);
@@ -2327,6 +2614,8 @@ auto PrepareRelayPage(const D2RL::PluginContext* context) noexcept -> bool {
 	WriteAbsoluteJump(g_relayPage + RelayItemLockState, reinterpret_cast<std::uint64_t>(&OnItemUseLockStateCheck));
 	WriteAbsoluteJump(g_relayPage + RelayClickGate, reinterpret_cast<std::uint64_t>(&OnClickGate));
 	WriteAbsoluteJump(g_relayPage + RelayControllerUpdate, reinterpret_cast<std::uint64_t>(&OnControllerPlayerUpdate));
+	WriteAbsoluteJump(g_relayPage + RelayPierceStrike, reinterpret_cast<std::uint64_t>(&OnWhirlwindStrikeSearch));
+	WriteAbsoluteJump(g_relayPage + RelayPierceRead, reinterpret_cast<std::uint64_t>(&OnClientPierceRead));
 	// Dual wield: entered from the loop back-edge 005694B7 with rdi = &token+30h
 	// (reloaded at 005694B2). dec dword [rdi] turns "search after the GUID just
 	// struck" into "search from that GUID", then resume the loop at 00569220.
@@ -2680,6 +2969,35 @@ void InstallHitInterval(const D2RL::PluginContext* context) noexcept {
 	SetPart(Part::WhirlwindHitInterval, ok ? PartState::Installed : PartState::InstallFailed);
 }
 
+// The client part goes in first. A server that raises pierce_idx while the
+// client's copy cannot follow would leave the two apart, so the server part is
+// only installed once the client part is. Installed last of all parts: the
+// sites sit inside bytes other parts verify (W_TickHead_5691C4 for dual wield,
+// W_IssuerTail_FAFFE for cyclone).
+void InstallPierceIdx(const D2RL::PluginContext* context) noexcept {
+	if (!g_config.pierceEnabled) {
+		SetPart(Part::PierceIdxClient, PartState::DisabledByConfig);
+		SetPart(Part::PierceIdxServer, PartState::DisabledByConfig);
+		return;
+	}
+	const bool clientVerified = VerifyAll(context, PierceClientWitnesses, PartNames[static_cast<std::size_t>(Part::PierceIdxClient)]);
+	const bool clientOk       = clientVerified && RedirectCall(context, SitePierceIssuer) && RedirectCall(context, SitePierceOrdered);
+	if (!clientOk) {
+		SetPart(Part::PierceIdxClient, clientVerified ? PartState::InstallFailed : PartState::UnsupportedBuild);
+		SetPart(Part::PierceIdxServer, PartState::InstallFailed);
+		context->LogError("pierce_idx while Whirlwinding (server) NOT installed: it needs the client part, or the client's copy of pierce_idx would fall behind the server's.");
+		return;
+	}
+	SetPart(Part::PierceIdxClient, PartState::Installed);
+	if (!VerifyAll(context, PierceServerWitnesses, PartNames[static_cast<std::size_t>(Part::PierceIdxServer)])) {
+		SetPart(Part::PierceIdxServer, PartState::UnsupportedBuild);
+		return;
+	}
+	const bool ok        = RedirectCall(context, SitePierceStrike);
+	g_pierceServerActive = ok;
+	SetPart(Part::PierceIdxServer, ok ? PartState::Installed : PartState::InstallFailed);
+}
+
 void InstallCyclone(const D2RL::PluginContext* context) noexcept {
 
 	if (!g_config.cycloneEnabled) {
@@ -2776,6 +3094,12 @@ auto WhirlwindCommand(D2R::Game::Client*, const D2RL::ConsoleCommandContext* com
 		g_lastAttackRate.load(std::memory_order_relaxed), g_lastIasBonus.load(std::memory_order_relaxed),
 		g_lastRate.load(std::memory_order_relaxed), g_lastFrames.load(std::memory_order_relaxed));
 	context->WriteConsoleMessage(line);
+	std::snprintf(line, sizeof(line), "pierce_idx during Whirlwind: %llu hits counted, %llu raises on the server, %llu added to the client copy, %llu dropped at a new game",
+		static_cast<unsigned long long>(g_pierceHits.load(std::memory_order_relaxed)),
+		static_cast<unsigned long long>(g_pierceRaises.load(std::memory_order_relaxed)),
+		static_cast<unsigned long long>(g_pierceClientAdded.load(std::memory_order_relaxed)),
+		static_cast<unsigned long long>(g_pierceClientDropped.load(std::memory_order_relaxed)));
+	context->WriteConsoleMessage(line);
 	return D2RL::ConsoleCommandResult::Handled;
 }
 
@@ -2784,9 +3108,9 @@ constexpr D2RL::PluginInfo WhirlwindInfo {
 	.abiVersion  = D2RL_PLUGIN_ABI_VERSION,
 	.id          = "celestialrayone.whirlwind",
 	.name        = "Whirlwind",
-	.version     = "0.9.1",
+	.version     = "0.10.0",
 	.author      = "CelestialRayOne",
-	.description = "Whirlwind rework: procs while Uninterruptible, proc start fix, dual wield same target, cyclone steering (cursor and controller stick), death and potions while Whirlwinding, Whirlwind with bows, movement speed sync, pets follow during Whirlwind, Auto Gold Pickup during Whirlwind, optional Whirlwind hit interval formula.",
+	.description = "Whirlwind rework: procs while Uninterruptible, proc start fix, dual wield same target, cyclone steering (cursor and controller stick), death and potions while Whirlwinding, Whirlwind with bows, movement speed sync, pets follow during Whirlwind, Auto Gold Pickup during Whirlwind, optional Whirlwind hit interval formula, pierce_idx counting during Whirlwind.",
 	.flags       = D2RL::PluginFlags::Shared | D2RL::PluginFlags::NativeHooks,
 };
 
@@ -2834,6 +3158,7 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
 		InstallPetTrail(context);
 		InstallGold(context);
 		InstallHitInterval(context);
+		InstallPierceIdx(context);
 	} else {
 		SetPart(Part::ProcStartFix, PartState::InstallFailed);
 		SetPart(Part::DualWield, PartState::InstallFailed);
@@ -2850,6 +3175,8 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
 		SetPart(Part::GoldWhileWhirlwindingServer, PartState::InstallFailed);
 		SetPart(Part::GoldWhileWhirlwindingClient, PartState::InstallFailed);
 		SetPart(Part::WhirlwindHitInterval, g_config.hitIntervalEnabled ? PartState::InstallFailed : PartState::DisabledByConfig);
+		SetPart(Part::PierceIdxClient, g_config.pierceEnabled ? PartState::InstallFailed : PartState::DisabledByConfig);
+		SetPart(Part::PierceIdxServer, g_config.pierceEnabled ? PartState::InstallFailed : PartState::DisabledByConfig);
 	}
 	for (std::size_t i = 0; i < g_parts.size(); ++i) {
 		D2RL::LogInfoF(context, "%s: %s", PartNames[i], StateText(g_parts[i]));

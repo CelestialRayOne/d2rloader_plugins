@@ -195,20 +195,46 @@
 //  The values, recomputed from the item's own stats (with the plugin's list's
 //  values taken back out, so they never feed on themselves):
 //    weapon, p = bonus_percent:
-//      ED 17/18, elemental damage and every other scaled stat: own * p / 100
-//      flat damage 21/22, 23/24, 159/160: (total - base - base * ED / 100 - ours)
-//        * p / 100, base from 2F48C0, the ED term exactly as op 13 adds it
+//      every raised stat, flat damage, ED 17/18 and per-level damage included:
+//        own * p / 100, own = what the item's lists hold (ListTotals) - ours.
+//        A list holds modifiers only: never the item's base values, never
+//        what op 13 adds to the base damage or op 4/5 per level
 //    armor, p = bonus_percent:
 //      armorclass: (b + b * ED16 / 100) - (base + base * ED16 / 100),
 //        b = base + base * p / 100: the base defense raised by p, then the
 //        item's own enhanced defense on it, as if the item had dropped that way
+//  ED16 (and the ED Ethereal Weapons puts on its raise) is the value op 13
+//  multiplies with: the item's base value plus everything its lists hold, from
+//  2F48C0 and ListTotals. Never the item's full stats array: that is the
+//  engine's cache of each stat's total, and for a stat with an itemstatcost op
+//  the engine stops committing it there while an op target on the same item
+//  is not 0 (D2MOO sub_6FDB64A0, D2RCore +3DBEB0, see the enhanced-damage-fix
+//  plugin). A weapon's enhanced damage, an armor piece's enhanced defense and
+//  an equipped item's per-level damage are such stats: the cache holds no
+//  value for them, or a stale one.
 //  Every equipped item of a character in body locations 1 to 12 is checked
 //  (INVENTORY_GetItemFromBodyLoc 0x3886D0 on UNITS_GetInventory 0x34A360), so
 //  the swap weapons are ready when swapped in. An item that stops qualifying
 //  (unequipped, given to a hireling, perk unlearned) loses its list on the next
 //  pass; the plugin looks each one up again by id (SUNIT_GetServerUnit
-//  0x48FE80 on the host, CLIENT_GetUnitByIdAndType 0x9A5D0 on a client) and
-//  only touches a list it finds in that item's child chain.
+//  0x48FE80 on the host, CLIENT_GetUnitByIdAndType 0x9A5D0 on a client).
+//
+//  A kept list address is the plugin's own only while the list is still in
+//  that item's child chain, still carries flag 10000h and none of the game's
+//  item list flags (40h modifiers and runeword, 2000h set, 80000000h a
+//  socketed item's list), and still holds exactly the values last written to
+//  it. Being in the chain is not enough: when the server sends an item again,
+//  the client frees the item and every list on it and builds new ones, and the
+//  allocator hands a freed address straight to one of the new lists (the
+//  jeweler met this on 2026-10-24). Up to 1.3.6 the plugin then took the new
+//  runeword or magic list for its own: it overwrote the item's real modifiers
+//  with its shares, set to 0 the ones it no longer wanted (a runeword's poison
+//  pierce and bleed vanished, its enhanced damage dropped), and when the item
+//  left the slot it unlinked and freed that list while the item still pointed
+//  at it. Only the client's copy changed, so re-equipping (the server sends
+//  the item again) put it right, and a save never held it. Now a list that
+//  fails the test is never written, unlinked or freed: the address is
+//  forgotten and the item gets a new list.
 //
 //  Durability Defense and Modifier Magnitude use the same lists. Durability
 //  Defense raises base defense by its percent per point of the piece's
@@ -219,9 +245,8 @@
 //  both percents. Stats are handled per layer: for a stat with a parameter (a
 //  skill, a class, an aura, a proc) only the value of each parameter rises,
 //  the parameter stays, so +12 to a skill becomes +13 to the same skill. The
-//  layers an item carries come from its full stats array, read where
-//  D2RCore!VisitWideUnitStats reads it. item_charged_skill (204) is never
-//  raised: its value packs the charges and the maximum charges.
+//  layers an item carries come from its lists (ListTotals). item_charged_skill
+//  (204) is never raised: its value packs the charges and the maximum charges.
 //
 //  Passes run on D2RLoader's thread service: on the host's game thread every
 //  4 game updates for every player in the game (the server client registry,
@@ -284,7 +309,8 @@
 //  modifiers is doubled. The modifiers are the stats of the jewel's own
 //  modifier list, the one 0x43EF10 itself finds with 2F5B80 (item, state 0,
 //  flag 40h) for stat 356 (43F407): affixes, or a unique's properties, which
-//  the item saves. A modifier is what the tooltip shows as one line: the
+//  the item saves, and on a cube output the recipe's own properties (see
+//  below). A modifier is what the tooltip shows as one line: the
 //  damage pairs (17/18, 48/49, 50/51, 52/53, 54/55, 57/58, and 21-24/159/160
 //  together), an itemstatcost dgrp group when every member is present with the
 //  same value (all resistances, all attributes, ...), and every other stat and
@@ -296,6 +322,37 @@
 //  through 2F7C00 on that list, so the change is saved with the jewel.
 //  Gamble purchases count for these two while their gambling setting is on
 //  (the default).
+//
+//  Brilliant Quality on a cube output waits for the recipe's own properties
+//  (cubemain.txt mod 1 to mod 5). The generator adds them after the builder
+//  has returned, in the loop at 527970..527A02: each goes through 0x3D3420,
+//  which hands it to 0x3D5060 with state 0 and flag 40h, so 0x3D5230 finds
+//  the jewel's modifier list through the same 2F5B80 (item, 0, 40h). A roll
+//  inside the 0x43EF10 hook therefore never saw them. Two jumps to relays
+//  move the roll for cube outputs behind them:
+//      5275DF  48 C7 45 44 04 00 00 00   mov  qword ptr [rbp+44h], 4   ; relay 8
+//      527A08  B8 00 02 00 00            mov  eax, 200h               ; relay 9
+//  5275DF is in the straight-line setup of the cube's item request
+//  (52752B..5275F1), which only usetype, item code and item type outputs run:
+//  useitem outputs, "mod" outputs (+5Eh bit 0, tested at 526D6F) and
+//  cloneitem outputs never reach it. Relay 8 replays the store and records the
+//  request, rbp+20h, which is the very pointer the builder passes on to
+//  0x43EF10 (43CD6E mov rsi,rdx ... 43CF12 mov r8,rsi), with the game from
+//  [rbp-80h]. The hook holds the roll for the item built with that request
+//  instead of rolling at once. Every full build ends the mark, so a request
+//  that was set up but never built (a unique the player may carry only one
+//  of) cannot leave a stale one behind.
+//  527A08 is where the recipe mod loop and its skip branch (je at 527960)
+//  join, before sockets, repair, recharge, placement and the client packets.
+//  Relay 9 hands over the game [rbp-80h], the output record r15 (flags
+//  +5Eh, type +67h, as 526D6F and 527104 read them) and the output's item
+//  [rbp + [rsp+54h]*8 + 120h], as 527A18 reloads it, then replays the mov.
+//  CubeOutputReady rolls the held jewel there when that output built it: the
+//  same item, type FFh, FDh or FCh, no "mod". Both relays keep every volatile
+//  register (xmm0 to xmm5 included); flags are dead at both sites. D2RLoader's
+//  own jumps in the generator (527461, 527966) and the clone-item plugin's
+//  checked ranges are untouched. If either site fails its check, Brilliant
+//  Quality keeps rolling in the hook and the console says so.
 //
 //  Gambling builds the item for the vendor too, so it needs its own context.
 //  The purchase 0x53D850 (game, player, vendor, ...) homes the player at
@@ -349,6 +406,38 @@
 //  the same carrier as Unbreakable Gear's bonus.
 //
 // -----------------------------------------------------------------------------
+//  PASSES THAT STAY ALIVE, AND THE SYNC CHECK
+// -----------------------------------------------------------------------------
+//  The host's lists feed combat, the client's feed the character sheet and the
+//  tooltips, and both feed NPC prices, which count every stat in an item's full
+//  stats. The server no longer needs the client's repair quote to match its own
+//  price: the memory patch server_priced_repairs.json makes the repair handler
+//  0x53FE00 charge its own price (1.3.5's repair hooks are gone with it). The
+//  two sides' lists must still hold the same values for the sheet to show what
+//  combat uses.
+//
+//  Both passes keep going by queueing their next tick from the current one. Up
+//  to 1.3.3 a queue call that did not succeed ended that chain, and only the
+//  next LocalPlayerReady (the next game) started it again. That side's lists
+//  then stood still while the other side's kept following durability (Durability
+//  Defense, Unbreakable Gear's pool) and every other input. Now:
+//    - every tick records when it ran;
+//    - the client tick starts a new host chain when the host chain has ended or
+//      has not run for HostStallMs (a remote TCP/IP client has no host chain and
+//      stops trying once the thread service says Unavailable);
+//    - the host tick starts a new client chain when the client chain has ended;
+//    - act and level changes start any chain that is not running.
+//  A new chain takes a new id, and an older tick still queued stops at its next
+//  run, so two chains never both run passes.
+//
+//  Console "blacksmith sync", in a game this process hosts, compares the host
+//  and client copies of the local character's equipped gear: per item, every
+//  entry of its full stats (what the repair price reads), its base stats, its
+//  stat lists and this plugin's bonus list. The host copy is read on the game
+//  thread and the client copy on the UI thread, never across threads. Every
+//  difference goes to the console and the plugin log as stat:layer=value.
+//
+// -----------------------------------------------------------------------------
 //  ITEM TYPES
 // -----------------------------------------------------------------------------
 //  ITEMS_CheckItemTypeId 0x373890 (item, type) tests the item's two items.txt
@@ -387,7 +476,7 @@
 namespace CelestialRayOne::Blacksmith {
 namespace {
 
-constexpr char PluginVersion[] = "1.3.1";
+constexpr char PluginVersion[] = "1.3.7";
 
 constexpr const char DefaultConfigToml[] = R"TOML(# celestialrayone.blacksmith
 #
@@ -756,8 +845,10 @@ gambling = true
 #   damage, an itemstatcost dgrp group whose members all have the same value
 #   (all resistances, all attributes), or any other single stat. Skill on
 #   event procs and charges are never picked. The doubled value is saved
-#   with the jewel. A crafted jewel's fixed recipe mods are added after this
-#   roll and are not candidates.
+#   with the jewel. On a cube output the roll waits until the recipe's own
+#   properties (mod 1 to mod 5) are on the jewel, so they are candidates too:
+#   a recipe's +1 to all skills can become +2. Only cube outputs that make a
+#   new jewel roll it; a "useitem" output keeps its jewel and never does.
 #   qualities: which jewels can roll it (magic, rare, crafted, unique, set).
 #   exclude_stats: itemstatcost ids that are never doubled.
 #   gambling = false leaves jewels bought from a gamble screen out.
@@ -984,6 +1075,72 @@ constexpr std::uint8_t CodeToClassCall[]{
     0x83, 0xF8, 0xFF,
 };
 constexpr std::uint64_t CodeToClassCallRva = 0x43FDDA;
+
+// The cube output routine 0x5269C0, for Brilliant Quality on cube outputs:
+// the item request setup holding relay 8's site (rbp+20h is the request,
+// player at +00h, game at +10h), the build call that passes rbp+20h on,
+// the recipe mod loop (each mod through 0x3D3420) with relay 9's site and the
+// item reload after it, the skip branch into that site, and the output's
+// "mod" flag and type reads.
+// 52752B..5275F3 (200 bytes)
+constexpr std::uint8_t CubeRequestWindow[]{
+    0x33, 0xC0, 0x48, 0x89, 0x45, 0x28, 0x0F, 0x57, 0xC0, 0x89, 0x45, 0x3C, 0x48, 0x89, 0x85, 0xBC,
+    0x00, 0x00, 0x00, 0x89, 0x85, 0xC4, 0x00, 0x00, 0x00, 0x48, 0x89, 0x85, 0xE0, 0x00, 0x00, 0x00,
+    0x0F, 0x11, 0x45, 0x5C, 0x48, 0x89, 0x75, 0x20, 0x0F, 0x11, 0x45, 0x6C, 0x4C, 0x89, 0x45, 0x30,
+    0x0F, 0x11, 0x45, 0x7C, 0x41, 0x0F, 0xB7, 0xD7, 0x0F, 0x11, 0x85, 0x8C, 0x00, 0x00, 0x00, 0x0F,
+    0x11, 0x85, 0x9C, 0x00, 0x00, 0x00, 0x0F, 0x11, 0x85, 0xAC, 0x00, 0x00, 0x00, 0x41, 0x0F, 0xB7,
+    0x80, 0x28, 0x01, 0x00, 0x00, 0x66, 0x89, 0x45, 0x5A, 0xB8, 0x01, 0x00, 0x00, 0x00, 0x66, 0x89,
+    0x45, 0x58, 0x41, 0x0F, 0xB6, 0xC4, 0x89, 0x45, 0x60, 0x0F, 0xB7, 0x43, 0x6B, 0x89, 0x85, 0xC8,
+    0x00, 0x00, 0x00, 0x0F, 0xB7, 0x43, 0x6D, 0x89, 0x85, 0xCC, 0x00, 0x00, 0x00, 0x0F, 0xB7, 0x43,
+    0x6F, 0x89, 0x85, 0xD0, 0x00, 0x00, 0x00, 0x0F, 0xB7, 0x43, 0x71, 0x89, 0x85, 0xD4, 0x00, 0x00,
+    0x00, 0x0F, 0xB7, 0x43, 0x73, 0x89, 0x4D, 0x4C, 0x48, 0x89, 0x4D, 0x50, 0x0F, 0xB7, 0x4B, 0x5E,
+    0x89, 0x85, 0xD8, 0x00, 0x00, 0x00, 0x0F, 0xB7, 0x43, 0x75, 0x89, 0x85, 0xDC, 0x00, 0x00, 0x00,
+    0x44, 0x89, 0x75, 0x40, 0x48, 0xC7, 0x45, 0x44, 0x04, 0x00, 0x00, 0x00, 0x89, 0x55, 0x70, 0x44,
+    0x89, 0x6D, 0x38, 0xF6, 0xC1, 0x02, 0x74, 0x6F,
+};
+constexpr std::uint64_t CubeRequestWindowRva = 0x52752B;
+
+// 527828..52783C (20 bytes)
+constexpr std::uint8_t CubeBuildCall[]{
+    0x44, 0x8B, 0x65, 0x90, 0x48, 0x8B, 0x4D, 0x80, 0x48, 0x8D, 0x55, 0x20, 0x45, 0x33, 0xC0, 0xE8,
+    0x14, 0x55, 0xF1, 0xFF,
+};
+constexpr std::uint64_t CubeBuildCallRva = 0x527828;
+
+// 52795D..527966 (9 bytes)
+constexpr std::uint8_t CubeModSkip[]{
+    0x45, 0x85, 0xF6, 0x0F, 0x84, 0xA2, 0x00, 0x00, 0x00,
+};
+constexpr std::uint64_t CubeModSkipRva = 0x52795D;
+
+// 527970..527A25 (181 bytes)
+constexpr std::uint8_t CubeModLoop[]{
+    0x48, 0x8D, 0x4B, 0xF6, 0xE8, 0x27, 0xC7, 0xEA, 0xFF, 0x84, 0xC0, 0x74, 0x7E, 0x0F, 0xB6, 0x03,
+    0xFE, 0xC8, 0x3C, 0x62, 0x77, 0x26, 0x48, 0x63, 0x4C, 0x24, 0x54, 0x48, 0x8B, 0x8C, 0xCD, 0x20,
+    0x01, 0x00, 0x00, 0xE8, 0x48, 0x28, 0xE2, 0xFF, 0x48, 0x8B, 0xC8, 0xBA, 0x64, 0x00, 0x00, 0x00,
+    0xE8, 0x5B, 0xC1, 0xC2, 0xFF, 0x0F, 0xB6, 0x0B, 0x3B, 0xC1, 0x77, 0x4F, 0x8B, 0x43, 0xF6, 0x48,
+    0x8D, 0x95, 0xF0, 0x00, 0x00, 0x00, 0x48, 0x63, 0x4C, 0x24, 0x54, 0x45, 0x33, 0xC0, 0x89, 0x85,
+    0xF0, 0x00, 0x00, 0x00, 0x0F, 0xBF, 0x43, 0xFA, 0x89, 0x85, 0xF4, 0x00, 0x00, 0x00, 0x0F, 0xBF,
+    0x43, 0xFC, 0x48, 0x8B, 0x8C, 0xCD, 0x20, 0x01, 0x00, 0x00, 0x89, 0x85, 0xF8, 0x00, 0x00, 0x00,
+    0x0F, 0xBF, 0x43, 0xFE, 0x89, 0x85, 0xFC, 0x00, 0x00, 0x00, 0x45, 0x38, 0xAC, 0x24, 0x06, 0x01,
+    0x00, 0x00, 0x41, 0x0F, 0x95, 0xC0, 0xE8, 0x25, 0xBA, 0xEA, 0xFF, 0x48, 0x83, 0xC3, 0x0C, 0x49,
+    0x2B, 0xF5, 0x0F, 0x85, 0x68, 0xFF, 0xFF, 0xFF, 0xB8, 0x00, 0x02, 0x00, 0x00, 0x66, 0x41, 0x85,
+    0x47, 0x5E, 0x0F, 0x84, 0xEF, 0x00, 0x00, 0x00, 0x48, 0x63, 0x4C, 0x24, 0x54, 0x48, 0x8B, 0x8C,
+    0xCD, 0x20, 0x01, 0x00, 0x00,
+};
+constexpr std::uint64_t CubeModLoopRva = 0x527970;
+
+// 526D6F..526D7C (13 bytes)
+constexpr std::uint8_t CubeOutputFlagTest[]{
+    0x41, 0x0F, 0xB7, 0x57, 0x5E, 0x84, 0xD3, 0x0F, 0x84, 0x88, 0x03, 0x00, 0x00,
+};
+constexpr std::uint64_t CubeOutputFlagTestRva = 0x526D6F;
+
+// 527104..52710B (7 bytes)
+constexpr std::uint8_t CubeOutputTypeTest[]{
+    0x41, 0x0F, 0xB6, 0x47, 0x67, 0x3C, 0xFE,
+};
+constexpr std::uint64_t CubeOutputTypeTestRva = 0x527104;
 
 // 43EF10..43EF26 (22 bytes)
 constexpr std::uint8_t InitItemEntry[]{
@@ -1321,6 +1478,20 @@ constexpr std::uint8_t EtherealSiteStock[]{ 0x33, 0xC9, 0x83, 0xF8, 0x05 };
 constexpr std::uint8_t RequirementCallStock[]{ 0xE8, 0x05, 0x17, 0xFD, 0xFF };
 constexpr std::uint8_t RequirementHelperCallStock[]{ 0xE8, 0x35, 0xB5, 0xFC, 0xFF };
 
+// Brilliant Quality on cube outputs, in the cube output routine 0x5269C0
+constexpr std::uint64_t CubeMarkSiteRva     = 0x5275DF;  // mov qword ptr [rbp+44h],4: the item request setup
+constexpr std::uint64_t CubeMarkResumeRva   = 0x5275E7;
+constexpr std::uint64_t CubeRollSiteRva     = 0x527A08;  // mov eax,200h: right after the recipe mod loop
+constexpr std::uint64_t CubeRollResumeRva   = 0x527A0D;
+constexpr std::uint8_t  CubeMarkSiteStock[]{ 0x48, 0xC7, 0x45, 0x44, 0x04, 0x00, 0x00, 0x00 };
+constexpr std::uint8_t  CubeRollSiteStock[]{ 0xB8, 0x00, 0x02, 0x00, 0x00 };
+constexpr std::size_t   CubeOutputFlags     = 0x5E;      // word; bit 0 "mod" (526D6F)
+constexpr std::size_t   CubeOutputType      = 0x67;      // byte (527104)
+constexpr std::uint16_t CubeOutputModFlag   = 0x0001;
+constexpr std::uint8_t  CubeOutputUseType   = 0xFF;      // usetype
+constexpr std::uint8_t  CubeOutputItemType  = 0xFD;      // an item type
+constexpr std::uint8_t  CubeOutputItemCode  = 0xFC;      // an item code
+
 constexpr std::uint64_t GambleCallARva      = 0x53EB40;  // call 541AB0 in the gamble purchase
 constexpr std::uint64_t GambleCallBRva      = 0x53EBDF;
 constexpr std::uint64_t GambleItemRva       = 0x541AB0;  // (game, vendor, class, item level, seed)
@@ -1504,6 +1675,52 @@ constexpr std::size_t CombatDurabilityRelayOffset = 0x280;
 constexpr std::size_t SkillDurabilityRelayOffset = 0x2C0;
 constexpr std::size_t JumpRelaySlot = 6;
 
+// Relay 8, entered by the jmp at 5275DF in the cube's item request setup.
+// Replays the store, keeps every volatile register and records the request.
+//   mov qword ptr [rbp+44h],4 / push rax,rcx,rdx,r8,r9,r10,r11 / sub rsp,88h
+//   movdqu [rsp+20h..70h],xmm0..xmm5 / lea rcx,[rbp+20h] / mov rdx,[rbp-80h]
+//   call [slot MarkCubeBuild] / movdqu xmm0..xmm5,[rsp+20h..70h] / add rsp,88h
+//   pop r11,r10,r9,r8,rdx,rcx,rax / jmp [slot 5275E7]
+constexpr std::uint8_t CubeMarkRelay[]{
+    0x48, 0xC7, 0x45, 0x44, 0x04, 0x00, 0x00, 0x00, 0x50, 0x51, 0x52, 0x41, 0x50, 0x41, 0x51, 0x41,
+    0x52, 0x41, 0x53, 0x48, 0x81, 0xEC, 0x88, 0x00, 0x00, 0x00, 0xF3, 0x0F, 0x7F, 0x44, 0x24, 0x20,
+    0xF3, 0x0F, 0x7F, 0x4C, 0x24, 0x30, 0xF3, 0x0F, 0x7F, 0x54, 0x24, 0x40, 0xF3, 0x0F, 0x7F, 0x5C,
+    0x24, 0x50, 0xF3, 0x0F, 0x7F, 0x64, 0x24, 0x60, 0xF3, 0x0F, 0x7F, 0x6C, 0x24, 0x70, 0x48, 0x8D,
+    0x4D, 0x20, 0x48, 0x8B, 0x55, 0x80, 0xFF, 0x15, 0x3C, 0x00, 0x00, 0x00, 0xF3, 0x0F, 0x6F, 0x44,
+    0x24, 0x20, 0xF3, 0x0F, 0x6F, 0x4C, 0x24, 0x30, 0xF3, 0x0F, 0x6F, 0x54, 0x24, 0x40, 0xF3, 0x0F,
+    0x6F, 0x5C, 0x24, 0x50, 0xF3, 0x0F, 0x6F, 0x64, 0x24, 0x60, 0xF3, 0x0F, 0x6F, 0x6C, 0x24, 0x70,
+    0x48, 0x81, 0xC4, 0x88, 0x00, 0x00, 0x00, 0x41, 0x5B, 0x41, 0x5A, 0x41, 0x59, 0x41, 0x58, 0x5A,
+    0x59, 0x58, 0xFF, 0x25, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+};
+constexpr std::size_t CubeMarkRelayOffset = 0x300;
+constexpr std::size_t CubeMarkRelaySlotCall = 136;
+constexpr std::size_t CubeMarkRelaySlotResume = 144;
+
+// Relay 9, entered by the jmp at 527A08 after the recipe mod loop. Keeps
+// every volatile register but eax, which the replayed mov sets.
+//   push rcx,rdx,r8,r9,r10,r11 / sub rsp,80h / movdqu [rsp+20h..70h],xmm0..xmm5
+//   movsxd rax,[rsp+104h] (the output index [rsp+54h]) / mov r8,[rbp+rax*8+120h]
+//   mov rdx,r15 / mov rcx,[rbp-80h] / call [slot CubeOutputReady]
+//   movdqu xmm0..xmm5,[rsp+20h..70h] / add rsp,80h / pop r11,r10,r9,r8,rdx,rcx
+//   mov eax,200h / jmp [slot 527A0D]
+constexpr std::uint8_t CubeRollRelay[]{
+    0x51, 0x52, 0x41, 0x50, 0x41, 0x51, 0x41, 0x52, 0x41, 0x53, 0x48, 0x81, 0xEC, 0x80, 0x00, 0x00,
+    0x00, 0xF3, 0x0F, 0x7F, 0x44, 0x24, 0x20, 0xF3, 0x0F, 0x7F, 0x4C, 0x24, 0x30, 0xF3, 0x0F, 0x7F,
+    0x54, 0x24, 0x40, 0xF3, 0x0F, 0x7F, 0x5C, 0x24, 0x50, 0xF3, 0x0F, 0x7F, 0x64, 0x24, 0x60, 0xF3,
+    0x0F, 0x7F, 0x6C, 0x24, 0x70, 0x48, 0x63, 0x84, 0x24, 0x04, 0x01, 0x00, 0x00, 0x4C, 0x8B, 0x84,
+    0xC5, 0x20, 0x01, 0x00, 0x00, 0x4C, 0x89, 0xFA, 0x48, 0x8B, 0x4D, 0x80, 0xFF, 0x15, 0x46, 0x00,
+    0x00, 0x00, 0xF3, 0x0F, 0x6F, 0x44, 0x24, 0x20, 0xF3, 0x0F, 0x6F, 0x4C, 0x24, 0x30, 0xF3, 0x0F,
+    0x6F, 0x54, 0x24, 0x40, 0xF3, 0x0F, 0x6F, 0x5C, 0x24, 0x50, 0xF3, 0x0F, 0x6F, 0x64, 0x24, 0x60,
+    0xF3, 0x0F, 0x6F, 0x6C, 0x24, 0x70, 0x48, 0x81, 0xC4, 0x80, 0x00, 0x00, 0x00, 0x41, 0x5B, 0x41,
+    0x5A, 0x41, 0x59, 0x41, 0x58, 0x5A, 0x59, 0xB8, 0x00, 0x02, 0x00, 0x00, 0xFF, 0x25, 0x0E, 0x00,
+    0x00, 0x00, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+};
+constexpr std::size_t CubeRollRelayOffset = 0x3C0;
+constexpr std::size_t CubeRollRelaySlotCall = 152;
+constexpr std::size_t CubeRollRelaySlotResume = 160;
+
 
 // ---------------------------------------------------------------------------
 // Native function types
@@ -1624,6 +1841,11 @@ bool                       ReachHooked{};
 std::array<std::uint8_t, 5> CombatAWritten{};
 std::array<std::uint8_t, 5> CombatBWritten{};
 std::array<std::uint8_t, 5> SkillWritten{};
+bool                       CubeMarkPatched{};
+bool                       CubeRollPatched{};
+std::array<std::uint8_t, 8> CubeMarkWritten{};
+std::array<std::uint8_t, 5> CubeRollWritten{};
+std::string                CubeRollProblem;
 
 SpawnFn         OriginalSpawn{};
 InitItemFn      OriginalInitItem{};
@@ -1685,9 +1907,12 @@ std::atomic<std::uint64_t> ModifiersAdded{};
 std::atomic<std::uint64_t> ModifiersWithoutSlot{};
 std::atomic<std::uint64_t> HiddenAdded{};
 std::atomic<std::uint64_t> JewelsDoubled{};
+std::atomic<std::uint64_t> CubeRollsHeld{};
+std::atomic<std::uint64_t> CubeRollsAfterRecipe{};
 std::atomic<std::uint64_t> BonusListsAdded{};
 std::atomic<std::uint64_t> BonusListsRemoved{};
 std::atomic<std::uint64_t> BonusValuesWritten{};
+std::atomic<std::uint64_t> BonusAddressesReused{};
 std::atomic<std::uint64_t> DurabilityLossesKept{};
 std::atomic<std::uint32_t> ServerBonusItems{};
 std::atomic<std::uint32_t> ClientBonusItems{};
@@ -2435,9 +2660,65 @@ void BrilliantQuality(void* item, void* player) noexcept {
     JewelsDoubled.fetch_add(1, std::memory_order_relaxed);
 }
 
+// ---------------------------------------------------------------------------
+// Brilliant Quality on cube outputs: the roll waits for the recipe's own
+// properties (relays 8 and 9)
+// ---------------------------------------------------------------------------
+// The item request the cube output routine is setting up, recorded by relay 8.
+struct CubeMark {
+    void* request{};
+    void* game{};
+};
+
+// A jewel built for a cube output whose Brilliant Quality roll waits for the
+// recipe's mod columns.
+struct HeldRoll {
+    void* game{};
+    void* item{};
+    void* player{};
+};
+
+thread_local CubeMark CubeBuildMark{};
+thread_local HeldRoll HeldBrilliant{};
+
+// Entered from relay 8 at 5275DF, while the cube output routine sets up the
+// request of an output that builds a new item (usetype, item type, item code).
+void __fastcall MarkCubeBuild(void* request, void* game) noexcept {
+    CubeBuildMark = { request, game };
+    HeldBrilliant = {};
+}
+
+// Entered from relay 9 at 527A08: the output's recipe mod columns are on its
+// item (or were skipped), and nothing has been socketed, placed or sent yet.
+void __fastcall CubeOutputReady(void* game, const std::uint8_t* output, void* item) noexcept {
+    CubeBuildMark = {};
+    const HeldRoll held = HeldBrilliant;
+    HeldBrilliant = {};
+    if (held.item == nullptr || item == nullptr || output == nullptr || held.item != item || held.game != game) return;
+    // Only an item this output built new: usetype, item type or item code,
+    // without "mod" (which reworks input 1 in place, like useitem).
+    const auto type = Read<std::uint8_t>(output, CubeOutputType);
+    const auto flags = Read<std::uint16_t>(output, CubeOutputFlags);
+    if ((flags & CubeOutputModFlag) != 0
+            || (type != CubeOutputUseType && type != CubeOutputItemType && type != CubeOutputItemCode)) {
+        return;
+    }
+    if (!Settings.enabled || !Settings.brilliant.enabled) return;
+    CubeRollsAfterRecipe.fetch_add(1, std::memory_order_relaxed);
+    Diagnostic("Blacksmith: Brilliant Quality, cube output (type %02X), rolled after the recipe's properties.", type);
+    BrilliantQuality(item, held.player);
+}
+
 // Inline hook on 0x43EF10 (game, &item, request, full).
 auto __fastcall HookInitItem(void* game, void** itemRef, void* request, std::int32_t full) noexcept -> std::int64_t {
     const std::int64_t result = OriginalInitItem(game, itemRef, request, full);
+    // Every full build ends the cube's mark; only the build the cube output
+    // routine itself requested matches it.
+    bool cubeBuild = false;
+    if (full != 0 && request != nullptr && CubeBuildMark.request != nullptr) {
+        cubeBuild = CubeBuildMark.request == request && CubeBuildMark.game == game;
+        CubeBuildMark = {};
+    }
     if (static_cast<std::uint32_t>(result) != 0 && full != 0 && request != nullptr && itemRef != nullptr && *itemRef != nullptr
             && Settings.enabled) {
         DropContext* const build = CurrentDrop;
@@ -2451,7 +2732,16 @@ auto __fastcall HookInitItem(void* game, void** itemRef, void* request, std::int
             if (Settings.hidden.enabled && (!gamble || Settings.hiddenGambling)) {
                 AdditionalModifier(*itemRef, player, Settings.hidden, &TypeIds::hidden, HiddenAdded, "Hidden Potential");
             }
-            if (Settings.brilliant.enabled && (!gamble || Settings.brilliantGambling)) BrilliantQuality(*itemRef, player);
+            if (Settings.brilliant.enabled && (!gamble || Settings.brilliantGambling)) {
+                if (cubeBuild && !inContext && CubeMarkPatched && CubeRollPatched) {
+                    // The recipe's own properties are added after this build
+                    // returns (527970..527A02): relay 9 rolls once they are on.
+                    HeldBrilliant = { game, *itemRef, player };
+                    CubeRollsHeld.fetch_add(1, std::memory_order_relaxed);
+                } else {
+                    BrilliantQuality(*itemRef, player);
+                }
+            }
         }
         if (inContext && build->source == BuildSource::Drop && build->player != nullptr && Settings.blessed.enabled) {
             BlessedGear(game, *itemRef, build->player);
@@ -2517,13 +2807,10 @@ auto __fastcall HookMeleeRange(void* unit) noexcept -> std::int64_t {
 // ---------------------------------------------------------------------------
 // Tempered Steel and Mithril Weaving
 // ---------------------------------------------------------------------------
-enum class SlotKind : std::uint8_t { Plain, FlatMax, FlatMin };
-
-// One slot per stat id: how a weapon's own value of it is read, which weapon
-// perks raise it, and whether it is armorclass (the armor perks).
+// One slot per stat id: which weapon perks raise it, and whether it is
+// armorclass (the armor perks).
 struct Slot {
     std::int32_t stat;
-    SlotKind     kind;
     bool         tempered;
     bool         magnitude;
     bool         armor;
@@ -2536,19 +2823,11 @@ std::array<Slot, MaxSlots>             Slots{};
 std::size_t                            SlotCount{};
 std::array<std::int16_t, MaxStatId>    SlotOfStat{};
 
-auto WeaponKind(std::int32_t stat) noexcept -> SlotKind {
-    switch (stat) {
-    case 21: case 23: case 159: return SlotKind::FlatMin;  // mindamage, secondary_mindamage, item_throw_mindamage
-    case 22: case 24: case 160: return SlotKind::FlatMax;  // maxdamage, secondary_maxdamage, item_throw_maxdamage
-    default: return SlotKind::Plain;
-    }
-}
-
 auto SlotFor(std::int32_t stat) noexcept -> Slot* {
     if (stat < 0 || stat >= MaxStatId || stat == ChargedSkill) return nullptr;
     if (SlotOfStat[static_cast<std::size_t>(stat)] >= 0) return &Slots[static_cast<std::size_t>(SlotOfStat[static_cast<std::size_t>(stat)])];
     if (SlotCount >= MaxSlots) return nullptr;
-    Slots[SlotCount] = { stat, WeaponKind(stat), false, false, false };
+    Slots[SlotCount] = { stat, false, false, false };
     SlotOfStat[static_cast<std::size_t>(stat)] = static_cast<std::int16_t>(SlotCount);
     return &Slots[SlotCount++];
 }
@@ -2635,6 +2914,44 @@ std::atomic<std::uint64_t> ServerChain{};
 std::atomic<std::uint64_t> ClientChain{};
 std::atomic<std::uint64_t> ChainCounter{};
 
+// Keeping both passes alive (see PASSES THAT STAY ALIVE).
+std::atomic<std::uint64_t> HostTickMs{};
+std::atomic<std::uint64_t> ClientTickMs{};
+std::atomic<bool>          InGame{};
+std::atomic<bool>          HostUnavailable{};
+std::atomic<std::uint64_t> HostChainsLost{};
+std::atomic<std::uint64_t> ClientChainsLost{};
+std::atomic<std::uint64_t> HostRestarts{};
+std::atomic<std::uint64_t> ClientRestarts{};
+std::uint64_t              LastHostRestartMs{};  // UI thread only
+constexpr std::uint64_t    HostStallMs = 2000;
+
+// "blacksmith sync": host and client copies of the local character's gear.
+constexpr int              SyncIdle       = 0;
+constexpr int              SyncWantHost   = 1;
+constexpr int              SyncWantClient = 2;
+std::atomic<int>           SyncStage{ SyncIdle };
+std::atomic<std::uint32_t> SyncPlayerId{};
+
+struct SyncList {
+    std::uint32_t          flags{};
+    std::vector<StatValue> stats;
+};
+
+struct SyncItem {
+    std::uint32_t          id{};
+    std::uint32_t          classId{};
+    std::int32_t           loc{};
+    std::vector<StatValue> full;
+    std::vector<StatValue> base;
+    std::vector<SyncList>  lists;
+    std::vector<StatValue> ours;
+};
+
+std::mutex            SyncMutex;
+std::vector<SyncItem> SyncHostItems;
+bool                  SyncHostFound{};
+
 // The plugin's list is only ever touched when it is still in one of the
 // item's two child chains (statlist ex at +88h, chains at +90h and +98h, next
 // at +68h; the D2RCore attach picks the chain by the list's 8h flag).
@@ -2652,25 +2969,111 @@ auto ListAttached(void* item, void* list) noexcept -> bool {
     return false;
 }
 
-// The (stat, layer) pairs an item carries, read where D2RCore's
-// VisitWideUnitStats reads them (its body is compared at load): the item's
-// statlist ex (+88h, extended flag in +1Ch) keeps its full stats at +A8h with
-// the count at +B0h, 16 bytes each: layer +0, stat id +4, value +8.
-bool FullStatsLayout{};
+// A list this plugin (or another plugin) made: flag 10000h and none of the
+// game's item list flags (40h modifiers and runeword, 2000h set, 80000000h
+// extended: a socketed item's list).
+auto IsPluginFlagged(const void* list) noexcept -> bool {
+    if (list == nullptr) return false;
+    const auto flags = Read<std::uint32_t>(list, ListFlags);
+    return (flags & BonusListFlags) != 0 && (flags & (0x80000000U | 0x2000U | 0x40U)) == 0;
+}
 
-auto ItemStatPairs(void* item, std::vector<StatValue>& out) noexcept -> void {
+// Set at install when D2RCore's list layout matches (see the list reader
+// below), which also defines Lookup.
+bool FullStatsLayout{};
+auto Lookup(const std::vector<StatValue>& values, std::int32_t stat, std::int32_t layer) noexcept -> std::int32_t;
+
+// The list's own stats (+30h, count +38h, 16-byte entries) are exactly the
+// values last written to it: every entry that is not 0 is one of them with the
+// same value, and every value that is not 0 is there. An entry at 0 (a stat
+// the engine keeps at 0) is no difference.
+auto HoldsExactly(const void* list, const std::vector<StatValue>& values) noexcept -> bool {
+    const auto* entries = Read<const std::uint8_t*>(list, ListStats);
+    const auto  count   = Read<std::uint64_t>(list, ListStatsCount);
+    if (count > 4096 || (count != 0 && entries == nullptr)) return false;
+    std::size_t matched = 0;
+    for (std::uint64_t i = 0; i < count; ++i) {
+        const std::uint8_t* entry = entries + i * FullStatEntrySize;
+        const std::int32_t  value = Read<std::int32_t>(entry, FullStatValue);
+        if (value == 0) continue;
+        if (Lookup(values, Read<std::uint16_t>(entry, FullStatStat), static_cast<std::int32_t>(Read<std::uint32_t>(entry, FullStatLayer)))
+                != value) {
+            return false;
+        }
+        ++matched;
+    }
+    std::size_t expected = 0;
+    for (const StatValue& v : values) expected += v.value != 0 ? 1U : 0U;
+    return matched == expected;
+}
+
+// A plain list's own stats that are not 0, as (stat, layer, value).
+void ReadOwnEntries(const void* list, std::vector<StatValue>& out) noexcept {
+    out.clear();
+    const auto* entries = Read<const std::uint8_t*>(list, ListStats);
+    const auto  count   = Read<std::uint64_t>(list, ListStatsCount);
+    if (entries == nullptr || count > 4096) return;
+    for (std::uint64_t i = 0; i < count; ++i) {
+        const std::uint8_t* entry = entries + i * FullStatEntrySize;
+        const std::int32_t  value = Read<std::int32_t>(entry, FullStatValue);
+        if (value != 0) {
+            out.push_back({ Read<std::uint16_t>(entry, FullStatStat), static_cast<std::int32_t>(Read<std::uint32_t>(entry, FullStatLayer)),
+                value });
+        }
+    }
+}
+
+// A kept list address is this plugin's list only while the list is still in
+// the item's child chain, still carries the plugin flag and still holds
+// exactly what was last written to it (see TEMPERED STEEL AND MITHRIL
+// WEAVING): the client frees an item it is sent again with all its lists, and
+// the freed address can come back as the item's runeword or magic list. Without
+// the verified list layout the contents are not read; the flags still keep
+// every list of the game's own out.
+auto OwnsList(void* item, void* list, const std::vector<StatValue>& values) noexcept -> bool {
+    if (!ListAttached(item, list) || !IsPluginFlagged(list)) return false;
+    return !FullStatsLayout || HoldsExactly(list, values);
+}
+
+// What an item's stat lists hold, per (stat, layer) pair, read where D2RCore's
+// VisitWideUnitStats reads a list (its body is compared at load; 16-byte
+// entries: layer +0, stat id +4, value +8): every list in the active child
+// chain of the item's statlist ex (+88h, extended flag in +1Ch; chain at +90h,
+// next at +68h), a plain list's own stats at +30h (count +38h), and for an item
+// socketed in it (an extended list in the chain) its full stats at +A8h (count
+// +B0h), which is what the engine adds into the host for it. That is the sum
+// the engine evaluates a stat from before its ops (D2MOO sub_6FDB5830), and it
+// is always current, unlike the item's own full stats array (see TEMPERED
+// STEEL AND MITHRIL WEAVING). The plugin's own list is included.
+
+void AddListEntries(const std::uint8_t* list, std::size_t at, std::vector<StatValue>& out) noexcept {
+    const auto* entries = Read<const std::uint8_t*>(list, at);
+    const auto  count   = Read<std::uint64_t>(list, at + 8);
+    if (entries == nullptr || count > 4096) return;
+    for (std::uint64_t i = 0; i < count; ++i) {
+        const std::uint8_t* entry = entries + i * FullStatEntrySize;
+        AddValue(out, Read<std::uint16_t>(entry, FullStatStat), static_cast<std::int32_t>(Read<std::uint32_t>(entry, FullStatLayer)),
+            Read<std::int32_t>(entry, FullStatValue));
+    }
+}
+
+auto ListTotals(void* item, std::vector<StatValue>& out) noexcept -> void {
     out.clear();
     if (!FullStatsLayout) return;
     const auto* ex = Read<const std::uint8_t*>(item, UnitStatListEx);
     if (ex == nullptr || Read<std::int32_t>(ex, ListFlags) >= 0) return;
-    const auto* entries = Read<const std::uint8_t*>(ex, ExFullStats);
-    const auto  count   = Read<std::uint64_t>(ex, ExFullStatsCount);
-    if (entries == nullptr || count > 4096) return;
-    for (std::uint64_t i = 0; i < count; ++i) {
-        const std::uint8_t* entry = entries + i * FullStatEntrySize;
-        const std::int32_t stat = Read<std::uint16_t>(entry, FullStatStat);
-        if (SlotOf(stat) == nullptr) continue;
-        out.push_back({ stat, static_cast<std::int32_t>(Read<std::uint32_t>(entry, FullStatLayer)), 0 });
+    const auto* node = Read<const std::uint8_t*>(ex, ExChildren);
+    for (std::size_t guard = 0; node != nullptr && guard < 512; ++guard) {
+        AddListEntries(node, Read<std::int32_t>(node, ListFlags) < 0 ? ExFullStats : ListStats, out);
+        node = Read<const std::uint8_t*>(node, ListNext);
+    }
+}
+
+// The pairs of an item's list totals that have a slot (value 1 marks a pair).
+auto ItemStatPairs(const std::vector<StatValue>& totals, std::vector<StatValue>& out) noexcept -> void {
+    out.clear();
+    for (const StatValue& v : totals) {
+        if (SlotOf(v.stat) != nullptr) out.push_back({ v.stat, v.layer, 1 });
     }
 }
 
@@ -2687,34 +3090,37 @@ void Desired(void* item, const Roles& roles, const std::vector<StatValue>& ours,
     const std::uint8_t* tables = context < 4 ? GetDataTables(context) : nullptr;
     if (tables == nullptr) return;
     const auto rows = Read<std::uint64_t>(tables, TablesStatCount);
+    // What the item's lists hold, this plugin's own list included.
+    thread_local std::vector<StatValue> totals;
+    ListTotals(item, totals);
+    // A stat as the item's own op 13 multiplies with it: base plus every list.
+    const auto evaluated = [&](std::int32_t stat) noexcept -> std::int64_t {
+        if (!FullStatsLayout) return ReadUnitStat(item, stat, 0);
+        return static_cast<std::int64_t>(ReadOwnStat(item, stat, 0)) + Lookup(totals, stat, 0);
+    };
     if (roles.temperedPct != 0 || roles.magnitudePct != 0) {
         thread_local std::vector<StatValue> pairs;
-        ItemStatPairs(item, pairs);
+        ItemStatPairs(totals, pairs);
         // The plugin's own pairs too: one whose modifier is gone must go to 0.
         for (const StatValue& v : ours) {
             if (Lookup(pairs, v.stat, v.layer) == 0) pairs.push_back({ v.stat, v.layer, 1 });
         }
-        const std::int64_t edMax = ReadUnitStat(item, StatMaxDamagePct, 0);
-        const std::int64_t edMin = ReadUnitStat(item, StatMinDamagePct, 0);
         for (const StatValue& pair : pairs) {
             const Slot* slot = SlotOf(pair.stat);
             if (slot == nullptr || static_cast<std::uint64_t>(pair.stat) >= rows) continue;
             const std::int32_t percent = (slot->tempered ? roles.temperedPct : 0) + (slot->magnitude ? roles.magnitudePct : 0);
             if (percent == 0) continue;
-            // The item's own modifiers: its total without its base value and
-            // without what this plugin's list already adds, per layer.
-            const std::int64_t base = ReadOwnStat(item, pair.stat, pair.layer);
-            std::int64_t own = static_cast<std::int64_t>(ReadUnitStat(item, pair.stat, pair.layer)) - base
-                - Lookup(ours, pair.stat, pair.layer);
-            if (pair.layer == 0 && slot->kind == SlotKind::FlatMax) own -= base * edMax / 100;  // what op 13 adds
-            if (pair.layer == 0 && slot->kind == SlotKind::FlatMin) own -= base * edMin / 100;
+            // The item's own modifiers: what its lists hold without what this
+            // plugin's list already adds, per layer. No list holds a base value
+            // or what op 13 and op 4/5 derive from one.
+            const std::int64_t own = static_cast<std::int64_t>(Lookup(totals, pair.stat, pair.layer)) - Lookup(ours, pair.stat, pair.layer);
             const std::int64_t value = own * percent / 100;
             if (value != 0) out.push_back({ pair.stat, pair.layer, static_cast<std::int32_t>(value) });
         }
     }
     if ((roles.mithrilPct != 0 || roles.durabilityPct != 0) && static_cast<std::uint64_t>(StatArmorClass) < rows) {
         const std::int64_t base   = ReadOwnStat(item, StatArmorClass, 0);
-        const std::int64_t ed     = ReadUnitStat(item, StatArmorPercent, 0);
+        const std::int64_t ed     = evaluated(StatArmorPercent);
         std::int64_t       raised = base + base * roles.mithrilPct / 100;
         raised += raised * roles.durabilityPct / 100;
         const std::int64_t value = (raised + raised * ed / 100) - (base + base * ed / 100);
@@ -2742,7 +3148,7 @@ void Desired(void* item, const Roles& roles, const std::vector<StatValue>& ours,
             const std::int64_t original = (2 * base + 2) / 3;
             const std::int64_t delta = original * (EtherealRoutinePct + roles.etherealBasePct) / 100 - base;
             if (delta <= 0) continue;
-            const std::int64_t ed = ReadUnitStat(item, edStat, 0);
+            const std::int64_t ed = evaluated(edStat);
             AddValue(out, stat, 0, delta + delta * ed / 100);
         }
     }
@@ -2751,8 +3157,10 @@ void Desired(void* item, const Roles& roles, const std::vector<StatValue>& ours,
     }
 }
 
-void RemoveList(void* item, void* list) noexcept {
-    if (!ListAttached(item, list)) return;
+// Unlinks and frees a list only when it is provably this plugin's (OwnsList);
+// any other list at that address is left exactly as it is.
+void RemoveList(void* item, void* list, const std::vector<StatValue>& values) noexcept {
+    if (!OwnsList(item, list, values)) return;
     const std::uint8_t context = GetDataContext(item);
     UnlinkStatList(item, list);
     FreeStatList(context, list);
@@ -2769,8 +3177,16 @@ void Reconcile(BonusSide& side, void* game, void* item, const Roles& roles) noex
             break;
         }
     }
-    if (entry != nullptr && !ListAttached(item, entry->list)) {
-        // The item's lists were rebuilt; whatever was ours went with them.
+    if (entry != nullptr && !OwnsList(item, entry->list, entry->values)) {
+        // The item's lists were rebuilt; whatever was ours went with them. When
+        // the address is back in the item's chain it is one of the item's own
+        // lists now: it is never written, unlinked or freed, only forgotten.
+        if (entry->list != nullptr && ListAttached(item, entry->list)) {
+            BonusAddressesReused.fetch_add(1, std::memory_order_relaxed);
+            Diagnostic("Blacksmith: %s item %u: its bonus list's address now holds another list of the item (flags %X); "
+                "that list is left alone and a new bonus list is made.", game != nullptr ? "host" : "client", id,
+                Read<std::uint32_t>(entry->list, ListFlags));
+        }
         entry->list = nullptr;
         entry->values.clear();
     }
@@ -2779,7 +3195,7 @@ void Reconcile(BonusSide& side, void* game, void* item, const Roles& roles) noex
     Desired(item, roles, entry != nullptr ? entry->values : none, wanted);
     if (wanted.empty()) {
         if (entry != nullptr) {
-            RemoveList(item, entry->list);
+            RemoveList(item, entry->list, entry->values);
             side.entries.erase(side.entries.begin() + static_cast<std::ptrdiff_t>(index));
         }
         return;
@@ -2811,6 +3227,9 @@ void Reconcile(BonusSide& side, void* game, void* item, const Roles& roles) noex
         BonusValuesWritten.fetch_add(1, std::memory_order_relaxed);
     }
     entry->values = wanted;
+    // Keep what the list really holds, so the next pass's ownership test and
+    // its own-value math work from the list itself.
+    if (FullStatsLayout) ReadOwnEntries(entry->list, entry->values);
     entry->seen = true;
 }
 
@@ -2920,7 +3339,7 @@ void Sweep(BonusSide& side, bool host) noexcept {
             continue;
         }
         void* const item = host ? ServerUnit(entry.game, UnitItem, entry.id) : ClientUnit(entry.id, UnitItem);
-        if (item != nullptr && UnitType(item) == UnitItem) RemoveList(item, entry.list);
+        if (item != nullptr && UnitType(item) == UnitItem) RemoveList(item, entry.list, entry.values);
         side.entries.erase(side.entries.begin() + static_cast<std::ptrdiff_t>(i));
     }
 }
@@ -2965,51 +3384,288 @@ void ClientPass() noexcept {
     ClientBonusItems.store(static_cast<std::uint32_t>(ClientBonus.entries.size()));
 }
 
+// ---------------------------------------------------------------------------
+// "blacksmith sync"
+// ---------------------------------------------------------------------------
+void ReadEntries(const std::uint8_t* list, std::size_t at, std::vector<StatValue>& out) noexcept {
+    out.clear();
+    if (list == nullptr) return;
+    const auto* entries = Read<const std::uint8_t*>(list, at);
+    const auto  count   = Read<std::uint64_t>(list, at + 8);
+    if (entries == nullptr || count > 4096) return;
+    for (std::uint64_t i = 0; i < count; ++i) {
+        const std::uint8_t* entry = entries + i * FullStatEntrySize;
+        out.push_back({ Read<std::uint16_t>(entry, FullStatStat), static_cast<std::int32_t>(Read<std::uint32_t>(entry, FullStatLayer)),
+            Read<std::int32_t>(entry, FullStatValue) });
+    }
+}
+
+// One item as this side holds it: full stats, base stats, every list in both
+// child chains (a socketed item's list reports its full stats) and this
+// plugin's list as the side's pass last wrote it.
+void SnapshotItem(void* item, std::int32_t loc, const BonusSide& side, void* game, SyncItem& out) noexcept {
+    out.id      = Read<std::uint32_t>(item, UnitId);
+    out.classId = Read<std::uint32_t>(item, UnitClassId);
+    out.loc     = loc;
+    const auto* ex = Read<const std::uint8_t*>(item, UnitStatListEx);
+    if (ex == nullptr || Read<std::int32_t>(ex, ListFlags) >= 0) return;
+    ReadEntries(ex, ExFullStats, out.full);
+    ReadEntries(ex, ListStats, out.base);
+    for (const std::size_t chain : { ExChildren, ExChildren + 8 }) {
+        const auto* node = Read<const std::uint8_t*>(ex, chain);
+        for (std::size_t guard = 0; node != nullptr && guard < 64; ++guard) {
+            SyncList list;
+            list.flags = Read<std::uint32_t>(node, ListFlags);
+            ReadEntries(node, Read<std::int32_t>(node, ListFlags) < 0 ? ExFullStats : ListStats, list.stats);
+            out.lists.push_back(std::move(list));
+            node = Read<const std::uint8_t*>(node, ListNext);
+        }
+    }
+    for (const BonusEntry& entry : side.entries) {
+        if (entry.id == out.id && entry.game == game) out.ours = entry.values;
+    }
+}
+
+void SnapshotGear(void* player, const BonusSide& side, void* game, std::vector<SyncItem>& out) noexcept {
+    out.clear();
+    void* const inventory = GetInventory(player, "blacksmith", 0);
+    if (inventory == nullptr) return;
+    for (std::int32_t loc = FirstBodyLoc; loc <= LastBodyLoc; ++loc) {
+        void* const item = BodyLocItem(inventory, loc);
+        if (item == nullptr || UnitType(item) != UnitItem) continue;
+        out.emplace_back();
+        SnapshotItem(item, loc, side, game, out.back());
+    }
+}
+
+// Game thread: the host copy of the requesting character's gear.
+void SyncHostSnapshot() noexcept {
+    std::vector<SyncItem> items;
+    bool found = false;
+    const std::uint32_t playerId = SyncPlayerId.load();
+    if (Read<std::int32_t>(reinterpret_cast<const void*>(Base + RegistryReadyRva), 0) != 0) {
+        const auto* const buckets = reinterpret_cast<const std::uint8_t* const*>(Base + RegistryRva);
+        std::size_t visited = 0;
+        for (std::size_t bucket = 0; bucket < RegistryBuckets && visited <= 256 && !found; ++bucket) {
+            for (const std::uint8_t* client = buckets[bucket]; client != nullptr && ++visited <= 256;
+                    client = Read<const std::uint8_t*>(client, RegistryNext)) {
+                void* const game = Read<void*>(client, RegistryGame);
+                if (game == nullptr || Read<std::uint32_t>(client, RegistryUnitType) != UnitPlayer
+                        || Read<std::uint32_t>(client, RegistryUnitId) != playerId) {
+                    continue;
+                }
+                void* const player = ServerUnit(game, UnitPlayer, playerId);
+                if (player == nullptr || UnitType(player) != UnitPlayer) continue;
+                SnapshotGear(player, ServerBonus, game, items);
+                found = true;
+                break;
+            }
+        }
+    }
+    {
+        const std::lock_guard<std::mutex> lock(SyncMutex);
+        SyncHostItems = std::move(items);
+        SyncHostFound = found;
+    }
+    SyncStage.store(SyncWantClient);
+}
+
+void SyncReport(const char* text) noexcept {
+    if (Context == nullptr) return;
+    Context->WriteConsoleMessage(text);
+    Context->LogInfo(text);
+}
+
+auto HasPair(const std::vector<StatValue>& values, std::int32_t stat, std::int32_t layer) noexcept -> bool {
+    for (const StatValue& v : values) {
+        if (v.stat == stat && v.layer == layer) return true;
+    }
+    return false;
+}
+
+// The (stat, layer) pairs where a and b disagree, as " stat:layer=a/b".
+auto Differences(const std::vector<StatValue>& a, const std::vector<StatValue>& b) -> std::string {
+    std::vector<StatValue> keys = a;
+    for (const StatValue& v : b) {
+        if (!HasPair(keys, v.stat, v.layer)) keys.push_back(v);
+    }
+    std::string out;
+    char part[64];
+    for (const StatValue& key : keys) {
+        const std::int32_t left = Lookup(a, key.stat, key.layer);
+        const std::int32_t right = Lookup(b, key.stat, key.layer);
+        if (left == right) continue;
+        std::snprintf(part, sizeof(part), " %d:%d=%d/%d", key.stat, key.layer, left, right);
+        out += part;
+    }
+    return out;
+}
+
+auto ListFlagsText(const SyncItem& item) -> std::string {
+    std::string out;
+    char part[32];
+    for (const SyncList& list : item.lists) {
+        std::snprintf(part, sizeof(part), " %X", list.flags);
+        out += part;
+    }
+    return out.empty() ? std::string(" none") : out;
+}
+
+void ReportLines(const char* head, const std::string& body) noexcept {
+    // Console lines stay short: long difference lists go out in pieces.
+    constexpr std::size_t Piece = 400;
+    char text[512];
+    for (std::size_t at = 0; at < body.size(); at += Piece) {
+        std::snprintf(text, sizeof(text), "%s%s%s", head, at == 0 ? "" : " (cont.)", body.substr(at, Piece).c_str());
+        SyncReport(text);
+    }
+}
+
+// UI thread: the client copy, compared with the host copy taken a tick earlier.
+// Each pair reads host/client.
+void SyncCompare() noexcept {
+    SyncStage.store(SyncIdle);
+    std::vector<SyncItem> host;
+    bool found = false;
+    {
+        const std::lock_guard<std::mutex> lock(SyncMutex);
+        host = std::move(SyncHostItems);
+        SyncHostItems.clear();
+        found = SyncHostFound;
+    }
+    if (!found) {
+        SyncReport("Blacksmith sync: no host copy of your character in this process (a TCP/IP client cannot compare).");
+        return;
+    }
+    void* const player = PlayerFromIndex(LocalPlayerIndex());
+    if (player == nullptr || UnitType(player) != UnitPlayer) {
+        SyncReport("Blacksmith sync: no local character.");
+        return;
+    }
+    std::vector<SyncItem> client;
+    SnapshotGear(player, ClientBonus, nullptr, client);
+    char head[160];
+    char text[512];
+    std::size_t differing = 0;
+    for (const SyncItem& h : host) {
+        const SyncItem* c = nullptr;
+        for (const SyncItem& candidate : client) {
+            if (candidate.id == h.id) c = &candidate;
+        }
+        if (c == nullptr) {
+            std::snprintf(text, sizeof(text), "Blacksmith sync: slot %d, item %u (class %u): on the host only.", h.loc, h.id, h.classId);
+            SyncReport(text);
+            ++differing;
+            continue;
+        }
+        const std::string full = Differences(h.full, c->full);
+        const std::string base = Differences(h.base, c->base);
+        const std::string ours = Differences(h.ours, c->ours);
+        const std::string hostLists = ListFlagsText(h);
+        const std::string clientLists = ListFlagsText(*c);
+        if (full.empty() && base.empty() && ours.empty() && hostLists == clientLists) continue;
+        ++differing;
+        std::snprintf(text, sizeof(text), "Blacksmith sync: slot %d, item %u (class %u) DIFFERS | lists host%s, client%s",
+            h.loc, h.id, h.classId, hostLists.c_str(), clientLists.c_str());
+        SyncReport(text);
+        std::snprintf(head, sizeof(head), "  slot %d full stats host/client:", h.loc);
+        if (!full.empty()) ReportLines(head, full);
+        std::snprintf(head, sizeof(head), "  slot %d base stats host/client:", h.loc);
+        if (!base.empty()) ReportLines(head, base);
+        std::snprintf(head, sizeof(head), "  slot %d bonus list host/client:", h.loc);
+        if (!ours.empty()) ReportLines(head, ours);
+    }
+    for (const SyncItem& c : client) {
+        bool onHost = false;
+        for (const SyncItem& h : host) {
+            if (h.id == c.id) onHost = true;
+        }
+        if (onHost) continue;
+        std::snprintf(text, sizeof(text), "Blacksmith sync: slot %d, item %u (class %u): on the client only.", c.loc, c.id, c.classId);
+        SyncReport(text);
+        ++differing;
+    }
+    const std::uint64_t now = GetTickCount64();
+    std::snprintf(text, sizeof(text), "Blacksmith sync: %zu host items, %zu client items, %zu differ. Host pass last ran %llu ms ago, "
+        "client pass %llu ms ago.", host.size(), client.size(), differing,
+        static_cast<unsigned long long>(now - HostTickMs.load()), static_cast<unsigned long long>(now - ClientTickMs.load()));
+    SyncReport(text);
+}
+
+// ---------------------------------------------------------------------------
+// The two pass chains
+// ---------------------------------------------------------------------------
+void __cdecl HostTick(const D2RL::PluginContext* context, void* userData) noexcept;
+void __cdecl ClientTick(const D2RL::PluginContext* context, void* userData) noexcept;
+
+// A new chain takes a new id; an older tick still queued stops at its next run.
+auto QueueHostChain(const D2RL::PluginContext* context) noexcept -> bool {
+    const std::uint64_t id = ChainCounter.fetch_add(1) + 1;
+    ServerChain.store(id);
+    HostTickMs.store(GetTickCount64());
+    const D2RL::Threads::Result result =
+        ThreadSvc->runOnGameThread(context, &HostTick, reinterpret_cast<void*>(static_cast<std::uintptr_t>(id)));
+    if (result == D2RL::Threads::Result::Success) return true;
+    // A remote TCP/IP client has no game thread here; only its UI pass runs.
+    if (result == D2RL::Threads::Result::Unavailable) HostUnavailable.store(true);
+    std::uint64_t expected = id;
+    (void)ServerChain.compare_exchange_strong(expected, 0);
+    return false;
+}
+
+auto QueueClientChain(const D2RL::PluginContext* context) noexcept -> bool {
+    const std::uint64_t id = ChainCounter.fetch_add(1) + 1;
+    ClientChain.store(id);
+    ClientTickMs.store(GetTickCount64());
+    if (ThreadSvc->runOnUiThread(context, &ClientTick, reinterpret_cast<void*>(static_cast<std::uintptr_t>(id)))
+            == D2RL::Threads::Result::Success) {
+        return true;
+    }
+    std::uint64_t expected = id;
+    (void)ClientChain.compare_exchange_strong(expected, 0);
+    return false;
+}
+
 void __cdecl HostTick(const D2RL::PluginContext* context, void* userData) noexcept {
     const auto id = static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(userData));
     if (context == nullptr || ServerChain.load() != id) return;
+    HostTickMs.store(GetTickCount64());
     if (++ServerBonus.updates % ServerPassUpdates == 0 && Settings.enabled) HostPass();
+    if (SyncStage.load() == SyncWantHost) SyncHostSnapshot();
     if (ThreadSvc->runOnGameThread(context, &HostTick, userData) != D2RL::Threads::Result::Success) {
         std::uint64_t expected = id;
-        (void)ServerChain.compare_exchange_strong(expected, 0);
+        if (ServerChain.compare_exchange_strong(expected, 0)) HostChainsLost.fetch_add(1);
     }
+    // The client chain has ended: start it again from here.
+    if (InGame.load() && ClientChain.load() == 0 && QueueClientChain(context)) ClientRestarts.fetch_add(1);
 }
 
 void __cdecl ClientTick(const D2RL::PluginContext* context, void* userData) noexcept {
     const auto id = static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(userData));
     if (context == nullptr || ClientChain.load() != id) return;
     const std::uint64_t now = GetTickCount64();
+    ClientTickMs.store(now);
     if (now - ClientBonus.lastMs >= ClientPassMs && Settings.enabled) {
         ClientBonus.lastMs = now;
         ClientPass();
     }
+    if (SyncStage.load() == SyncWantClient) SyncCompare();
     if (ThreadSvc->runOnUiThread(context, &ClientTick, userData) != D2RL::Threads::Result::Success) {
         std::uint64_t expected = id;
-        (void)ClientChain.compare_exchange_strong(expected, 0);
+        if (ClientChain.compare_exchange_strong(expected, 0)) ClientChainsLost.fetch_add(1);
+    }
+    // The host chain has ended, or has not run for HostStallMs: start a new one.
+    if (InGame.load() && !HostUnavailable.load() && now - LastHostRestartMs >= HostStallMs
+            && (ServerChain.load() == 0 || now - HostTickMs.load() >= HostStallMs)) {
+        LastHostRestartMs = now;
+        if (QueueHostChain(context)) HostRestarts.fetch_add(1);
     }
 }
 
 void StartChains(const D2RL::PluginContext* context) noexcept {
     if (!ItemBonusReady || ThreadSvc == nullptr) return;
-    if (ServerChain.load() == 0) {
-        const std::uint64_t id = ChainCounter.fetch_add(1) + 1;
-        ServerChain.store(id);
-        // A remote TCP/IP client has no game thread here; only its UI pass runs.
-        if (ThreadSvc->runOnGameThread(context, &HostTick, reinterpret_cast<void*>(static_cast<std::uintptr_t>(id)))
-                != D2RL::Threads::Result::Success) {
-            std::uint64_t expected = id;
-            (void)ServerChain.compare_exchange_strong(expected, 0);
-        }
-    }
-    if (ClientChain.load() == 0) {
-        const std::uint64_t id = ChainCounter.fetch_add(1) + 1;
-        ClientChain.store(id);
-        if (ThreadSvc->runOnUiThread(context, &ClientTick, reinterpret_cast<void*>(static_cast<std::uintptr_t>(id)))
-                != D2RL::Threads::Result::Success) {
-            std::uint64_t expected = id;
-            (void)ClientChain.compare_exchange_strong(expected, 0);
-        }
-    }
+    if (ServerChain.load() == 0 && !HostUnavailable.load()) (void)QueueHostChain(context);
+    if (ClientChain.load() == 0) (void)QueueClientChain(context);
 }
 
 void __cdecl OnGameJoined(const D2RL::PluginContext*, const D2RL::Lifecycle::GameplayEvent*, void*) noexcept {
@@ -3017,11 +3673,22 @@ void __cdecl OnGameJoined(const D2RL::PluginContext*, const D2RL::Lifecycle::Gam
 }
 
 void __cdecl OnLocalPlayerReady(const D2RL::PluginContext* context, const D2RL::Lifecycle::GameplayEvent*, void*) noexcept {
-    if (context != nullptr) StartChains(context);
+    if (context == nullptr) return;
+    InGame.store(true);
+    HostUnavailable.store(false);
+    StartChains(context);
+}
+
+// Act and level changes start any chain that is not running.
+void __cdecl OnZoneChanged(const D2RL::PluginContext* context, const D2RL::Lifecycle::GameplayEvent*, void*) noexcept {
+    if (context != nullptr && InGame.load()) StartChains(context);
 }
 
 void __cdecl OnGameLeft(const D2RL::PluginContext*, const D2RL::Lifecycle::GameplayEvent*, void*) noexcept {
     Generation.fetch_add(1);
+    InGame.store(false);
+    HostUnavailable.store(false);
+    SyncStage.store(SyncIdle);
     ServerChain.store(0);
     ClientChain.store(0);
 }
@@ -3084,6 +3751,20 @@ auto InstallItemBonus() -> bool {
             InstallProblem = "a game join/leave listener was refused, so the item bonus perks are off";
             Context->LogError("Blacksmith: a game join/leave listener was refused; the item bonus perks are off.");
             return false;
+        }
+    }
+    // Act and level changes restart a stopped chain. Optional: the ticks also
+    // restart each other, so a refusal here only costs that extra trigger.
+    for (const D2RL::Lifecycle::GameplayEventKind kind : { D2RL::Lifecycle::GameplayEventKind::ActChanged,
+            D2RL::Lifecycle::GameplayEventKind::LevelChanged }) {
+        const D2RL::Lifecycle::GameplayEventListener registration{
+            .structSize = D2RL::Lifecycle::GameplayEventListenerSize,
+            .kind       = kind,
+            .callback   = &OnZoneChanged,
+        };
+        D2RL::Lifecycle::ListenerHandle handle = D2RL::Lifecycle::InvalidHandle;
+        if (LifecycleSvc->registerGameplayEventListener(Context, &registration, &handle) != D2RL::Lifecycle::Result::Success) {
+            Context->LogWarn("Blacksmith: an act or level change listener was refused; the passes still restart each other.");
         }
     }
     ItemBonusReady = true;
@@ -3179,6 +3860,31 @@ auto Verify() -> bool {
     return true;
 }
 
+// The cube output routine's sites for Brilliant Quality's recipe properties.
+// A mismatch only turns that part off: the perk then rolls in the hook as
+// before, and the console line says why.
+auto VerifyCubeSites() -> bool {
+    const std::array<Witness, 6> witnesses{ {
+        W(CubeRequestWindowRva, CubeRequestWindow, "the cube's item request setup"),
+        W(CubeBuildCallRva, CubeBuildCall, "the cube's item build call"),
+        W(CubeModSkipRva, CubeModSkip, "the cube's recipe mod skip branch"),
+        W(CubeModLoopRva, CubeModLoop, "the cube's recipe mod loop"),
+        W(CubeOutputFlagTestRva, CubeOutputFlagTest, "the cube output's mod flag test"),
+        W(CubeOutputTypeTestRva, CubeOutputTypeTest, "the cube output's type test"),
+    } };
+    for (const Witness& witness : witnesses) {
+        if (!Context->CheckExpectedBytes(witness.rva, witness.bytes, witness.size)) {
+            char text[256];
+            std::snprintf(text, sizeof(text), "%s at 0x%llX does not match D2RLoader 1.3.1 (another plugin may own it)",
+                witness.name, static_cast<unsigned long long>(witness.rva));
+            CubeRollProblem = text;
+            D2RL::LogWarnF(Context, "Blacksmith: %s; Brilliant Quality does not count recipe properties.", text);
+            return false;
+        }
+    }
+    return true;
+}
+
 auto CanReach(std::uintptr_t from, std::uintptr_t to) noexcept -> bool {
     const std::int64_t delta = static_cast<std::int64_t>(to) - static_cast<std::int64_t>(from);
     return delta >= INT32_MIN && delta <= INT32_MAX;
@@ -3253,6 +3959,8 @@ void BindNatives() noexcept {
 }
 
 void Restore() noexcept {
+    if (CubeMarkPatched && Context->PatchBytes(CubeMarkSiteRva, CubeMarkWritten.data(), 8, CubeMarkSiteStock, 8)) CubeMarkPatched = false;
+    if (CubeRollPatched && Context->PatchBytes(CubeRollSiteRva, CubeRollWritten.data(), 5, CubeRollSiteStock, 5)) CubeRollPatched = false;
     if (SkillPatched && Context->PatchBytes(SkillCallRva, SkillWritten.data(), 5, SkillCallStock, 5)) SkillPatched = false;
     if (CombatBPatched && Context->PatchBytes(CombatCallBRva, CombatBWritten.data(), 5, CombatCallBStock, 5)) CombatBPatched = false;
     if (CombatAPatched && Context->PatchBytes(CombatCallARva, CombatAWritten.data(), 5, CombatCallAStock, 5)) CombatAPatched = false;
@@ -3263,6 +3971,29 @@ void Restore() noexcept {
     if (EtherealPatched && Context->PatchBytes(EtherealSiteRva, EtherealWritten.data(), 5, EtherealSiteStock, 5)) EtherealPatched = false;
     if (UniquePatched && Context->PatchBytes(UniqueSiteRva, UniqueWritten.data(), 8, UniqueSiteStock, 8)) UniquePatched = false;
     if (SpawnPatched && Context->PatchBytes(SpawnCallRva, SpawnWritten.data(), 5, SpawnCallStock, 5)) SpawnPatched = false;
+}
+
+// Relays 8 and 9: Brilliant Quality on a cube output rolls after the recipe's
+// own properties. The roll site goes in first, so a failure in between never
+// leaves a mark without the roll that releases it.
+void InstallCubeRoll() noexcept {
+    if (!VerifyCubeSites()) return;
+    if (!BranchBytes(0xE9, CubeRollSiteRva, RelayPage + CubeRollRelayOffset, CubeRollWritten)
+            || !BranchBytes(0xE9, CubeMarkSiteRva, RelayPage + CubeMarkRelayOffset, CubeMarkWritten)) {
+        CubeRollProblem = "a cube relay is out of rel32 reach";
+        Context->LogWarn("Blacksmith: a cube relay is out of rel32 reach; Brilliant Quality does not count recipe properties.");
+        return;
+    }
+    CubeRollPatched = Context->PatchBytes(CubeRollSiteRva, CubeRollSiteStock, 5, CubeRollWritten.data(), 5);
+    CubeMarkPatched = CubeRollPatched && Context->PatchBytes(CubeMarkSiteRva, CubeMarkSiteStock, 8, CubeMarkWritten.data(), 8);
+    if (!CubeMarkPatched) {
+        if (CubeRollPatched && Context->PatchBytes(CubeRollSiteRva, CubeRollWritten.data(), 5, CubeRollSiteStock, 5)) {
+            CubeRollPatched = false;
+        }
+        CubeRollProblem = "the cube output routine at 0x527A08 and 0x5275DF could not be redirected";
+        Context->LogWarn("Blacksmith: the cube output routine at 0x527A08 and 0x5275DF could not be redirected; Brilliant "
+            "Quality does not count recipe properties.");
+    }
 }
 
 auto Install() -> bool {
@@ -3307,6 +4038,12 @@ auto Install() -> bool {
     WriteSlot(RelayPage + CombatDurabilityRelayOffset, JumpRelaySlot, reinterpret_cast<std::uintptr_t>(&KeepCombatDurability));
     std::memcpy(RelayPage + SkillDurabilityRelayOffset, SkillDurabilityRelay, sizeof(SkillDurabilityRelay));
     WriteSlot(RelayPage + SkillDurabilityRelayOffset, JumpRelaySlot, reinterpret_cast<std::uintptr_t>(&KeepSkillDurability));
+    std::memcpy(RelayPage + CubeMarkRelayOffset, CubeMarkRelay, sizeof(CubeMarkRelay));
+    WriteSlot(RelayPage + CubeMarkRelayOffset, CubeMarkRelaySlotCall, reinterpret_cast<std::uintptr_t>(&MarkCubeBuild));
+    WriteSlot(RelayPage + CubeMarkRelayOffset, CubeMarkRelaySlotResume, Base + CubeMarkResumeRva);
+    std::memcpy(RelayPage + CubeRollRelayOffset, CubeRollRelay, sizeof(CubeRollRelay));
+    WriteSlot(RelayPage + CubeRollRelayOffset, CubeRollRelaySlotCall, reinterpret_cast<std::uintptr_t>(&CubeOutputReady));
+    WriteSlot(RelayPage + CubeRollRelayOffset, CubeRollRelaySlotResume, Base + CubeRollResumeRva);
     DWORD previous = 0;
     if (!VirtualProtect(RelayPage, 0x1000, PAGE_EXECUTE_READ, &previous)) {
         InstallProblem = "the relay page could not be made executable";
@@ -3376,6 +4113,7 @@ auto Install() -> bool {
             return false;
         }
     }
+    if (Settings.brilliant.enabled && InitHooked) InstallCubeRoll();
     if (wantWeightless) {
         RequirementPatched = Context->PatchBytes(RequirementCallRva, RequirementCallStock, 5, RequirementWritten.data(), 5);
         RequirementHelperPatched = RequirementPatched
@@ -3426,9 +4164,41 @@ auto PerkLine(const char* name, const PerkConfig& perk, const char* valueName, b
     return text;
 }
 
+// "blacksmith sync": the host copy is read on the next host tick, the client
+// copy on the UI tick after it, and the differences go to the console and log.
+void RequestSync(const D2RL::PluginContext* plugin) noexcept {
+    if (!ItemBonusReady) {
+        plugin->WriteConsoleMessage("Blacksmith sync: the item bonus perks are not installed, so no passes run to compare.");
+        return;
+    }
+    void* const player = PlayerFromIndex(LocalPlayerIndex());
+    if (player == nullptr || UnitType(player) != UnitPlayer) {
+        plugin->WriteConsoleMessage("Blacksmith sync: no local character.");
+        return;
+    }
+    if (HostUnavailable.load()) {
+        plugin->WriteConsoleMessage("Blacksmith sync: this game is hosted elsewhere (TCP/IP), so there is no host copy here.");
+        return;
+    }
+    SyncPlayerId.store(Read<std::uint32_t>(player, UnitId));
+    SyncStage.store(SyncWantHost);
+    plugin->WriteConsoleMessage("Blacksmith sync: comparing the host and client copies of your equipped gear (pairs read host/client)...");
+}
+
+auto ArgsStartWith(const D2RL::ConsoleCommandContext* command, std::string_view word) noexcept -> bool {
+    if (command->args == nullptr) return false;
+    std::string_view args(command->args, command->argsLength);
+    while (!args.empty() && (args.front() == ' ' || args.front() == '\t')) args.remove_prefix(1);
+    return args.substr(0, word.size()) == word;
+}
+
 auto __cdecl StatusCommand(D2R::Game::Client*, const D2RL::ConsoleCommandContext* command, void*) noexcept -> D2RL::ConsoleCommandResult {
     if (command == nullptr || command->plugin == nullptr) return D2RL::ConsoleCommandResult::Failed;
     const auto* plugin = command->plugin;
+    if (ArgsStartWith(command, "sync")) {
+        RequestSync(plugin);
+        return D2RL::ConsoleCommandResult::Handled;
+    }
     char text[512];
     std::snprintf(text, sizeof(text), "Blacksmith %s: %s%s%s", PluginVersion, Settings.enabled ? "on" : "off",
         InstallProblem.empty() ? "" : ", ", InstallProblem.c_str());
@@ -3441,6 +4211,17 @@ auto __cdecl StatusCommand(D2R::Game::Client*, const D2RL::ConsoleCommandContext
     plugin->WriteConsoleMessage(PerkLine("Additional Modifier", Settings.modifier, "chance", InitHooked && SpawnPatched).c_str());
     plugin->WriteConsoleMessage(PerkLine("Hidden Potential (Jeweler)", Settings.hidden, "chance", InitHooked && SpawnPatched).c_str());
     plugin->WriteConsoleMessage(PerkLine("Brilliant Quality (Jeweler)", Settings.brilliant, "chance", InitHooked && SpawnPatched).c_str());
+    if (Settings.brilliant.enabled) {
+        if (CubeMarkPatched && CubeRollPatched) {
+            std::snprintf(text, sizeof(text), "Brilliant Quality on cube outputs: rolls after the recipe's properties, so they count "
+                "| held %llu, rolled %llu", static_cast<unsigned long long>(CubeRollsHeld.load()),
+                static_cast<unsigned long long>(CubeRollsAfterRecipe.load()));
+        } else {
+            std::snprintf(text, sizeof(text), "Brilliant Quality on cube outputs: recipe properties are NOT counted (%s)",
+                CubeRollProblem.empty() ? "not installed" : CubeRollProblem.c_str());
+        }
+        plugin->WriteConsoleMessage(text);
+    }
     std::snprintf(text, sizeof(text), "Additional modifiers: %llu added (rings and amulets %llu), %llu of them without a free affix "
         "slot | jewels with a doubled modifier %llu | gamble purchases %llu",
         static_cast<unsigned long long>(ModifiersAdded.load() + HiddenAdded.load()), static_cast<unsigned long long>(HiddenAdded.load()),
@@ -3463,11 +4244,23 @@ auto __cdecl StatusCommand(D2R::Game::Client*, const D2RL::ConsoleCommandContext
     plugin->WriteConsoleMessage(text);
     std::snprintf(text, sizeof(text),
         "Item bonus lists: host %u items, client %u items | passes running: host %s, client %s | added %llu, removed %llu, "
-        "values written %llu",
+        "values written %llu, reused addresses left alone %llu",
         ServerBonusItems.load(), ClientBonusItems.load(), ServerChain.load() != 0 ? "yes" : "no",
         ClientChain.load() != 0 ? "yes" : "no", static_cast<unsigned long long>(BonusListsAdded.load()),
-        static_cast<unsigned long long>(BonusListsRemoved.load()), static_cast<unsigned long long>(BonusValuesWritten.load()));
+        static_cast<unsigned long long>(BonusListsRemoved.load()), static_cast<unsigned long long>(BonusValuesWritten.load()),
+        static_cast<unsigned long long>(BonusAddressesReused.load()));
     plugin->WriteConsoleMessage(text);
+    {
+        const std::uint64_t now = GetTickCount64();
+        std::snprintf(text, sizeof(text),
+            "Passes: host last ran %llu ms ago (ended %llu times, restarted %llu)%s, client %llu ms ago (ended %llu times, "
+            "restarted %llu) | \"blacksmith sync\" compares the host and client copies of your gear",
+            static_cast<unsigned long long>(now - HostTickMs.load()), static_cast<unsigned long long>(HostChainsLost.load()),
+            static_cast<unsigned long long>(HostRestarts.load()), HostUnavailable.load() ? ", none here (TCP/IP client)" : "",
+            static_cast<unsigned long long>(now - ClientTickMs.load()), static_cast<unsigned long long>(ClientChainsLost.load()),
+            static_cast<unsigned long long>(ClientRestarts.load()));
+        plugin->WriteConsoleMessage(text);
+    }
     std::snprintf(text, sizeof(text),
         "Drops %llu (%llu for a perk player) | ethereal at the perk chance %llu | upgrades to exceptional %llu, to elite %llu "
         "| unique chances raised %llu (rings, amulets and jewels %llu) | requirements reduced %llu",
@@ -3510,7 +4303,7 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
     Context = context;
     Base = context->exeBase;
     ReadConfiguration();
-    if (!context->RegisterConsoleCommand("blacksmith", &StatusCommand, "Blacksmith perks: settings, installed parts and counters.")) {
+    if (!context->RegisterConsoleCommand("blacksmith", &StatusCommand, "Blacksmith perks: settings, installed parts and counters. \"blacksmith sync\" compares the host and client copies of your gear.")) {
         context->LogWarn("Blacksmith: the console command could not be registered.");
     }
     if (!Settings.enabled) {
@@ -3529,6 +4322,8 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
 }
 
 D2RL_PLUGIN_EXPORT void D2RLoaderUnloadPlugin() noexcept {
+    InGame.store(false);
+    SyncStage.store(SyncIdle);
     ServerChain.store(0);
     ClientChain.store(0);
     if (Context != nullptr) Restore();

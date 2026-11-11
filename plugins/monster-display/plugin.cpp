@@ -174,8 +174,10 @@
 //   skill id as its layer. The skills to look for come from Monster Affixes'
 //   "aura-enchanted" service (its TOML lists) when that plugin publishes it,
 //   else from the game's tables at 1D1DE70 (7 records) and 1D1DF20 (4), both
-//   24-byte records with the skill id at +14h. Levels are read back with
-//   33DCD0 / 33D1E0 and stat 151.
+//   24-byte records with the skill id at +14h. A bound demon rolls its aura
+//   from Summon Enhancements' own list (its auras key), which that plugin
+//   publishes under the same service name and shape; those skills are looked
+//   for as well. Levels are read back with 33DCD0 / 33D1E0 and stat 151.
 //
 // ---------------------------------------------------------------------------
 // 3. Text
@@ -266,7 +268,7 @@
 namespace {
 
 constexpr char PluginIdText[]  = "celestialrayone.monster-display";
-constexpr char PluginVersion[] = "1.0.18";
+constexpr char PluginVersion[] = "1.0.19";
 constexpr char SourceFile[]    = "monster-display";
 
 const D2RL::PluginContext* Context{};
@@ -1478,32 +1480,50 @@ constexpr std::uint32_t AuraKindSkillList     = 0;
 constexpr std::uint32_t AuraKindHerald        = 1;
 constexpr std::size_t   MaxAuraCandidates     = 128;
 
+// Summon Enhancements (celestialrayone.summon-enhancements 2.2.0 and later)
+// publishes the same service for the list bound demons roll from: kind 0 =
+// every skill of its auras key, kind 1 = none.
+constexpr char SummonsProviderId[] = "celestialrayone.summon-enhancements";
+
 // Game thread only.
 D2RL::PluginCommunication::ServiceLease<AuraEnchantedService> AffixesLease;
 std::uint64_t AffixesLastAttempt{};
+D2RL::PluginCommunication::ServiceLease<AuraEnchantedService> SummonsLease;
+std::uint64_t SummonsLastAttempt{};
 
 // Acquired on first use and retried every few seconds while it is missing
-// (Monster Affixes not installed, or no aura key in its TOML). Held until
-// unload. Without it the game's own tables are read, as before.
-auto AffixesService() -> const AuraEnchantedService* {
-    if (AffixesLease) return AffixesLease.Get();
+// (the provider not installed, or its aura list off). Held until unload.
+auto AcquireAuraService(D2RL::PluginCommunication::ServiceLease<AuraEnchantedService>& lease, std::uint64_t& lastAttempt,
+        const char* provider, const char* found) -> const AuraEnchantedService* {
+    if (lease) return lease.Get();
     const std::uint64_t now = Now();
-    if (AffixesLastAttempt != 0 && now - AffixesLastAttempt < AffixesServiceRetryMs) return nullptr;
-    AffixesLastAttempt = now;
+    if (lastAttempt != 0 && now - lastAttempt < AffixesServiceRetryMs) return nullptr;
+    lastAttempt = now;
     const D2RL::PluginCommunicationService* communication = nullptr;
     if (Context->QueryService(&communication) != D2RL::ServiceQueryResult::Success
             || !D2RL::HasPluginCommunicationServiceField(communication, D2RL::PluginCommunicationServiceRequiredSize)) {
         return nullptr;
     }
-    const auto result = D2RL::PluginCommunication::Acquire(Context, communication, AffixesProviderId,
-        AffixesServiceName, AffixesServiceVersion, static_cast<std::uint32_t>(sizeof(AuraEnchantedService)),
-        &AffixesLease);
-    if (result != D2RL::PluginCommunication::Result::Success || !AffixesLease || AffixesLease->candidates == nullptr) {
-        AffixesLease.Reset();
+    const auto result = D2RL::PluginCommunication::Acquire(Context, communication, provider, AffixesServiceName,
+        AffixesServiceVersion, static_cast<std::uint32_t>(sizeof(AuraEnchantedService)), &lease);
+    if (result != D2RL::PluginCommunication::Result::Success || !lease || lease->candidates == nullptr) {
+        lease.Reset();
         return nullptr;
     }
-    Context->LogInfo("MonsterDisplay: using the Monster Affixes aura-enchanted service.");
-    return AffixesLease.Get();
+    Context->LogInfo(found);
+    return lease.Get();
+}
+
+// Without it the game's own tables are read, as before.
+auto AffixesService() -> const AuraEnchantedService* {
+    return AcquireAuraService(AffixesLease, AffixesLastAttempt, AffixesProviderId,
+        "MonsterDisplay: using the Monster Affixes aura-enchanted service.");
+}
+
+// Bound demon auras. Without it those are not found, as before.
+auto SummonsService() -> const AuraEnchantedService* {
+    return AcquireAuraService(SummonsLease, SummonsLastAttempt, SummonsProviderId,
+        "MonsterDisplay: using the Summon Enhancements aura-enchanted service (bound demon auras).");
 }
 
 // Bound Demon Scaling's "stats-row" service, in the layout its provider
@@ -1651,6 +1671,10 @@ void ReadAuras(void* monster, MonsterData& data) {
             const std::int32_t skillId = Read<std::int32_t>(table, i * 24 + 20);
             if (skillId > 0 && skillId <= 0xFFFF) skills[count++] = static_cast<std::uint16_t>(skillId);
         }
+    }
+    // A bound demon's aura comes from Summon Enhancements' list instead.
+    if (const AuraEnchantedService* summons = SummonsService(); summons != nullptr && count < capacity) {
+        count += std::min(summons->candidates(AuraKindSkillList, skills.data() + count, capacity - count), capacity - count);
     }
     for (std::uint32_t i = 0; i < count; ++i) {
         void* skill = SkillById(monster, skills[i], 0xFFFFFFFFU);
@@ -3159,5 +3183,6 @@ D2RL_PLUGIN_EXPORT void D2RLoaderUnloadPlugin() noexcept {
     CapLease.Reset();
     LifeBarsLease.Reset();
     AffixesLease.Reset();
+    SummonsLease.Reset();
     StatsRowLease.Reset();
 }

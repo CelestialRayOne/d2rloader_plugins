@@ -154,6 +154,24 @@
 //   - The pick: every entry whose min_level <= monster level, in list order;
 //     index = (seed * 6AC690C5h + 29Ah) mod eligible count, D2RCore's hash.
 //     The default list reproduces D2RCore's "3.2" pet column exactly.
+//   - A demon without a name seed gets one first. 51EF90 re-seeds only
+//     monsters that are not superunique, champion or unique (51F295: test
+//     byte [MonsterData+1Ah],0Eh), so an elite keeps the seed it spawned with,
+//     and the ones the game never names from a seed (prime evils) have 0.
+//     Seed 0 would give every such demon the same entry (666 mod the eligible
+//     count). Such a demon takes one step of its own generator, exactly the
+//     step 51EF90 takes for a normal monster (UNITS_GetSeed 34A1E0, called at
+//     51F29E: low * 6AC690C5h + high, both halves stored back, the low word is
+//     the seed), and the seed is stored with the game's SetNameSeed 38E7B0
+//     (MonsterData+18h). That function is taken from the import slot
+//     D2RCore!PrepareBindDemonRules calls it through (+1Bh), whose live
+//     pointer must be the game's 38E7B0. The seed is saved with the demon, so
+//     the restore keeps it and the aura.
+//   - The list is published as the "aura-enchanted" service, version 1, the
+//     same name and table shape Monster Affixes publishes (candidates(kind,
+//     skills, capacity): kind 0 = every skill of the auras key, kind 1 =
+//     none), so Monster Display looks for a bound demon's aura in its skill
+//     list and names it.
 //   - A skill id outside skills.txt is never set: it is checked against the
 //     row count at DataTables+11B8h, the bound the skills-record lookup 97790
 //     checks (its call to DataTables 300A90 is part of the witness).
@@ -1281,10 +1299,16 @@ constexpr char DefaultConfigToml[] = R"toml(# Summon Enhancements (celestialrayo
 #     twice to make it twice as likely.
 #   - The pick comes from the demon's monster seed. A restored demon keeps the
 #     seed it was saved with, so it comes back with the same aura.
+#   - A demon that has no seed (prime evils, and other monsters the game
+#     never names from a seed) gets one from its own random number generator
+#     at the roll, the way the game re-seeds a normal monster when it is
+#     bound. Without that, all of them would get the same entry.
 #   - Level = monster level / divisor, kept between 1 and 99. The monster
 #     level is the demon's level stat at the end of the bind.
 #   - The aura becomes the demon's active aura, the same way Aura Enchanted
 #     sets it.
+#   - Monster Display names it on the Aura Enchanted row: the list is shared
+#     with it while the aura list is on.
 #   - If no entry qualifies (empty list, or every min_level is above the
 #     demon's level), the plugin gives no aura.
 #
@@ -2034,6 +2058,18 @@ constexpr std::uint8_t  RestoreModsWindow[]{
     0x89, 0x44, 0x24, 0x20, 0x48, 0x8B, 0xCE, 0xE8, 0xCC, 0x99, 0xF6, 0xFF,
 };
 
+// D2RCore!PrepareBindDemonRules (demon, seed): its first 29 bytes, up to the
+// call through the import slot of the game's SetNameSeed (FF 15 at +1Bh).
+constexpr std::uint8_t CorePrepareEntry[]{
+    0x55, 0x56, 0x48, 0x83, 0xEC, 0x28, 0x48, 0x8D, 0x6C, 0x24, 0x20, 0x48,
+    0xC7, 0x45, 0x00, 0xFE, 0xFF, 0xFF, 0xFF, 0x48, 0x85, 0xC9, 0x74, 0x34,
+    0x48, 0x89, 0xCE, 0xFF, 0x15,
+};
+constexpr std::size_t   CorePrepareSlotDisp = 0x1D;    // disp32 of the FF 15 at +1Bh
+constexpr std::uint64_t SetNameSeedRva      = 0x38E7B0;  // (unit, seed): word at MonsterData+18h
+constexpr std::uint64_t UnitSeedRva         = 0x34A1E0;  // UNITS_GetSeed (unit) -> {low, high}
+constexpr std::uint32_t SeedStep            = 0x6AC690C5u;
+
 constexpr std::uint64_t GetNameSeedRva = 0x38E370;  // (unit) -> word
 constexpr std::uint8_t  GetNameSeedEntry[]{
     0x40, 0x53, 0x48, 0x83, 0xEC, 0x20, 0x48, 0x8B, 0xD9, 0x48, 0x85, 0xC9,
@@ -2099,6 +2135,12 @@ static_assert(SkillsRecordEntry[0x12] == 0xE8 && SkillsRecordEntry[0x24] == 0xB8
 static_assert(CoreAuraEntry[12] == 0x48 && CoreAuraEntry[13] == 0x81 && CoreAuraEntry[14] == 0xEC);
 static_assert(sizeof(NewBindLoad) == 9);
 
+// The bind conversion's own seed step calls UNITS_GetSeed here (inside
+// PrepareWindow).
+const std::array<CallWitness, 1> SeedCalls{ {
+    { 0x51F29E, UnitSeedRva, "bind conversion, unit seed" },
+} };
+
 const std::array<Witness, 9> AuraWitnesses{
     W(PrepareWindowRva, PrepareWindow, "bind conversion, PrepareBindDemonRules call"),
     W(ApplyUModWindowRva, ApplyUModWindow, "bind conversion, calc2-calc5 loop"),
@@ -2125,6 +2167,8 @@ using GetNameSeedFn = std::uint16_t(__fastcall*)(void* unit);
 using GetStatFn     = std::int32_t(__fastcall*)(void* unit, std::uint32_t stat, std::uint32_t layer);
 using SetSkillFn    = void(__fastcall*)(void* unit, std::int32_t skill, std::int32_t level, std::int32_t mode);
 using SelectSkillFn = void(__fastcall*)(void* unit, std::int32_t left, std::int32_t skill, std::int32_t owner);
+using SetNameSeedFn = void(__fastcall*)(void* unit, std::uint32_t seed);
+using UnitSeedFn    = std::uint32_t*(__fastcall*)(void* unit);
 
 PrepareFn     OriginalPrepare{};
 ApplyUModFn   OriginalApplyUMod{};
@@ -2135,6 +2179,8 @@ GetNameSeedFn GetNameSeed{};
 GetStatFn     GetStat{};
 SetSkillFn    SetSkill{};
 SelectSkillFn SelectSkill{};
+SetNameSeedFn SetNameSeed{};
+UnitSeedFn    UnitSeed{};
 
 PluginState       AuraState{ PluginState::NotLoaded };
 std::atomic<bool> AuraActive{};
@@ -2151,6 +2197,7 @@ std::atomic<std::uint64_t> RollsApplied{};
 std::atomic<std::uint64_t> RollsEmpty{};
 std::atomic<std::uint64_t> RollsBadSkill{};
 std::atomic<std::uint64_t> SeedsKept{};
+std::atomic<std::uint64_t> SeedsGiven{};
 std::atomic<std::uint64_t> NativeRollsReplaced{};
 
 struct RollRecord {
@@ -2158,6 +2205,7 @@ struct RollRecord {
     std::uint32_t classId{};
     std::int32_t  monsterLevel{};
     std::uint16_t seed{};
+    bool          newSeed{};
     std::int32_t  skill{ -1 };
     std::int32_t  level{};
     const char*   moment{ "" };
@@ -2199,6 +2247,22 @@ auto SkillExists(const void* unit, std::int32_t skill) noexcept -> bool {
     return static_cast<std::uint64_t>(skill) < Read<std::uint64_t>(tables, SkillCountOffset);
 }
 
+// One step of the demon's own generator, the step 51EF90 takes for a normal
+// monster (51F2A3): low * 6AC690C5h + high, both halves stored back, the low
+// word is the seed. A 0 would leave the demon without a seed, so it steps on.
+auto NewNameSeed(void* unit) noexcept -> std::uint16_t {
+    std::uint32_t* pair = UnitSeed(unit);
+    if (pair == nullptr) return 0;
+    for (int step = 0; step < 8; ++step) {
+        const std::uint64_t next = static_cast<std::uint64_t>(pair[0]) * SeedStep + pair[1];
+        pair[0]                  = static_cast<std::uint32_t>(next);
+        pair[1]                  = static_cast<std::uint32_t>(next >> 32);
+        const auto seed          = static_cast<std::uint16_t>(next);
+        if (seed != 0) return seed;
+    }
+    return 0;
+}
+
 // The roll that replaces Aura Enchanted for a bound demon.
 void RollFromList(void* unit, const char* moment) noexcept {
     if (MonsterData(unit) == nullptr) return;
@@ -2206,6 +2270,17 @@ void RollFromList(void* unit, const char* moment) noexcept {
     record.unitId       = Read<std::uint32_t>(unit, UnitIdOffset);
     record.classId      = Read<std::uint32_t>(unit, UnitClassOffset);
     record.seed         = GetNameSeed(unit);
+    // No name seed: every such demon would get the same entry. It gets one,
+    // which is saved with it, so the restore brings the same aura back.
+    if (record.seed == 0 && SetNameSeed != nullptr && UnitSeed != nullptr) {
+        const std::uint16_t seed = NewNameSeed(unit);
+        if (seed != 0) {
+            SetNameSeed(unit, seed);
+            record.seed    = GetNameSeed(unit);
+            record.newSeed = record.seed == seed;
+            if (record.newSeed) SeedsGiven.fetch_add(1, std::memory_order_relaxed);
+        }
+    }
     record.monsterLevel = GetStat(unit, LevelStat, 0);
     record.moment       = moment;
 
@@ -2233,8 +2308,9 @@ void RollFromList(void* unit, const char* moment) noexcept {
     record.result = "set";
     RollsApplied.fetch_add(1, std::memory_order_relaxed);
     Remember(record);
-    D2RL::LogInfoF(Context, "SummonEnhancements (auras): %s, demon %u (monstats row %u, level %d, seed %u): skill %d at level %d.", moment,
-        record.unitId, record.classId, record.monsterLevel, static_cast<unsigned>(record.seed), entry.skill, record.level);
+    D2RL::LogInfoF(Context, "SummonEnhancements (auras): %s, demon %u (monstats row %u, level %d, seed %u%s): skill %d at level %d.", moment,
+        record.unitId, record.classId, record.monsterLevel, static_cast<unsigned>(record.seed),
+        record.newSeed ? ", new: it had none" : "", entry.skill, record.level);
 }
 
 // ---------------------------------------------------------------------------
@@ -2517,6 +2593,96 @@ auto LocateCoreAura() noexcept -> std::uint8_t* {
     return entry;
 }
 
+// 51F29E, inside PrepareWindow (already compared): the call reaches
+// UNITS_GetSeed.
+auto SeedCallReaches() noexcept -> bool {
+    const CallWitness& call = SeedCalls[0];
+    const auto*        site = reinterpret_cast<const std::uint8_t*>(Base + call.site);
+    std::int32_t       rel  = 0;
+    std::memcpy(&rel, site + 1, sizeof(rel));
+    return site[0] == 0xE8 && call.site + 5 + static_cast<std::int64_t>(rel) == call.target;
+}
+
+// The game's SetNameSeed, as D2RCore!PrepareBindDemonRules reaches it: the
+// live pointer in its import slot must be the game's 38E7B0. Null when not.
+auto LocateSetNameSeed() noexcept -> SetNameSeedFn {
+    const HMODULE core  = GetModuleHandleW(L"D2RCore.dll");
+    auto*         entry = core != nullptr
+                              ? reinterpret_cast<const std::uint8_t*>(reinterpret_cast<void*>(GetProcAddress(core, "PrepareBindDemonRules")))
+                              : nullptr;
+    MEMORY_BASIC_INFORMATION info{};
+    if (entry == nullptr || VirtualQuery(entry, &info, sizeof(info)) != sizeof(info) || info.State != MEM_COMMIT
+        || reinterpret_cast<std::uintptr_t>(entry) + CorePrepareSlotDisp + 4
+               > reinterpret_cast<std::uintptr_t>(info.BaseAddress) + info.RegionSize
+        || std::memcmp(entry, CorePrepareEntry, sizeof(CorePrepareEntry)) != 0) {
+        return nullptr;
+    }
+    std::int32_t disp = 0;
+    std::memcpy(&disp, entry + CorePrepareSlotDisp, sizeof(disp));
+    const auto* slot = entry + CorePrepareSlotDisp + 4 + disp;
+    if (VirtualQuery(slot, &info, sizeof(info)) != sizeof(info) || info.State != MEM_COMMIT) return nullptr;
+    std::uintptr_t live = 0;
+    std::memcpy(&live, slot, sizeof(live));
+    if (live != Base + SetNameSeedRva) return nullptr;
+    return reinterpret_cast<SetNameSeedFn>(live);
+}
+
+// "aura-enchanted", version 1, read by Monster Display: the skills a bound
+// demon's roll can give. Same table as Monster Affixes' service: kind 0 = the
+// ones put in the skill list (every entry of the auras key), kind 1 = the
+// herald extras (none here). Writes up to capacity ids, returns how many.
+// The list is fixed after load.
+struct AuraEnchantedService {
+    using CandidatesFn = std::uint32_t(__cdecl*)(std::uint32_t kind, std::uint16_t* skills, std::uint32_t capacity) noexcept;
+
+    std::uint32_t serviceSize;
+    std::uint32_t serviceVersion;
+    CandidatesFn  candidates;
+};
+static_assert(sizeof(AuraEnchantedService) == 16 && offsetof(AuraEnchantedService, candidates) == 8);
+
+auto __cdecl ServiceAuraCandidates(std::uint32_t kind, std::uint16_t* skills, std::uint32_t capacity) noexcept -> std::uint32_t {
+    if (skills == nullptr || capacity == 0 || kind != 0 || !AuraActive.load(std::memory_order_relaxed)) return 0;
+    std::uint32_t count = 0;
+    for (const AuraEntry& entry : Settings.auras) {
+        if (count >= capacity) break;
+        if (entry.skill <= 0 || entry.skill > MaxSkillId) continue;
+        const auto skill     = static_cast<std::uint16_t>(entry.skill);
+        bool       duplicate = false;
+        for (std::uint32_t i = 0; i < count && !duplicate; ++i) duplicate = skills[i] == skill;
+        if (!duplicate) skills[count++] = skill;
+    }
+    return count;
+}
+
+constexpr AuraEnchantedService AuraServiceTable{
+    .serviceSize    = sizeof(AuraEnchantedService),
+    .serviceVersion = 1,
+    .candidates     = &ServiceAuraCandidates,
+};
+
+void PublishAuraService() noexcept {
+    const D2RL::PluginCommunicationService* communication = nullptr;
+    if (Context->QueryService(&communication) != D2RL::ServiceQueryResult::Success
+            || !D2RL::HasPluginCommunicationServiceField(communication, D2RL::PluginCommunicationServiceRequiredSize)) {
+        Context->LogWarn("SummonEnhancements (auras): no plugin communication service; Monster Display cannot name bound demon auras.");
+        return;
+    }
+    const D2RL::PluginCommunication::PublishServiceRequest request{
+        .structSize     = D2RL::PluginCommunication::PublishServiceRequestSize,
+        .flags          = 0,
+        .name           = "aura-enchanted",
+        .serviceVersion = 1,
+        .tableSize      = static_cast<std::uint32_t>(sizeof(AuraServiceTable)),
+        .table          = &AuraServiceTable,
+    };
+    if (communication->publishService(Context, &request) != D2RL::PluginCommunication::Result::Success) {
+        Context->LogWarn("SummonEnhancements (auras): the aura-enchanted service was refused; Monster Display cannot name bound demon auras.");
+        return;
+    }
+    Context->LogInfo("SummonEnhancements (auras): the list is published as the aura-enchanted service for Monster Display.");
+}
+
 void InstallAuraList() noexcept {
     if (!Settings.auraList) {
         AuraState = PluginState::DisabledByConfig;
@@ -2544,6 +2710,12 @@ void InstallAuraList() noexcept {
     SetSkill            = At<SetSkillFn>(SetSkillRva);
     SelectSkill         = At<SelectSkillFn>(SelectSkillRva);
     DataTables          = At<DataTablesFn>(DataTablesRva);
+    SetNameSeed         = SeedCallReaches() ? LocateSetNameSeed() : nullptr;
+    UnitSeed            = SetNameSeed != nullptr ? At<UnitSeedFn>(UnitSeedRva) : nullptr;
+    if (SetNameSeed == nullptr) {
+        Context->LogError("SummonEnhancements (auras): the game's SetNameSeed could not be confirmed through "
+                          "D2RCore!PrepareBindDemonRules; demons without a name seed keep rolling the same entry.");
+    }
     if (!BuildRelayPage()) {
         AuraState = PluginState::InstallFailed;
         Context->LogError("SummonEnhancements (auras): no executable page within reach of the game image; the aura list is off.");
@@ -2563,6 +2735,7 @@ void InstallAuraList() noexcept {
         return;
     }
     AuraState = PluginState::Running;
+    PublishAuraService();
     D2RL::LogInfoF(Context, "SummonEnhancements (auras): active with %zu list entries (D2RCore detour + 4 call relays).", Settings.auras.size());
 }
 
@@ -2861,10 +3034,12 @@ auto __cdecl AuraStatusCommand(D2R::Game::Client*, const D2RL::ConsoleCommandCon
     if (Settings.auras.empty()) list += " empty, bound demons get no aura";
     command->plugin->WriteConsoleMessage(list.c_str());
     std::snprintf(line, sizeof(line),
-        "  rolls set %llu, no entry %llu, bad skill id %llu, native rolls replaced %llu, restore seeds kept %llu.",
+        "  rolls set %llu, no entry %llu, bad skill id %llu, native rolls replaced %llu, restore seeds kept %llu, "
+        "name seeds given %llu%s.",
         static_cast<unsigned long long>(RollsApplied.load()), static_cast<unsigned long long>(RollsEmpty.load()),
         static_cast<unsigned long long>(RollsBadSkill.load()), static_cast<unsigned long long>(NativeRollsReplaced.load()),
-        static_cast<unsigned long long>(SeedsKept.load()));
+        static_cast<unsigned long long>(SeedsKept.load()), static_cast<unsigned long long>(SeedsGiven.load()),
+        SetNameSeed != nullptr ? "" : " (off, see the log)");
     command->plugin->WriteConsoleMessage(line);
     AcquireSRWLockShared(&HistoryLock);
     const std::size_t                         count = HistoryCount;
@@ -2874,8 +3049,9 @@ auto __cdecl AuraStatusCommand(D2R::Game::Client*, const D2RL::ConsoleCommandCon
     if (count == 0) command->plugin->WriteConsoleMessage("  no roll yet.");
     for (std::size_t i = 0; i < count; ++i) {
         const RollRecord& r = copy[(next + HistorySize - count + i) % HistorySize];
-        std::snprintf(line, sizeof(line), "  %s: demon %u (monstats %u, level %d, seed %u) -> skill %d level %d, %s.",
-            r.moment, r.unitId, r.classId, r.monsterLevel, static_cast<unsigned>(r.seed), r.skill, r.level, r.result);
+        std::snprintf(line, sizeof(line), "  %s: demon %u (monstats %u, level %d, seed %u%s) -> skill %d level %d, %s.",
+            r.moment, r.unitId, r.classId, r.monsterLevel, static_cast<unsigned>(r.seed), r.newSeed ? " new" : "", r.skill,
+            r.level, r.result);
         command->plugin->WriteConsoleMessage(line);
     }
     return D2RL::ConsoleCommandResult::Handled;
@@ -2886,7 +3062,7 @@ constexpr D2RL::PluginInfo PluginInfoData{
     .abiVersion  = D2RL_PLUGIN_ABI_VERSION,
     .id          = "celestialrayone.summon-enhancements",
     .name        = "Summon Enhancements",
-    .version     = "2.0.0",
+    .version     = "2.2.0",
     .author      = "CelestialRayOne",
     .description = "Bound demons of every class and the summons of listed skills are saved and come back; bound demons roll "
                    "their aura from a list.",

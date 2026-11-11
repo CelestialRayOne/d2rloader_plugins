@@ -4,8 +4,8 @@
 D2RL_PLUGIN_MANIFEST_RESOURCE_ID RCDATA { D2RL_PLUGIN_RESOURCE_DWORD(D2RL_PLUGIN_ABI_VERSION) }
 
 1 VERSIONINFO
-FILEVERSION 1,14,2,0
-PRODUCTVERSION 1,14,2,0
+FILEVERSION 1,14,3,0
+PRODUCTVERSION 1,14,3,0
 BEGIN
   BLOCK "StringFileInfo"
   BEGIN
@@ -13,11 +13,11 @@ BEGIN
     BEGIN
       VALUE "CompanyName", "CelestialRayOne"
       VALUE "FileDescription", "Specializations: specialization window and points, perks saved as character stats, Magic and Physical resistance rows."
-      VALUE "FileVersion", "1.14.2"
+      VALUE "FileVersion", "1.14.3"
       VALUE "InternalName", "celestialrayone.specializations"
       VALUE "OriginalFilename", "d2rl-celestialrayone-specializations.dll"
       VALUE "ProductName", "Specializations"
-      VALUE "ProductVersion", "1.14.2"
+      VALUE "ProductVersion", "1.14.3"
     END
   END
   BLOCK "VarFileInfo"

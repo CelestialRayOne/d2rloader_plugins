@@ -1,0 +1,2 @@
+Put d2rl-celestialrayone-ascendancies.dll here.
+Build it from plugin-source (see step 1 of Ascendancies-Setup-Guide.md).

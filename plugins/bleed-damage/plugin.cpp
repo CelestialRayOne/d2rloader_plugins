@@ -126,12 +126,14 @@
 //   requested, the line, and the newline key, each through the composer's
 //   own string resolver and 12276A0. The max and length stats return the flag.
 //
-//   The line is formatted with the plugin's own snprintf rather than the
-//   game's formatter 847F0, so the text may show the seconds with decimals.
-//   Seconds is length / 25.0 when the text's third placeholder is a floating
-//   one (%.2f and so on) and the whole seconds length / 25 otherwise, so a
-//   text still written with %d keeps working and never reads a double as an
-//   int.
+//   The line is formatted by the plugin itself rather than by the game's
+//   formatter 847F0, so the text may show the seconds with decimals.
+//   FormatBleedLine fills the text one placeholder at a time: placeholder n,
+//   numbered (%3$.2f) or in order (%.2f), takes value n. A floating
+//   placeholder gets the exact seconds, length / 25.0, without the trailing
+//   zeros of its decimals (3.20 shows as 3.2, 10.00 as 10); an integer one
+//   gets the whole seconds, length / 25. A text still written with %d keeps
+//   working and never reads a double as an int.
 
 #include <D2RLPlugin/api.h>
 
@@ -485,10 +487,14 @@ constexpr char DefaultConfigToml[] =
     "\n"
     "# String key of the tooltip line. The text receives three values in this\n"
     "# order: min percent, max percent, length in seconds (length / 25).\n"
-    "# Write the percents as %d. Write the seconds as %.2f for two decimals\n"
-    "# (5 frames shows 0.20) or as %d for whole seconds (5 frames shows 0).\n"
-    "# A floating placeholder (%f, %e, %g, %a, with any precision) gets the\n"
-    "# exact seconds, any other gets whole seconds.\n"
+    "# Write the percents as %d. Write the seconds as %.2f for up to two\n"
+    "# decimals or as %d for whole seconds. Trailing zeros of the decimals are\n"
+    "# never shown: 80 frames shows 3.2 (not 3.20), 250 frames shows 10 (not\n"
+    "# 10.00). %d rounds down: 80 frames shows 3.\n"
+    "# A floating placeholder (%f, %e, %g, with any precision) gets the exact\n"
+    "# seconds, an integer one (%d, %i, %u) gets whole seconds. Placeholders\n"
+    "# may be numbered (%1$d, %2$d, %3$.2f), so a language can put the three\n"
+    "# values in another order.\n"
     "#\n"
     "# The line appears where the min stat's own line would be. While both min\n"
     "# and max are above 0 on the item, the max and length stats show no line\n"
@@ -878,24 +884,159 @@ auto Resolve(const char* key, std::size_t length) noexcept -> const char* {
     return text != nullptr ? text : "";
 }
 
-// The conversion letter of the text's third placeholder, 0 when the text has
-// fewer than three. %% is a literal percent sign, not a placeholder.
-auto ThirdConversion(const char* format) noexcept -> char {
-    constexpr char SpecifierPrefix[] = "-+ #0123456789.*hlLjztwI";
-    int placeholders = 0;
-    for (const char* cursor = format; *cursor != '\0'; ++cursor) {
-        if (*cursor != '%') continue;
-        ++cursor;
-        while (*cursor != '\0' && std::strchr(SpecifierPrefix, *cursor) != nullptr) ++cursor;
-        if (*cursor == '\0') return 0;
-        if (*cursor == '%') continue;
-        if (++placeholders == 3) return *cursor;
+// ---------------------------------------------------------------------------
+// The bleed line
+// ---------------------------------------------------------------------------
+//   The localized text is filled one placeholder at a time. Placeholder n
+//   takes value n: 1 the min percent, 2 the max percent, 3 the seconds. A
+//   placeholder is numbered (%3$.2f, as a language may write the text to
+//   reorder the values) or takes the next number in order (%.2f). The CRT's
+//   snprintf has no numbered placeholders, so it only ever sees one rebuilt
+//   placeholder with an argument of the matching type.
+//     %d %i %u %o %x %X   whole numbers, the seconds as length / 25 rounded
+//                         down
+//     %f %F %e %E %g %G   the exact value without the trailing zeros of its
+//                         decimals: 3.20 shows as 3.2, 10.00 as 10
+//     %%                  a percent sign
+//   Any other placeholder (another number, another conversion) is copied as
+//   written, and a % that starts no placeholder (a * width) stays a %.
+
+constexpr int         BleedLineValues      = 3;
+constexpr std::size_t PlaceholderSpecBytes = 32;
+constexpr std::size_t FormattedValueBytes  = 64;
+
+// Appends to a terminated buffer, cutting whatever does not fit.
+struct LineBuilder {
+    char*       text;
+    std::size_t capacity;
+    std::size_t used;
+
+    void Append(const char* piece, std::size_t size) noexcept {
+        if (used + 1 >= capacity) return;
+        const std::size_t room = capacity - 1 - used;
+        const std::size_t count = size < room ? size : room;
+        std::memcpy(text + used, piece, count);
+        used += count;
+        text[used] = '\0';
     }
-    return 0;
+};
+
+auto IsDigit(char character) noexcept -> bool {
+    return character >= '0' && character <= '9';
 }
 
-auto IsFloatingConversion(char conversion) noexcept -> bool {
-    return conversion != '\0' && std::strchr("aAeEfFgG", conversion) != nullptr;
+auto IsLetter(char character) noexcept -> bool {
+    return (character >= 'A' && character <= 'Z') || (character >= 'a' && character <= 'z');
+}
+
+// Drops the trailing zeros of a formatted number's decimals, and the decimal
+// point with them when no decimal is left: 3.20 -> 3.2, 10.00 -> 10,
+// 1.50e+01 -> 1.5e+01. Anything else stays as it is.
+void DropTrailingZeros(char* number) noexcept {
+    char* cursor = number;
+    while (*cursor == ' ' || *cursor == '+' || *cursor == '-') ++cursor;
+    const char* const integerDigits = cursor;
+    while (IsDigit(*cursor)) ++cursor;
+    if (cursor == integerDigits || (*cursor != '.' && *cursor != ',')) return;
+    char* const point = cursor++;
+    while (IsDigit(*cursor)) ++cursor;
+    char* kept = cursor;
+    while (kept > point + 1 && kept[-1] == '0') --kept;
+    if (kept == point + 1) kept = point;
+    std::memmove(kept, cursor, std::strlen(cursor) + 1);
+}
+
+void FormatBleedLine(char* line, std::size_t capacity, const char* format,
+        const TooltipValues& values) noexcept {
+    const std::int32_t whole[BleedLineValues]{
+        values.minimum, values.maximum, values.length / FramesPerSecond };
+    const double exact[BleedLineValues]{
+        static_cast<double>(values.minimum), static_cast<double>(values.maximum),
+        static_cast<double>(values.length) / FramesPerSecond };
+
+    LineBuilder out{ line, capacity, 0 };
+    if (capacity != 0) line[0] = '\0';
+    int inOrder = 0;
+    const char* cursor = format;
+    while (*cursor != '\0') {
+        if (*cursor != '%') {
+            const char* const literal = cursor;
+            while (*cursor != '\0' && *cursor != '%') ++cursor;
+            out.Append(literal, static_cast<std::size_t>(cursor - literal));
+            continue;
+        }
+        const char* const start = cursor++;
+
+        // %n$: the placeholder's own number.
+        int number = 0;
+        const char* scan = cursor;
+        while (IsDigit(*scan)) {
+            if (number < 1'000) number = number * 10 + (*scan - '0');
+            ++scan;
+        }
+        const bool numbered = scan != cursor && *scan == '$';
+        if (numbered) cursor = scan + 1;
+
+        // Flags, width and precision are kept for snprintf. A length modifier
+        // is dropped: the value is always passed as an int or a double.
+        char spec[PlaceholderSpecBytes]{};
+        std::size_t specLength = 0;
+        bool fits = true;
+        const auto keep = [&](char character) noexcept {
+            if (specLength + 2 < sizeof(spec)) {
+                spec[specLength++] = character;
+            } else {
+                fits = false;
+            }
+        };
+        keep('%');
+        while (*cursor != '\0' && std::strchr("-+ #0", *cursor) != nullptr) keep(*cursor++);
+        while (IsDigit(*cursor)) keep(*cursor++);
+        if (*cursor == '.') {
+            keep(*cursor++);
+            while (IsDigit(*cursor)) keep(*cursor++);
+        }
+        while (*cursor != '\0' && std::strchr("hlLjztw", *cursor) != nullptr) ++cursor;
+        if (*cursor == 'I') {
+            ++cursor;
+            if ((cursor[0] == '6' && cursor[1] == '4') || (cursor[0] == '3' && cursor[1] == '2')) {
+                cursor += 2;
+            }
+        }
+
+        const char conversion = *cursor;
+        if (conversion != '%' && !IsLetter(conversion)) {
+            out.Append(start, 1);
+            cursor = start + 1;
+            continue;
+        }
+        ++cursor;
+        if (conversion == '%') {
+            out.Append("%", 1);
+            continue;
+        }
+
+        const int index = numbered ? number : ++inOrder;
+        const bool integer  = std::strchr("diuoxX", conversion) != nullptr;
+        const bool floating = std::strchr("fFeEgG", conversion) != nullptr;
+        if (!fits || index < 1 || index > BleedLineValues || (!integer && !floating)) {
+            out.Append(start, static_cast<std::size_t>(cursor - start));
+            continue;
+        }
+
+        spec[specLength++] = conversion;
+        spec[specLength] = '\0';
+        char value[FormattedValueBytes]{};
+        if (floating) {
+            std::snprintf(value, sizeof(value), spec, exact[index - 1]);
+            DropTrailingZeros(value);
+        } else if (conversion == 'd' || conversion == 'i') {
+            std::snprintf(value, sizeof(value), spec, whole[index - 1]);
+        } else {
+            std::snprintf(value, sizeof(value), spec, static_cast<unsigned int>(whole[index - 1]));
+        }
+        out.Append(value, std::strlen(value));
+    }
 }
 
 std::uint64_t __fastcall HookedCompose(std::int32_t* accumulator, std::uint64_t statIdArgument,
@@ -920,14 +1061,8 @@ std::uint64_t __fastcall HookedCompose(std::int32_t* accumulator, std::uint64_t 
     if (!composed) return 0;
 
     char line[TooltipBufferBytes]{};
-    const char* const format = Resolve(Settings.stringKey.c_str(), Settings.stringKey.size());
-    if (IsFloatingConversion(ThirdConversion(format))) {
-        std::snprintf(line, sizeof(line), format, values->minimum, values->maximum,
-            static_cast<double>(values->length) / FramesPerSecond);
-    } else {
-        std::snprintf(line, sizeof(line), format, values->minimum, values->maximum,
-            values->length / FramesPerSecond);
-    }
+    FormatBleedLine(line, sizeof(line),
+        Resolve(Settings.stringKey.c_str(), Settings.stringKey.size()), *values);
 
     if ((chronicle & 0xFF) != 0) {
         AppendText(output, capacity, Resolve(BulletKey, sizeof(BulletKey) - 1));

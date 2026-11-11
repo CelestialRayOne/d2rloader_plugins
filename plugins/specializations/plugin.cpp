@@ -175,7 +175,7 @@
 namespace {
 
 constexpr char PluginIdText[]  = "celestialrayone.specializations";
-constexpr char PluginVersion[] = "1.14.2";
+constexpr char PluginVersion[] = "1.14.3";
 constexpr char PanelLocalId[]  = "SpecializationPanel";
 constexpr char PanelRootName[] = "celestialrayone.specializations/SpecializationPanel";
 
@@ -2085,6 +2085,10 @@ void __cdecl HudTick(const D2RL::PluginContext* context, void* userData) noexcep
         if ((show ? 1 : 0) != HudShown || now - HudLastApplyMs >= 250) {
             const D2RL::Widgets::Result r = WidgetSvc->setWidgetVisible(context, HudAlertHandle, show);
             if (r == D2RL::Widgets::Result::Success) {
+                // A hidden widget still takes the mouse: while hidden the alert is disabled too, so
+                // it never takes the clicks of what lies under it (at 16:9 it sits over the
+                // character sheet's bottom line, on the Ascendancy entry).
+                (void)WidgetSvc->setWidgetEnabled(context, HudAlertHandle, show);
                 HudShown       = show ? 1 : 0;
                 HudLastApplyMs = now;
             } else if (r == D2RL::Widgets::Result::StaleHandle || r == D2RL::Widgets::Result::NotFound) {

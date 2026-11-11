@@ -4,20 +4,20 @@
 D2RL_PLUGIN_MANIFEST_RESOURCE_ID RCDATA { D2RL_PLUGIN_RESOURCE_DWORD(D2RL_PLUGIN_ABI_VERSION) }
 
 1 VERSIONINFO
-FILEVERSION 1,2,0,0
-PRODUCTVERSION 1,2,0,0
+FILEVERSION 0,10,0,0
+PRODUCTVERSION 0,10,0,0
 BEGIN
   BLOCK "StringFileInfo"
   BEGIN
     BLOCK "040904B0"
     BEGIN
       VALUE "CompanyName", "CelestialRayOne"
-      VALUE "FileDescription", "Removes chosen shrine types and reworks the Armor, Combat, Resist, Skill and Mana Recharge shrines."
-      VALUE "FileVersion", "1.2.0"
-      VALUE "InternalName", "celestialrayone.shrine-rework"
-      VALUE "OriginalFilename", "d2rl-celestialrayone-shrine-rework.dll"
-      VALUE "ProductName", "Shrine Rework"
-      VALUE "ProductVersion", "1.2.0"
+      VALUE "FileDescription", "Whirlwind rework: procs while Uninterruptible, proc start fix, dual wield same target, cyclone steering (cursor and controller stick), death and potions while Whirlwinding, Whirlwind with bows, movement speed sync, pets follow during Whirlwind, Auto Gold Pickup during Whirlwind, optional Whirlwind hit interval formula, pierce_idx counting during Whirlwind."
+      VALUE "FileVersion", "0.10.0"
+      VALUE "InternalName", "celestialrayone.whirlwind"
+      VALUE "OriginalFilename", "d2rl-celestialrayone-whirlwind-follow-cursor.dll"
+      VALUE "ProductName", "Whirlwind"
+      VALUE "ProductVersion", "0.10.0"
     END
   END
   BLOCK "VarFileInfo"

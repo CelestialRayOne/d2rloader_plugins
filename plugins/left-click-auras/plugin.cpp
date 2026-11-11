@@ -16,6 +16,9 @@
 //       two run at once, one per side.
 //    6. AURA LEVEL REFRESH. An aura that comes back at a higher level keeps its
 //       state instead of blinking off, on either button and for every unit.
+//    7. ITEM REFRESH KEEPS AURAS. An aura granted by an item (oskill), on either
+//       button, keeps running while the game re-checks the equipment, instead
+//       of being switched off and started again.
 //
 //  Every address below was read out of the dumped D2RLoader 1.3.1 image
 //  (md5 8af7a47ce9077de0378c69af2930854d) and disassembled before being relied
@@ -239,6 +242,72 @@
 //  Lower levels are still refused, and different skills that share a state
 //  still replace each other, as in the unmodded game.
 //
+// -----------------------------------------------------------------------------
+//  ITEM REFRESH KEEPS AURAS (server, both buttons)
+// -----------------------------------------------------------------------------
+//  0x470CA0  the equipment re-check (ITEMS_UpdateInventoryItems). It saves the
+//            mouse selection (0x474C00), takes EVERY equipped item off with
+//            unit flag 80000000h set around each detach (0x470E77..0x470EA8),
+//            puts back the items whose requirements are met, the flag set
+//            around each attach as well (0x470F79..0x470FAA), puts the saved
+//            selection back through AssignSkill (0x474AA0, called at
+//            0x47109E), deletes skills left without level, counts the pet
+//            limits (0x5005A0, called at 0x4711C3) and settles the item auras
+//            it kept back (0x4711C8..0x47121E, below). It runs after item moves
+//            (0x471835), level ups (0x52DCA1), skill resets (0x436217) and in
+//            every frame in which the player carries unit flag 200000h: the
+//            per-frame player sync tests it at 0x486A6D and calls 0x470C90 ->
+//            0x470CA0. The server stat callback sets that flag whenever
+//            passive_mastery_item_req_percent (203) or
+//            passive_mastery_item_level_req_percent (209) changes outside an
+//            item operation (0x470998..0x4709AD).
+//  0x46FE1B  the server stat callback, oskill case (item_nonclassskill 97,
+//            item_singleskill 107, 0x4702AE..0x4702EE): when the stat drops to
+//            0 and the skill has no base level, every mouse button holding the
+//            skill gets Attack through AssignSkill (left 0x4702C9, right
+//            0x4702E9). D2RLoader's core runs its own version of this callback
+//            (see celestialrayone.aura-reactivation); the game's body above is
+//            what it reproduces. Inside the re-check that happens to every
+//            oskill for an instant. An oskill AURA was then switched off (the
+//            right button's removal in AssignSkill, this plugin's left select)
+//            and started again by the selection restore: the state blinked, its
+//            bonuses were gone until its next tick and the pet limits were
+//            counted without them.
+//            The same callback already treats item auras (item_aura 151) as a
+//            transaction while flag 80000000h is set: a removal goes to a
+//            pending list (game +1A8F0h, count +1A8F8h), a grant that comes
+//            back reuses its cast id, and what was not granted back is switched
+//            off when the re-check ends (0x4711C8..0x47121E, 0x581AE0). Auras
+//            on the mouse buttons had no such rule.
+//  The loop seen with Divinity (oskill, raises item_allskills) and Levitation
+//  Mastery (oskill passive, its passive_mastery_item_req_percent follows its
+//  level): every restart changed item_allskills on the aura's next tick, that
+//  changed Levitation Mastery's level and the modifier, the flag was set, the
+//  re-check ran and restarted the aura again. On every tick the overlay
+//  replayed and the bonuses were missing.
+//
+//  FIX: the item aura rule, for auras on the mouse buttons.
+//    - While flag 80000000h is set (0x34FB00), an aura that runs on a button
+//      that gets another skill keeps running and is remembered. Left: the left
+//      select relay does not stop it. Right: the call relays at 0x438C02,
+//      0x438C33 and 0x438C52 skip its stat list, state and timer removal.
+//    - When its button gets it back, it carries on. Left: it counts as running.
+//      Right: the AuraStart call at 0x438C80 is skipped. The same holds when
+//      the button was changed without AssignSkill and gets the aura back
+//      before its timer ticks: the timer is still live, the aura never
+//      stopped.
+//    - An aura its button did not get back is stopped when the re-check ends
+//      (call relay at 0x4711C3, before the pet limits are counted), at the
+//      next selection change outside an item operation, or by its own timer.
+//    0x438B09  call relay on AssignSkill's SetRightActiveSkill (rcx unit, edx
+//              skill, r8d owner guid; eax unused afterwards): the right
+//              button's skill before and after.
+//    0x438C52  call relay on the right timer delete (rcx game, rdx unit, r8d 8,
+//              r9d -1).
+//    0x438C80  call relay on the new right aura's AuraStart (rcx game, rdx
+//              unit, r8d skill; its eax is AssignSkill's, unused by callers).
+//    0x4711C3  call relay on the pet limit count (rcx game, rdx unit).
+//
 //  Console command "leftclickauras" shows what is installed and counters.
 //  Settings: d2rloader/config/celestialrayone.left-click-auras.toml
 // =============================================================================
@@ -274,7 +343,7 @@
 namespace CelestialRayOne::LeftClickAuras {
 namespace {
 
-constexpr char PluginVersion[] = "1.3.0";
+constexpr char PluginVersion[] = "1.4.0";
 
 // ---------------------------------------------------------------------------
 //  Default configuration. EnsureConfig writes this text on first load, and it
@@ -287,7 +356,8 @@ constexpr const char DefaultConfigToml[] = R"TOML(# celestialrayone.left-click-a
 #   mouse button does, and both can be active at the same time. With a
 #   controller, auras can be switched on and two of them can run at once. An
 #   aura that comes back at a higher level keeps its state instead of blinking
-#   off, on either button.
+#   off, on either button. An aura granted by an item (oskill) keeps running
+#   while the game re-checks your equipment, on either button.
 #
 # Changes are read when the plugin loads. Restart the game after editing.
 # Built for D2RLoader 1.3.1 (Diablo II: Resurrected 3.3). On any other build
@@ -410,6 +480,46 @@ move_only_clicks = true
 #
 # Needs left_slot_auras.
 live_level = true
+
+# -----------------------------------------------------------------------------
+# item_refresh_keeps_auras
+#
+# The problem
+#   The game re-checks your equipment by taking every equipped item off and
+#   putting back the ones whose requirements you meet. It does that when an
+#   item is moved, put on or taken off, on a level up, and whenever an item
+#   requirement modifier changes, such as passive_mastery_item_req_percent
+#   from a mastery. Items you can use always go back, but for that instant a
+#   skill an item grants (an oskill) has no level, so the game puts Attack on
+#   its mouse button and puts the skill back at the end of the check.
+#   An aura granted that way, on either button, was switched off and started
+#   again: its state blinked, its bonuses were gone until its next tick, and
+#   your summon limits were counted without them, which can kill summons.
+#   An aura that changes skill levels (Divinity) together with an item that
+#   grants a mastery whose requirement modifier follows its own level
+#   (Levitation Mastery) turned this into a loop: each restart changed the
+#   mastery's level on the aura's next tick, that changed the modifier, the
+#   game re-checked the equipment and restarted the aura again. The aura's
+#   visual effect replayed on every tick and its bonuses were missing.
+#
+# What changes
+#   While the game re-checks the equipment, an aura running on a mouse button
+#   keeps running when the check puts Attack on that button. When the check
+#   puts the aura back, it carries on without a blink and with all its
+#   bonuses. If the check does not put it back (its item no longer meets the
+#   requirements), the aura stops when the check ends, before the summon
+#   limits are counted, as it would have before. The game already handles
+#   item auras (item_aura) this way; this gives auras on the mouse buttons the
+#   same rule.
+#
+# Where
+#   left button     the left select relay at 0x438AEF
+#   right button    calls at 0x438B09 (select), 0x438C02, 0x438C33 and
+#                   0x438C52 (removal) and 0x438C80 (start) in 0x438A70
+#   end of check    call at 0x4711C3 in the equipment re-check 0x470CA0
+#
+# Needs left_slot_auras.
+item_refresh_keeps_auras = true
 
 # -----------------------------------------------------------------------------
 # level_up_in_place
@@ -544,6 +654,7 @@ constexpr std::int32_t  UnitTypePlayer                = 0;
 constexpr std::uint32_t UnitPeriodicPerformFlag       = 0x20000000;  // 0x43754A / 0x437586
 constexpr std::uint8_t  PeriodicSkillEventType        = 8;
 constexpr std::uint32_t RightTimerCustomId            = 0xFFFFFFFFU;
+constexpr std::uint32_t UnitItemOperationFlag         = 0x80000000;  // around each detach / attach, 0x470E77 / 0x470F79
 constexpr std::size_t   UnitEventListOffset           = 0x148;  // 0x48FE50
 constexpr std::size_t   EventTypeOffset               = 0x00;
 constexpr std::size_t   EventFlagsOffset              = 0x02;
@@ -662,6 +773,18 @@ constexpr std::uint64_t DataTablesRva                = 0x300A90;
 constexpr std::uint64_t ReadListStatRva              = 0x2F5DF0;  // loader thunk to ReadWideListStat
 constexpr std::uint64_t SetListStatRva               = 0x2F7C00;  // loader thunk to SetWideListStat
 constexpr std::uint64_t PassiveStatSlotsRva          = 0x563FFC;
+constexpr std::uint64_t RightSelectCallRva           = 0x438B09;
+constexpr std::uint64_t SetRightActiveSkillRva       = 0x33EF10;
+constexpr std::uint64_t RightAuraTimerDeleteCallRva  = 0x438C52;
+constexpr std::uint64_t RightAuraStartCallRva        = 0x438C80;
+constexpr std::uint64_t UnitFlagTestRva              = 0x34FB00;
+constexpr std::uint64_t OskillButtonResetRva         = 0x4702AE;
+constexpr std::uint64_t ItemRefreshDetachRva         = 0x470E77;
+constexpr std::uint64_t ItemRefreshAttachRva         = 0x470F79;
+constexpr std::uint64_t ItemRefreshRestoreRva        = 0x471096;
+constexpr std::uint64_t ItemRefreshFinishWindowRva   = 0x4711BD;
+constexpr std::uint64_t ItemRefreshFinishCallRva     = 0x4711C3;
+constexpr std::uint64_t UpdatePetLimitsRva           = 0x5005A0;
 
 // ---------------------------------------------------------------------------
 //  Byte witnesses, read from the image
@@ -1092,6 +1215,75 @@ constexpr auto AuraStartArmCall      = std::to_array<std::uint8_t>({0xE8, 0xAE, 
 constexpr auto ClickGateCall         = std::to_array<std::uint8_t>({0xE8, 0x18, 0xD0, 0x23, 0x00});
 constexpr auto ControllerSyncCall    = std::to_array<std::uint8_t>({0xE8, 0x4C, 0xED, 0x01, 0x00});
 constexpr auto ControllerPressCall   = std::to_array<std::uint8_t>({0xE8, 0x9B, 0x5A, 0x00, 0x00});
+constexpr auto RightSelectCall          = std::to_array<std::uint8_t>({0xE8, 0x02, 0x64, 0xF0, 0xFF});  // -> 0x33EF10
+constexpr auto RightAuraTimerDeleteCall = std::to_array<std::uint8_t>({0xE8, 0x39, 0x2C, 0x05, 0x00});  // -> 0x48B890
+constexpr auto RightAuraStartCall       = std::to_array<std::uint8_t>({0xE8, 0xFB, 0x29, 0x00, 0x00});  // -> 0x43B680
+constexpr auto ItemRefreshFinishCall    = std::to_array<std::uint8_t>({0xE8, 0xD8, 0xF3, 0x08, 0x00});  // -> 0x5005A0
+
+// 0x34FB00, the unit flag test (unit, flag): null unit 0, else
+// test [rcx+128h],edx / setne al.
+constexpr auto UnitFlagTestBody = std::to_array<std::uint8_t>({
+    0x48, 0x83, 0xEC, 0x28, 0x48, 0x85, 0xC9, 0x75, 0x1A, 0x88, 0x4C, 0x24,
+    0x30, 0x48, 0x8D, 0x4C, 0x24, 0x30, 0xE8, 0x49, 0x4F, 0xFF, 0xFF, 0x84,
+    0xC0, 0x74, 0x01, 0xCC, 0x33, 0xC0, 0x48, 0x83, 0xC4, 0x28, 0xC3, 0x85,
+    0x91, 0x28, 0x01, 0x00, 0x00, 0xB8, 0x00, 0x00, 0x00, 0x00, 0x0F, 0x95,
+    0xC0, 0x48, 0x83, 0xC4, 0x28, 0xC3,
+});
+
+// 0x33EF10, SetRightActiveSkill entry (rcx unit, edx skill, r8d owner guid).
+constexpr auto SetRightActiveSkillEntry = std::to_array<std::uint8_t>({
+    0x48, 0x89, 0x5C, 0x24, 0x08, 0x48, 0x89, 0x6C, 0x24, 0x10, 0x48, 0x89,
+    0x74, 0x24, 0x18, 0x57, 0x48, 0x83, 0xEC, 0x20, 0x41, 0x8B, 0xF0, 0x8B,
+    0xDA, 0x48, 0x8B, 0xE9,
+});
+
+// 0x5005A0, the pet limit count entry (rcx game, rdx unit): test rdx,rdx.
+constexpr auto UpdatePetLimitsEntry = std::to_array<std::uint8_t>({
+    0x48, 0x85, 0xD2, 0x0F, 0x84, 0x89, 0x04, 0x00, 0x00, 0x55, 0x57, 0x41,
+    0x57,
+});
+
+// 0x4702AE..0x4702EE, the oskill case of the server stat callback (rdi unit,
+// r15 skill node): a button holding the node gets skill 0 through AssignSkill,
+// left 0x4702C9, right 0x4702E9.
+constexpr auto OskillButtonResetWindow = std::to_array<std::uint8_t>({
+    0x48, 0x8B, 0xCF, 0xE8, 0x8A, 0xA2, 0xED, 0xFF, 0x49, 0x3B, 0xC7, 0x75,
+    0x13, 0x41, 0xB9, 0xFF, 0xFF, 0xFF, 0xFF, 0x45, 0x33, 0xC0, 0x8B, 0xD3,
+    0x48, 0x8B, 0xCF, 0xE8, 0xA2, 0x87, 0xFC, 0xFF, 0x48, 0x8B, 0xCF, 0xE8,
+    0x2A, 0xB1, 0xED, 0xFF, 0x49, 0x3B, 0xC7, 0x75, 0x13, 0x41, 0xB9, 0xFF,
+    0xFF, 0xFF, 0xFF, 0x45, 0x33, 0xC0, 0x33, 0xD2, 0x48, 0x8B, 0xCF, 0xE8,
+    0x82, 0x87, 0xFC, 0xFF,
+});
+
+// 0x470E77..0x470EA8 and 0x470F79..0x470FAA, the equipment re-check: unit flag
+// 80000000h on (0x34E140), detach (0x475020) or attach (0x475090), flag off.
+constexpr auto ItemRefreshDetachWindow = std::to_array<std::uint8_t>({
+    0xBA, 0x00, 0x00, 0x00, 0x80, 0x41, 0xB8, 0x01, 0x00, 0x00, 0x00, 0x48,
+    0x8B, 0xCF, 0xE8, 0xB6, 0xD2, 0xED, 0xFF, 0x4C, 0x8B, 0xC3, 0x48, 0x8B,
+    0xD7, 0x49, 0x8B, 0xCF, 0xE8, 0x88, 0x41, 0x00, 0x00, 0x45, 0x33, 0xC0,
+    0xBA, 0x00, 0x00, 0x00, 0x80, 0x48, 0x8B, 0xCF, 0xE8, 0x98, 0xD2, 0xED,
+    0xFF,
+});
+constexpr auto ItemRefreshAttachWindow = std::to_array<std::uint8_t>({
+    0xBA, 0x00, 0x00, 0x00, 0x80, 0x41, 0xB8, 0x01, 0x00, 0x00, 0x00, 0x48,
+    0x8B, 0xCF, 0xE8, 0xB4, 0xD1, 0xED, 0xFF, 0x4C, 0x8B, 0xC3, 0x48, 0x8B,
+    0xD7, 0x49, 0x8B, 0xCF, 0xE8, 0xF6, 0x40, 0x00, 0x00, 0x45, 0x33, 0xC0,
+    0xBA, 0x00, 0x00, 0x00, 0x80, 0x48, 0x8B, 0xCF, 0xE8, 0x96, 0xD1, 0xED,
+    0xFF,
+});
+
+// 0x471096..0x4710A3, the saved selection goes back: lea rdx,[rsp+30h] /
+// mov rcx,rdi / call 0x474AA0.
+constexpr auto ItemRefreshRestoreWindow = std::to_array<std::uint8_t>({
+    0x48, 0x8D, 0x54, 0x24, 0x30, 0x48, 0x8B, 0xCF, 0xE8, 0xFD, 0x39, 0x00,
+    0x00,
+});
+
+// 0x4711BD..0x4711C8, the pet limit count: mov rdx,rdi / mov rcx,r15 /
+// call 0x5005A0 (the relay site).
+constexpr auto ItemRefreshFinishWindow = std::to_array<std::uint8_t>({
+    0x48, 0x8B, 0xD7, 0x49, 0x8B, 0xCF, 0xE8, 0xD8, 0xF3, 0x08, 0x00,
+});
 
 // Inline hook entry: whole instructions, none of them relative.
 constexpr std::uint32_t PeriodicSkillEventHookBytes = 22;  // two home saves, five pushes, sub rsp,50h
@@ -1101,7 +1293,7 @@ constexpr std::uint32_t PeriodicSkillEventHookBytes = 22;  // two home saves, fi
 //  nothing inside D2R's own code is used as a cave.
 //
 //      +0x000  UNWIND_INFO, no frame (every stub leaves rsp untouched)
-//      +0x010  RUNTIME_FUNCTION table, 7 entries
+//      +0x010  RUNTIME_FUNCTION table, 11 entries
 //      +0x100  mov rax,<bridge> / jmp rax      left select
 //      +0x120  mov rax,<bridge> / jmp rax      right aura stat list
 //      +0x140  mov rax,<bridge> / jmp rax      right aura state off
@@ -1110,6 +1302,10 @@ constexpr std::uint32_t PeriodicSkillEventHookBytes = 22;  // two home saves, fi
 //      +0x1A0  cmp byte [rbx+6],0 / setne dl / movzx edx,dl /
 //              mov rax,<bridge> / jmp rax      controller confirmation side
 //      +0x1C0  mov rax,<bridge> / jmp rax      controller press
+//      +0x1E0  mov rax,<bridge> / jmp rax      right select
+//      +0x200  mov rax,<bridge> / jmp rax      right timer delete
+//      +0x220  mov rax,<bridge> / jmp rax      right AuraStart
+//      +0x240  mov rax,<bridge> / jmp rax      equipment re-check pet limits
 //
 //  A stub is reached by the retargeted call, so the return address is on the
 //  stack and the stock arguments are in place: the bridge is entered as if
@@ -1120,7 +1316,7 @@ constexpr std::uint32_t PeriodicSkillEventHookBytes = 22;  // two home saves, fi
 constexpr std::size_t RelayPageBytes           = 0x1000;
 constexpr std::size_t RelayUnwindOffset        = 0x000;
 constexpr std::size_t RelayFunctionTableOffset = 0x010;
-constexpr std::size_t RelayStubCount           = 7;
+constexpr std::size_t RelayStubCount           = 11;
 enum RelayStub : std::size_t {
     StubLeftSelect        = 0,
     StubRightAuraStatList = 1,
@@ -1129,9 +1325,15 @@ enum RelayStub : std::size_t {
     StubClickGate         = 4,
     StubControllerSync    = 5,
     StubControllerPress   = 6,
+    StubRightSelect          = 7,
+    StubRightAuraTimerDelete = 8,
+    StubRightAuraStart       = 9,
+    StubItemRefreshFinish    = 10,
 };
-constexpr std::array<std::size_t, RelayStubCount> RelayStubOffsets{0x100, 0x120, 0x140, 0x160, 0x180, 0x1A0, 0x1C0};
-constexpr std::array<std::size_t, RelayStubCount> RelayStubSizes{12, 12, 12, 12, 16, 22, 12};
+constexpr std::array<std::size_t, RelayStubCount> RelayStubOffsets{0x100, 0x120, 0x140, 0x160, 0x180, 0x1A0,
+                                                                   0x1C0, 0x1E0, 0x200, 0x220, 0x240};
+constexpr std::array<std::size_t, RelayStubCount> RelayStubSizes{12, 12, 12, 12, 16, 22, 12, 12, 12, 12, 12};
+static_assert(RelayFunctionTableOffset + RelayStubCount * 12 <= 0x100, "the function table must end before the stubs");
 
 // ---------------------------------------------------------------------------
 //  Native signatures
@@ -1177,6 +1379,8 @@ using MarkStateChangedFn    = void(__fastcall*)(void* unit, std::int32_t state, 
 using DataTablesFn          = const std::uint8_t*(__fastcall*)(std::uint32_t dataContext) noexcept;
 using ReadListStatFn        = std::int32_t(__fastcall*)(std::uint32_t dataContext, void* statList, std::int32_t stat, std::int32_t layer) noexcept;
 using SetListStatFn         = void(__fastcall*)(std::uint32_t dataContext, void* statList, std::int32_t stat, std::int32_t value, std::int32_t layer) noexcept;
+using UnitFlagTestFn        = std::int32_t(__fastcall*)(void* unit, std::uint32_t flag) noexcept;
+using UpdatePetLimitsFn     = std::int64_t(__fastcall*)(void* game, void* unit) noexcept;
 
 // ---------------------------------------------------------------------------
 //  State
@@ -1187,6 +1391,7 @@ struct Settings {
     bool singleEmanation{true};
     bool moveOnlyClicks{true};
     bool liveLevel{true};
+    bool itemRefreshKeepsAuras{true};
     bool levelUpInPlace{true};
     bool takeoverInPlace{true};
     bool controllerAuraActivation{true};
@@ -1203,6 +1408,7 @@ struct InstallState {
     bool syncRelay{false};
     bool pressRelay{false};
     bool applierPointer{false};
+    bool itemRefreshRelays{false};
 };
 
 const D2RL::PluginContext* Context{};
@@ -1219,11 +1425,15 @@ std::atomic<bool>          ControllerTwoAurasActive{false};
 std::atomic<bool>          LevelRefreshActive{false};
 std::atomic<bool>          LevelUpInPlaceActive{false};
 std::atomic<bool>          TakeoverInPlaceActive{false};
+std::atomic<bool>          ItemRefreshActive{false};
 std::uintptr_t             AuraCallbackReturn{};
 std::uint64_t              ApplierPointerOriginal{};
 std::uint64_t              ApplierPointerBridge{};
 
 SetLeftActiveSkillFn  SetLeftActiveSkill{};
+SetLeftActiveSkillFn  SetRightActiveSkill{};   // same signature, 0x33EF10
+UnitFlagTestFn        UnitFlagTest{};
+UpdatePetLimitsFn     UpdatePetLimits{};
 PeriodicSkillEventFn  OriginalPeriodicSkillEvent{};
 AuraStartFn           AuraStart{};
 ArmPeriodicSkillFn    ArmPeriodicSkill{};
@@ -1289,6 +1499,10 @@ std::array<CallSitePatch, RelayStubCount> CallSites{{
     {ClickGateCallRva, ClickGateCall.data(), StubClickGate, {}, false},
     {ControllerSyncCallRva, ControllerSyncCall.data(), StubControllerSync, {}, false},
     {ControllerPressCallRva, ControllerPressCall.data(), StubControllerPress, {}, false},
+    {RightSelectCallRva, RightSelectCall.data(), StubRightSelect, {}, false},
+    {RightAuraTimerDeleteCallRva, RightAuraTimerDeleteCall.data(), StubRightAuraTimerDelete, {}, false},
+    {RightAuraStartCallRva, RightAuraStartCall.data(), StubRightAuraStart, {}, false},
+    {ItemRefreshFinishCallRva, ItemRefreshFinishCall.data(), StubItemRefreshFinish, {}, false},
 }};
 
 std::atomic<std::uint64_t> LeftStarts{};
@@ -1318,6 +1532,11 @@ std::atomic<std::uint64_t> GameRefusalsRestored{};
 std::atomic<std::uint64_t> RebuiltAnyway{};
 std::atomic<std::uint64_t> LowerLevelsRefused{};
 std::atomic<std::uint64_t> OtherSkillsReplaced{};
+std::atomic<std::uint64_t> AurasKeptByItemOperations{};
+std::atomic<std::uint64_t> LeftKeptThroughItems{};
+std::atomic<std::uint64_t> RightKeptThroughItems{};
+std::atomic<std::uint64_t> LeftStopsItemsGone{};
+std::atomic<std::uint64_t> RightStopsItemsGone{};
 std::atomic<std::uint32_t> RebuildWarnings{};
 std::atomic<std::uint32_t> DiagnosticsBudget{};
 
@@ -1457,6 +1676,8 @@ void ParseConfig(std::string_view text) noexcept {
             target = &Config.moveOnlyClicks;
         } else if (key == "live_level") {
             target = &Config.liveLevel;
+        } else if (key == "item_refresh_keeps_auras") {
+            target = &Config.itemRefreshKeepsAuras;
         } else if (key == "level_up_in_place") {
             target = &Config.levelUpInPlace;
         } else if (key == "takeover_in_place") {
@@ -1587,6 +1808,27 @@ auto ValidateServer() noexcept -> bool {
                          "ReadWideSkillLevel (loader thunk)")
         && CheckCallable(SetUnitCastIdRva, LoaderThunkJump.data(), LoaderThunkJump.size(),
                          "SetUnitCastId (loader thunk)");
+}
+
+// The equipment re-check's item operation flag, the oskill button reset it
+// causes, the selection restore and the pet limit count the relay sits on.
+// AssignSkill's three new call sites are inside the AssignSkill witness.
+auto ValidateItemRefresh() noexcept -> bool {
+    return CheckExact(OskillButtonResetRva, OskillButtonResetWindow.data(), OskillButtonResetWindow.size(),
+                      "oskill button reset")
+        && CheckExact(ItemRefreshDetachRva, ItemRefreshDetachWindow.data(), ItemRefreshDetachWindow.size(),
+                      "equipment re-check detach")
+        && CheckExact(ItemRefreshAttachRva, ItemRefreshAttachWindow.data(), ItemRefreshAttachWindow.size(),
+                      "equipment re-check attach")
+        && CheckExact(ItemRefreshRestoreRva, ItemRefreshRestoreWindow.data(), ItemRefreshRestoreWindow.size(),
+                      "equipment re-check selection restore")
+        && CheckExact(ItemRefreshFinishWindowRva, ItemRefreshFinishWindow.data(), ItemRefreshFinishWindow.size(),
+                      "equipment re-check pet limit count")
+        && CheckCallable(UnitFlagTestRva, UnitFlagTestBody.data(), UnitFlagTestBody.size(), "unit flag test")
+        && CheckCallable(SetRightActiveSkillRva, SetRightActiveSkillEntry.data(), SetRightActiveSkillEntry.size(),
+                         "right skill setter")
+        && CheckCallable(UpdatePetLimitsRva, UpdatePetLimitsEntry.data(), UpdatePetLimitsEntry.size(),
+                         "pet limit count");
 }
 
 auto ValidateClient() noexcept -> bool {
@@ -1834,19 +2076,180 @@ auto HasLiveLeftTimer(void* game, void* unit, std::int32_t skillId) noexcept -> 
     return false;
 }
 
-// The left button holds a running aura that uses this state.
+// ---------------------------------------------------------------------------
+//  Auras kept through an item operation (item_refresh_keeps_auras)
+//
+//  While unit flag 80000000h is set the game is attaching or detaching an item
+//  inside the equipment re-check 0x470CA0 (0x470E77, 0x470F79). A skill an
+//  item grants has no level for that instant, and the oskill stat case puts
+//  Attack on its button through AssignSkill (0x4702C9 left, 0x4702E9 right);
+//  the re-check puts the saved selection back afterwards (0x47109E). An aura
+//  running on a button when that happens keeps running and is remembered
+//  here, per button and unit. It is settled when its button gets it back, at
+//  the next selection change outside an item operation, or when the re-check
+//  ends (0x4711C3), the way the game settles item auras (0x4711C8).
+// ---------------------------------------------------------------------------
+enum class Button : std::size_t {
+    Left  = 0,
+    Right = 1,
+};
+
+struct KeptAura {
+    void*         game;
+    void*         unit;
+    std::uint32_t unitId;
+    std::int32_t  skillId;
+    std::int32_t  state;
+};
+
+constexpr std::size_t KeptAuraCapacity = 128;
+constexpr std::size_t KeptAuraBatch    = 16;  // kept auras of one unit and button handled in one pass
+std::array<std::array<KeptAura, KeptAuraCapacity>, 2> KeptAuras{};
+SRWLOCK           KeptAuraLock = SRWLOCK_INIT;
+std::atomic<bool> KeptAuraTableFullLogged{false};
+using KeptAuraList = std::array<KeptAura, KeptAuraBatch>;
+
+auto KeptTable(Button button) noexcept -> std::array<KeptAura, KeptAuraCapacity>& {
+    return KeptAuras[static_cast<std::size_t>(button)];
+}
+
+auto ButtonName(Button button) noexcept -> const char* {
+    return button == Button::Left ? "left" : "right";
+}
+
+auto KeptFor(const KeptAura& entry, void* game, void* unit, std::uint32_t unitId) noexcept -> bool {
+    return entry.unit == unit && entry.game == game && entry.unitId == unitId;
+}
+
+// Remembers an aura kept running on this button. False when the table is
+// full; the caller then lets the game switch the aura off as it always did.
+auto KeepAura(Button button, void* game, void* unit, std::int32_t skillId, std::int32_t state) noexcept -> bool {
+    const auto unitId = UnitIdOf(unit);
+    AcquireSRWLockExclusive(&KeptAuraLock);
+    KeptAura* freeEntry = nullptr;
+    bool      known     = false;
+    for (auto& entry : KeptTable(button)) {
+        if (entry.unit != nullptr && KeptFor(entry, game, unit, unitId) && entry.skillId == skillId) {
+            known = true;
+            break;
+        }
+        if (freeEntry == nullptr && entry.unit == nullptr) {
+            freeEntry = &entry;
+        }
+    }
+    if (!known && freeEntry != nullptr) {
+        *freeEntry = KeptAura{game, unit, unitId, skillId, state};
+    }
+    ReleaseSRWLockExclusive(&KeptAuraLock);
+    if (!known && freeEntry == nullptr) {
+        if (!KeptAuraTableFullLogged.exchange(true, std::memory_order_relaxed)) {
+            LogWarn("LeftClickAuras: the kept aura table is full; an item operation switches an aura off as in the "
+                    "unmodded game.");
+        }
+        return false;
+    }
+    return true;
+}
+
+// A kept aura of this unit and button with this skill.
+auto IsKeptAura(Button button, void* game, void* unit, std::int32_t skillId) noexcept -> bool {
+    const auto unitId = UnitIdOf(unit);
+    AcquireSRWLockShared(&KeptAuraLock);
+    bool found = false;
+    for (const auto& entry : KeptTable(button)) {
+        if (entry.unit != nullptr && KeptFor(entry, game, unit, unitId) && entry.skillId == skillId) {
+            found = true;
+            break;
+        }
+    }
+    ReleaseSRWLockShared(&KeptAuraLock);
+    return found;
+}
+
+// A kept aura of this unit and button whose aurastate is this state, copied out.
+auto FindKeptState(Button button, void* game, void* unit, std::int32_t state, KeptAura& found) noexcept -> bool {
+    const auto unitId = UnitIdOf(unit);
+    AcquireSRWLockShared(&KeptAuraLock);
+    bool any = false;
+    for (const auto& entry : KeptTable(button)) {
+        if (entry.unit != nullptr && KeptFor(entry, game, unit, unitId) && entry.state == state) {
+            found = entry;
+            any   = true;
+            break;
+        }
+    }
+    ReleaseSRWLockShared(&KeptAuraLock);
+    return any;
+}
+
+// Takes the kept auras of this unit and button out of the table.
+auto TakeKeptAuras(Button button, void* game, void* unit, KeptAuraList& taken) noexcept -> std::size_t {
+    const auto unitId = UnitIdOf(unit);
+    std::size_t count = 0;
+    AcquireSRWLockExclusive(&KeptAuraLock);
+    for (auto& entry : KeptTable(button)) {
+        if (count < taken.size() && entry.unit != nullptr && KeptFor(entry, game, unit, unitId)) {
+            taken[count++] = entry;
+            entry          = KeptAura{};
+        }
+    }
+    ReleaseSRWLockExclusive(&KeptAuraLock);
+    return count;
+}
+
+void ForgetKeptAura(Button button, void* game, void* unit, std::int32_t skillId) noexcept {
+    const auto unitId = UnitIdOf(unit);
+    AcquireSRWLockExclusive(&KeptAuraLock);
+    for (auto& entry : KeptTable(button)) {
+        if (entry.unit != nullptr && KeptFor(entry, game, unit, unitId) && entry.skillId == skillId) {
+            entry = KeptAura{};
+        }
+    }
+    ReleaseSRWLockExclusive(&KeptAuraLock);
+}
+
+// The game is attaching or detaching an item of this unit inside an item
+// operation (unit flag 80000000h, tested the way the game tests it, 0x34FB00).
+auto InItemOperation(void* unit) noexcept -> bool {
+    return ItemRefreshActive.load(std::memory_order_relaxed) && unit != nullptr
+        && UnitFlagTest(unit, UnitItemOperationFlag) != 0;
+}
+
+// This plugin's left timer for the skill runs and the aura's state is on.
+auto LeftAuraRunning(void* game, void* unit, std::int32_t skillId, const std::uint8_t* record) noexcept -> bool {
+    return HasLiveLeftTimer(game, unit, skillId) && CheckState(unit, AuraStateOf(record)) != 0;
+}
+
+// The right button's timer runs and the aura's state is on.
+auto RightAuraRunning(void* unit, const std::uint8_t* record) noexcept -> bool {
+    return HasLiveTimer(unit, RightTimerCustomId) && CheckState(unit, AuraStateOf(record)) != 0;
+}
+
+// The left button holds a running aura that uses this state, or a left aura
+// kept through an item operation does.
 auto LeftAuraUsesState(void* game, void* unit, std::int32_t state) noexcept -> bool {
     const auto skillId = NodeSkillId(GetLeftSkill(unit));
     const auto* record = AuraRecordFor(DataContextOf(game), skillId);
-    return record != nullptr && AuraStateOf(record) == state
-        && HasLiveTimer(unit, static_cast<std::uint32_t>(skillId));
+    if (record != nullptr && AuraStateOf(record) == state && HasLiveTimer(unit, static_cast<std::uint32_t>(skillId))) {
+        return true;
+    }
+    KeptAura kept{};
+    return FindKeptState(Button::Left, game, unit, state, kept) && HasLiveLeftTimer(game, unit, kept.skillId);
 }
 
-// The right button holds a running aura that uses this state.
+// The right button holds a running aura that uses this state, or a right aura
+// kept through an item operation does.
 auto RightAuraUsesState(void* game, void* unit, std::int32_t state) noexcept -> bool {
+    if (!HasLiveTimer(unit, RightTimerCustomId)) {
+        return false;
+    }
     const auto skillId = NodeSkillId(GetRightSkill(unit));
     const auto* record = AuraRecordFor(DataContextOf(game), skillId);
-    return record != nullptr && AuraStateOf(record) == state && HasLiveTimer(unit, RightTimerCustomId);
+    if (record != nullptr && AuraStateOf(record) == state) {
+        return true;
+    }
+    KeptAura kept{};
+    return FindKeptState(Button::Right, game, unit, state, kept);
 }
 
 // The right button's removal order in 0x438A70: stat list, then state.
@@ -1886,10 +2289,12 @@ enum class LeftStop {
     Reselect,   // another skill went on the left button through AssignSkill
     OffButton,  // the timer found another skill on the left button
     Invalid,    // the timer found a dead unit or a skill that is not an aura
+    ItemsGone,  // kept through an item operation, not given back to the button
 };
 
 void StopLeftTimer(void* game, void* unit, std::int32_t skillId, LeftStop reason) noexcept {
     ForgetLeftTimer(game, unit, skillId);
+    ForgetKeptAura(Button::Left, game, unit, skillId);
     if (const auto* record = AuraRecordFor(DataContextOf(game), skillId); record != nullptr) {
         if (RightAuraUsesState(game, unit, AuraStateOf(record))) {
             SharedStatesKept.fetch_add(1, std::memory_order_relaxed);
@@ -1912,9 +2317,29 @@ void StopLeftTimer(void* game, void* unit, std::int32_t skillId, LeftStop reason
         LeftStopsInvalid.fetch_add(1, std::memory_order_relaxed);
         why = "the unit is dead or the skill is not an aura";
         break;
+    case LeftStop::ItemsGone:
+        LeftStopsItemsGone.fetch_add(1, std::memory_order_relaxed);
+        why = "an item operation took it off the left button and did not give it back";
+        break;
     }
     if (TakeDiagnosticsLine()) {
         LogInfo("LeftClickAuras: stopped skill %d on unit %u, %s.", skillId, UnitIdOf(unit), why);
+    }
+}
+
+void LogKept(Button button, std::int32_t skillId, void* unit, std::int32_t otherSkillId) noexcept {
+    if (TakeDiagnosticsLine()) {
+        LogInfo("LeftClickAuras: skill %d on unit %u keeps running while an item operation puts skill %d on the %s "
+                "button.",
+                skillId, UnitIdOf(unit), otherSkillId, ButtonName(button));
+    }
+}
+
+void LogKeptBack(Button button, std::int32_t skillId, void* unit) noexcept {
+    if (TakeDiagnosticsLine()) {
+        LogInfo("LeftClickAuras: skill %d on unit %u is back on the %s button after an item operation and never "
+                "stopped.",
+                skillId, UnitIdOf(unit), ButtonName(button));
     }
 }
 
@@ -1927,18 +2352,194 @@ void UpdateLeftAura(void* unit, std::int32_t beforeSkillId, std::int32_t afterSk
     const auto* beforeRecord = AuraRecordFor(dataContext, beforeSkillId);
     const auto* afterRecord  = AuraRecordFor(dataContext, afterSkillId);
 
+    if (InItemOperation(unit)) {
+        // What an item operation puts on the button can be undone before it
+        // ends: a running left aura is kept, not stopped.
+        if (beforeRecord != nullptr && afterSkillId != beforeSkillId) {
+            if (LeftAuraRunning(game, unit, beforeSkillId, beforeRecord)
+                && KeepAura(Button::Left, game, unit, beforeSkillId, AuraStateOf(beforeRecord))) {
+                AurasKeptByItemOperations.fetch_add(1, std::memory_order_relaxed);
+                LogKept(Button::Left, beforeSkillId, unit, afterSkillId);
+            } else {
+                StopLeftTimer(game, unit, beforeSkillId, LeftStop::Reselect);
+            }
+        }
+        if (afterRecord != nullptr && !LeftAuraRunning(game, unit, afterSkillId, afterRecord)) {
+            StartLeftAura(game, unit, afterSkillId);
+        }
+        return;
+    }
+
+    // Left auras kept through an item operation: the one the button gets back
+    // carries on, any other stops now.
+    bool        keptBack = false;
+    KeptAuraList kept{};
+    const auto  keptCount = TakeKeptAuras(Button::Left, game, unit, kept);
+    for (std::size_t index = 0; index < keptCount; ++index) {
+        if (kept[index].skillId == afterSkillId) {
+            keptBack = true;
+        } else if (HasLiveLeftTimer(game, unit, kept[index].skillId)) {
+            StopLeftTimer(game, unit, kept[index].skillId, LeftStop::ItemsGone);
+        }
+    }
+
     if (beforeRecord != nullptr && afterSkillId != beforeSkillId) {
         StopLeftTimer(game, unit, beforeSkillId, LeftStop::Reselect);
     }
     if (afterRecord == nullptr) {
         return;
     }
-    if (afterSkillId == beforeSkillId && HasLiveLeftTimer(game, unit, afterSkillId)
-        && CheckState(unit, AuraStateOf(afterRecord)) != 0) {
-        LeftKeptRunning.fetch_add(1, std::memory_order_relaxed);
+    // Its timer only survives a change of the left button when that change never
+    // went through AssignSkill (a direct select by the game) or was an item
+    // operation: either way the aura never stopped, so it carries on.
+    const bool backFromOtherSkill =
+        keptBack
+        || (ItemRefreshActive.load(std::memory_order_relaxed) && beforeRecord == nullptr && afterSkillId != beforeSkillId);
+    if ((afterSkillId == beforeSkillId || backFromOtherSkill) && LeftAuraRunning(game, unit, afterSkillId, afterRecord)) {
+        if (backFromOtherSkill) {
+            LeftKeptThroughItems.fetch_add(1, std::memory_order_relaxed);
+            LogKeptBack(Button::Left, afterSkillId, unit);
+        } else {
+            LeftKeptRunning.fetch_add(1, std::memory_order_relaxed);
+        }
         return;
     }
     StartLeftAura(game, unit, afterSkillId);
+}
+
+// ---------------------------------------------------------------------------
+//  The right button through an item operation
+// ---------------------------------------------------------------------------
+// The right button's AssignSkill call in progress on this thread: what the
+// relays after its select (0x438C02, 0x438C33, 0x438C52, 0x438C80) do.
+struct RightAssignment {
+    void* unit;
+    bool  keepOldAura;  // the old right aura stays: no stat list, state or timer removal
+    bool  keepNewAura;  // the new right aura already runs: no AuraStart
+};
+thread_local RightAssignment CurrentRight{};
+
+auto KeepingOldRightAura(void* unit) noexcept -> bool {
+    return unit != nullptr && CurrentRight.unit == unit && CurrentRight.keepOldAura;
+}
+
+// The stock right removal (0x438BFC..0x438C52) for a kept right aura that did
+// not come back: stat list and state (kept when the left aura uses the state),
+// then the right timer when nothing on the right button needs it.
+void StopKeptRightAura(void* game, void* unit, const KeptAura& kept, bool deleteTimer) noexcept {
+    if (LeftAuraUsesState(game, unit, kept.state)) {
+        SharedStatesKept.fetch_add(1, std::memory_order_relaxed);
+    } else {
+        if (auto* statList = GetStateStatList(unit, kept.state); statList != nullptr) {
+            UnlinkStatList(unit, statList);
+            FreeStatList(DataContextOf(game), statList);
+        }
+        ToggleState(unit, kept.state, 0);
+    }
+    if (deleteTimer) {
+        DeleteEventsByType(game, unit, PeriodicSkillEventType, RightTimerCustomId);
+    }
+    RightStopsItemsGone.fetch_add(1, std::memory_order_relaxed);
+    if (TakeDiagnosticsLine()) {
+        LogInfo("LeftClickAuras: stopped skill %d on unit %u, an item operation took it off the right button and did "
+                "not give it back.",
+                kept.skillId, UnitIdOf(unit));
+    }
+}
+
+void UpdateRightAura(void* unit, std::int32_t beforeSkillId, std::int32_t afterSkillId) noexcept {
+    auto* game = GetGame(unit);
+    if (game == nullptr) {
+        return;
+    }
+    const auto dataContext = DataContextOf(game);
+    const auto* beforeRecord = AuraRecordFor(dataContext, beforeSkillId);
+    const auto* afterRecord  = AuraRecordFor(dataContext, afterSkillId);
+    CurrentRight.unit = unit;
+
+    if (InItemOperation(unit)) {
+        if (beforeRecord != nullptr && afterSkillId != beforeSkillId && RightAuraRunning(unit, beforeRecord)
+            && KeepAura(Button::Right, game, unit, beforeSkillId, AuraStateOf(beforeRecord))) {
+            CurrentRight.keepOldAura = true;
+            AurasKeptByItemOperations.fetch_add(1, std::memory_order_relaxed);
+            LogKept(Button::Right, beforeSkillId, unit, afterSkillId);
+        }
+        if (afterRecord != nullptr && afterSkillId != beforeSkillId
+            && IsKeptAura(Button::Right, game, unit, afterSkillId) && RightAuraRunning(unit, afterRecord)) {
+            CurrentRight.keepNewAura = true;
+        }
+        return;
+    }
+
+    // Right auras kept through an item operation: the one the button gets back
+    // carries on without AuraStart, any other is removed as the stock removal
+    // would have removed it.
+    KeptAuraList kept{};
+    const auto   keptCount = TakeKeptAuras(Button::Right, game, unit, kept);
+    if (keptCount == 0) {
+        // The right timer only runs on while the right button holds no aura when
+        // the game changed the button without AssignSkill (a direct select) and
+        // no tick has passed since: the aura it gets back never stopped.
+        if (beforeRecord == nullptr && afterRecord != nullptr && afterSkillId != beforeSkillId
+            && RightAuraRunning(unit, afterRecord)) {
+            CurrentRight.keepNewAura = true;
+            RightKeptThroughItems.fetch_add(1, std::memory_order_relaxed);
+            LogKeptBack(Button::Right, afterSkillId, unit);
+        }
+        return;
+    }
+    for (std::size_t index = 0; index < keptCount; ++index) {
+        if (kept[index].skillId == afterSkillId && afterRecord != nullptr && RightAuraRunning(unit, afterRecord)) {
+            CurrentRight.keepNewAura = true;
+        }
+    }
+    if (CurrentRight.keepNewAura) {
+        RightKeptThroughItems.fetch_add(1, std::memory_order_relaxed);
+        LogKeptBack(Button::Right, afterSkillId, unit);
+    }
+    for (std::size_t index = 0; index < keptCount; ++index) {
+        if (CurrentRight.keepNewAura && kept[index].skillId == afterSkillId) {
+            continue;
+        }
+        StopKeptRightAura(game, unit, kept[index], !CurrentRight.keepNewAura);
+    }
+}
+
+// The equipment re-check is about to count the pet limits: every aura it kept
+// on a button and did not give back stops now, as the game's own item auras do
+// right after (0x4711C8).
+void FinishItemRefresh(void* game, void* unit) noexcept {
+    const auto dataContext = DataContextOf(game);
+
+    KeptAuraList kept{};
+    const auto   leftSkillId = NodeSkillId(GetLeftSkill(unit));
+    auto         keptCount   = TakeKeptAuras(Button::Left, game, unit, kept);
+    for (std::size_t index = 0; index < keptCount; ++index) {
+        const auto* record = AuraRecordFor(dataContext, kept[index].skillId);
+        if (record != nullptr && kept[index].skillId == leftSkillId) {
+            if (LeftAuraRunning(game, unit, kept[index].skillId, record)) {
+                LeftKeptThroughItems.fetch_add(1, std::memory_order_relaxed);
+                LogKeptBack(Button::Left, kept[index].skillId, unit);
+            } else {
+                StartLeftAura(game, unit, kept[index].skillId);
+            }
+        } else if (HasLiveLeftTimer(game, unit, kept[index].skillId)) {
+            StopLeftTimer(game, unit, kept[index].skillId, LeftStop::ItemsGone);
+        }
+    }
+
+    const auto  rightSkillId = NodeSkillId(GetRightSkill(unit));
+    const auto* rightRecord  = AuraRecordFor(dataContext, rightSkillId);
+    keptCount                = TakeKeptAuras(Button::Right, game, unit, kept);
+    for (std::size_t index = 0; index < keptCount; ++index) {
+        if (rightRecord != nullptr && kept[index].skillId == rightSkillId) {
+            RightKeptThroughItems.fetch_add(1, std::memory_order_relaxed);
+            LogKeptBack(Button::Right, kept[index].skillId, unit);
+            continue;
+        }
+        // An aura on the right button now runs on the right timer: keep it.
+        StopKeptRightAura(game, unit, kept[index], rightRecord == nullptr);
+    }
 }
 
 // One tick of a left timer: the id -1 branch of 0x437460 (0x437499..0x4375A0
@@ -2099,8 +2700,25 @@ std::int64_t __fastcall BridgeAuraStartArm(void* game, void* unit, std::int32_t 
     return ArmPeriodicSkill(game, unit, skillId, level, castId, rightTimer);
 }
 
+// 0x438B09, AssignSkill's right branch selects the skill it found. The old
+// right node is already in r12 for the removal that follows; rax is unused.
+std::int64_t __fastcall BridgeRightSelect(void* unit, std::int32_t skillId, std::int32_t ownerGuid) noexcept {
+    CurrentRight = RightAssignment{};
+    if (!ServerActive.load(std::memory_order_relaxed) || !ItemRefreshActive.load(std::memory_order_relaxed)
+        || unit == nullptr) {
+        return SetRightActiveSkill(unit, skillId, ownerGuid);
+    }
+    const auto beforeSkillId = NodeSkillId(GetRightSkill(unit));
+    const auto result        = SetRightActiveSkill(unit, skillId, ownerGuid);
+    UpdateRightAura(unit, beforeSkillId, NodeSkillId(GetRightSkill(unit)));
+    return result;
+}
+
 // 0x438C02, the right button's removal asks for the old aura's state stat list.
 void* __fastcall BridgeRightAuraStatList(void* unit, std::int32_t state) noexcept {
+    if (KeepingOldRightAura(unit)) {
+        return nullptr;
+    }
     if (ServerActive.load(std::memory_order_relaxed) && unit != nullptr) {
         auto* game = GetGame(unit);
         if (game != nullptr && LeftAuraUsesState(game, unit, state)) {
@@ -2113,6 +2731,9 @@ void* __fastcall BridgeRightAuraStatList(void* unit, std::int32_t state) noexcep
 
 // 0x438C33, the right button's removal turns the old aura's state off.
 void __fastcall BridgeRightAuraStateOff(void* unit, std::int32_t state, std::int32_t enable) noexcept {
+    if (enable == 0 && KeepingOldRightAura(unit)) {
+        return;
+    }
     if (ServerActive.load(std::memory_order_relaxed) && unit != nullptr && enable == 0) {
         auto* game = GetGame(unit);
         if (game != nullptr && LeftAuraUsesState(game, unit, state)) {
@@ -2120,6 +2741,36 @@ void __fastcall BridgeRightAuraStateOff(void* unit, std::int32_t state, std::int
         }
     }
     ToggleState(unit, state, enable);
+}
+
+// 0x438C52, the right button's removal deletes the right timer (8, -1); rax
+// is unused afterwards.
+std::uint64_t __fastcall BridgeRightAuraTimerDelete(void* game, void* unit, std::int32_t type,
+                                                    std::uint32_t customId) noexcept {
+    if (KeepingOldRightAura(unit)) {
+        return 0;
+    }
+    return DeleteEventsByType(game, unit, type, customId);
+}
+
+// 0x438C80, the right button starts its new aura. Its eax is AssignSkill's
+// return value, which no caller reads.
+std::int64_t __fastcall BridgeRightAuraStart(void* game, void* unit, std::int32_t skillId) noexcept {
+    if (unit != nullptr && CurrentRight.unit == unit && CurrentRight.keepNewAura) {
+        CurrentRight.keepNewAura = false;
+        return 1;
+    }
+    return AuraStart(game, unit, skillId);
+}
+
+// 0x4711C3, the equipment re-check counts the pet limits (0x5005A0).
+std::int64_t __fastcall BridgeItemRefreshFinish(void* game, void* unit) noexcept {
+    if (ServerActive.load(std::memory_order_relaxed) && ItemRefreshActive.load(std::memory_order_relaxed)
+        && unit != nullptr) {
+        auto* unitGame = GetGame(unit);
+        FinishItemRefresh(unitGame != nullptr ? unitGame : game, unit);
+    }
+    return UpdatePetLimits(game, unit);
 }
 
 // 0x437460
@@ -2362,6 +3013,9 @@ void ResolveNativeFunctions() noexcept {
     ArmPeriodicSkill   = At<ArmPeriodicSkillFn>(ArmPeriodicSkillRva);
     ServerDoSkill      = At<ServerDoSkillFn>(ServerDoSkillRva);
     SetLeftActiveSkill = At<SetLeftActiveSkillFn>(SetLeftActiveSkillRva);
+    SetRightActiveSkill = At<SetLeftActiveSkillFn>(SetRightActiveSkillRva);
+    UnitFlagTest        = At<UnitFlagTestFn>(UnitFlagTestRva);
+    UpdatePetLimits     = At<UpdatePetLimitsFn>(UpdatePetLimitsRva);
     SkillNodeGate      = At<SkillNodeGateFn>(SkillNodeGateRva);
     GetLeftSkill       = At<GetSkillNodeFn>(GetLeftSkillRva);
     GetRightSkill      = At<GetSkillNodeFn>(GetRightSkillRva);
@@ -2456,6 +3110,10 @@ void EmitRelay(std::uint8_t* page) noexcept {
         static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(&BridgeClickGate)),
         static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(&BridgeControllerSync)),
         static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(&BridgeControllerPress)),
+        static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(&BridgeRightSelect)),
+        static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(&BridgeRightAuraTimerDelete)),
+        static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(&BridgeRightAuraStart)),
+        static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(&BridgeItemRefreshFinish)),
     };
 
     for (std::size_t index = 0; index < RelayStubCount; ++index) {
@@ -2560,6 +3218,32 @@ auto PatchCallSite(CallSitePatch& site) noexcept -> bool {
 }
 
 
+// Runs inside InstallServer once the left relays are in. The pet limit,
+// timer delete and AuraStart relays only pass through until the right select
+// relay keeps an aura, so it goes in last.
+void InstallItemRefresh() noexcept {
+    if (!ValidateItemRefresh()) {
+        LogError("LeftClickAuras: item_refresh_keeps_auras is off, the game image does not match.");
+        return;
+    }
+    auto& finishSite = CallSites[StubItemRefreshFinish];
+    auto& timerSite  = CallSites[StubRightAuraTimerDelete];
+    auto& startSite  = CallSites[StubRightAuraStart];
+    auto& selectSite = CallSites[StubRightSelect];
+    const bool placed = PatchCallSite(finishSite) && PatchCallSite(timerSite) && PatchCallSite(startSite)
+                     && PatchCallSite(selectSite);
+    if (!placed) {
+        RestoreCallSite(selectSite);
+        RestoreCallSite(startSite);
+        RestoreCallSite(timerSite);
+        RestoreCallSite(finishSite);
+        LogError("LeftClickAuras: item_refresh_keeps_auras is off, a call site could not be changed.");
+        return;
+    }
+    Installed.itemRefreshRelays = true;
+    ItemRefreshActive.store(true, std::memory_order_relaxed);
+}
+
 void InstallServer() noexcept {
     if (!ValidateServer()) {
         LogError("LeftClickAuras: left_slot_auras is off, the game image does not match.");
@@ -2603,6 +3287,9 @@ void InstallServer() noexcept {
     }
     SingleEmanationActive.store(Config.singleEmanation, std::memory_order_relaxed);
     LiveLevelActive.store(Config.liveLevel, std::memory_order_relaxed);
+    if (Config.itemRefreshKeepsAuras) {
+        InstallItemRefresh();
+    }
     ServerActive.store(true, std::memory_order_relaxed);
 }
 
@@ -2748,12 +3435,14 @@ auto StatusCommand(D2R::Game::Client*, const D2RL::ConsoleCommandContext* comman
     char line[512]{};
     std::snprintf(line, sizeof(line),
                   "Left Click Auras %s (%s): left slot auras %s [left select %s, start %s, right removal %s, "
-                  "timer %s]; single emanation %s; live level %s; move only clicks %s; controller aura activation "
-                  "%s; controller two auras %s; level up in place %s; takeover in place %s; diagnostics %s.",
+                  "timer %s]; single emanation %s; live level %s; item refresh keeps auras %s; move only clicks %s; "
+                  "controller aura activation %s; controller two auras %s; level up in place %s; takeover in place "
+                  "%s; diagnostics %s.",
                   PluginVersion, ConfigSource, OnOff(ServerActive.load(std::memory_order_relaxed)),
                   OnOff(Installed.selectRelay), OnOff(Installed.startRelay), OnOff(Installed.rightRemovalRelays),
                   OnOff(Installed.timerHook), OnOff(SingleEmanationActive.load(std::memory_order_relaxed)),
                   OnOff(LiveLevelActive.load(std::memory_order_relaxed)),
+                  OnOff(ItemRefreshActive.load(std::memory_order_relaxed)),
                   OnOff(ClientActive.load(std::memory_order_relaxed)),
                   OnOff(ControllerActive.load(std::memory_order_relaxed)),
                   OnOff(ControllerTwoAurasActive.load(std::memory_order_relaxed)),
@@ -2776,6 +3465,16 @@ auto StatusCommand(D2R::Game::Client*, const D2RL::ConsoleCommandContext* comman
                   static_cast<unsigned long long>(LeftStopsOffButton.load(std::memory_order_relaxed)),
                   static_cast<unsigned long long>(LeftStopsInvalid.load(std::memory_order_relaxed)),
                   static_cast<unsigned long long>(SharedStatesKept.load(std::memory_order_relaxed)));
+    command->plugin->WriteConsoleMessage(line);
+
+    std::snprintf(line, sizeof(line),
+                  "Item operations: auras kept on their button %llu; given back and kept running: left %llu, right "
+                  "%llu; not given back, stopped: left %llu, right %llu.",
+                  static_cast<unsigned long long>(AurasKeptByItemOperations.load(std::memory_order_relaxed)),
+                  static_cast<unsigned long long>(LeftKeptThroughItems.load(std::memory_order_relaxed)),
+                  static_cast<unsigned long long>(RightKeptThroughItems.load(std::memory_order_relaxed)),
+                  static_cast<unsigned long long>(LeftStopsItemsGone.load(std::memory_order_relaxed)),
+                  static_cast<unsigned long long>(RightStopsItemsGone.load(std::memory_order_relaxed)));
     command->plugin->WriteConsoleMessage(line);
 
     std::snprintf(line, sizeof(line),
@@ -2826,7 +3525,8 @@ void ResetState() noexcept {
     Config    = Settings{};
     Installed = InstallState{};
     for (auto* flag : {&ServerActive, &SingleEmanationActive, &LiveLevelActive, &ClientActive, &ControllerActive,
-                       &ControllerTwoAurasActive, &LevelRefreshActive, &LevelUpInPlaceActive, &TakeoverInPlaceActive}) {
+                       &ControllerTwoAurasActive, &LevelRefreshActive, &LevelUpInPlaceActive, &TakeoverInPlaceActive,
+                       &ItemRefreshActive}) {
         flag->store(false, std::memory_order_relaxed);
     }
     OriginalPeriodicSkillEvent = nullptr;
@@ -2839,7 +3539,8 @@ void ResetState() noexcept {
                           &ControllerLeftConfirmsReset, &ControllerAuraPresses, &ControllerSidesMoved,
                           &ControllerAurasReplaced, &AuraApplications, &LevelUpsKept, &TakeoversKept,
                           &RemoveCallbacksAdded, &PassiveStatsRemoved, &StatesTurnedOn, &GameRefusalsRestored,
-                          &RebuiltAnyway, &LowerLevelsRefused, &OtherSkillsReplaced}) {
+                          &RebuiltAnyway, &LowerLevelsRefused, &OtherSkillsReplaced, &AurasKeptByItemOperations,
+                          &LeftKeptThroughItems, &RightKeptThroughItems, &LeftStopsItemsGone, &RightStopsItemsGone}) {
         counter->store(0, std::memory_order_relaxed);
     }
     DiagnosticsBudget.store(64, std::memory_order_relaxed);
@@ -2849,6 +3550,12 @@ void ResetState() noexcept {
     ArmedLeftTimers.fill(ArmedLeftTimer{});
     ArmedLeftTimerCursor = 0;
     ReleaseSRWLockExclusive(&ArmedLeftTimerLock);
+    AcquireSRWLockExclusive(&KeptAuraLock);
+    for (auto& table : KeptAuras) {
+        table.fill(KeptAura{});
+    }
+    ReleaseSRWLockExclusive(&KeptAuraLock);
+    KeptAuraTableFullLogged.store(false, std::memory_order_relaxed);
 }
 
 }  // namespace
@@ -2861,9 +3568,9 @@ constexpr D2RL::PluginInfo Info{
     .abiVersion  = D2RL_PLUGIN_ABI_VERSION,
     .id          = "celestialrayone.left-click-auras",
     .name        = "Left Click Auras",
-    .version     = "1.3.0",
+    .version     = "1.4.0",
     .author      = "CelestialRayOne",
-    .description = "Auras on the left mouse button run alongside the right button's aura; controller auras work, two at once; auras keep their state when their level rises.",
+    .description = "Auras on the left mouse button run alongside the right button's aura; controller auras work, two at once; auras keep their state when their level rises and while the game re-checks the equipment.",
     .flags       = D2RL::PluginFlags::Shared | D2RL::PluginFlags::NativeHooks,
 };
 
@@ -2909,12 +3616,13 @@ D2RL_PLUGIN_EXPORT auto D2RLoaderLoadPlugin(const D2RL::PluginContext* context) 
         LogWarn("LeftClickAuras: the leftclickauras console command could not be registered.");
     }
 
-    LogInfo("Left Click Auras %s by CelestialRayOne: left slot auras %s, single emanation %s, live level %s, move only "
-            "clicks %s, controller aura activation %s, controller two auras %s, level up in place %s, takeover in "
-            "place %s, build %s.",
+    LogInfo("Left Click Auras %s by CelestialRayOne: left slot auras %s, single emanation %s, live level %s, item "
+            "refresh keeps auras %s, move only clicks %s, controller aura activation %s, controller two auras %s, "
+            "level up in place %s, takeover in place %s, build %s.",
             PluginVersion, OnOff(ServerActive.load(std::memory_order_relaxed)),
             OnOff(SingleEmanationActive.load(std::memory_order_relaxed)),
-            OnOff(LiveLevelActive.load(std::memory_order_relaxed)), OnOff(ClientActive.load(std::memory_order_relaxed)),
+            OnOff(LiveLevelActive.load(std::memory_order_relaxed)),
+            OnOff(ItemRefreshActive.load(std::memory_order_relaxed)), OnOff(ClientActive.load(std::memory_order_relaxed)),
             OnOff(ControllerActive.load(std::memory_order_relaxed)),
             OnOff(ControllerTwoAurasActive.load(std::memory_order_relaxed)),
             OnOff(LevelRefreshActive.load(std::memory_order_relaxed)
@@ -2931,7 +3639,8 @@ D2RL_PLUGIN_EXPORT void D2RLoaderUnloadPlugin() noexcept {
         return;
     }
     for (auto* flag : {&ServerActive, &SingleEmanationActive, &LiveLevelActive, &ClientActive, &ControllerActive,
-                       &ControllerTwoAurasActive, &LevelRefreshActive, &LevelUpInPlaceActive, &TakeoverInPlaceActive}) {
+                       &ControllerTwoAurasActive, &LevelRefreshActive, &LevelUpInPlaceActive, &TakeoverInPlaceActive,
+                       &ItemRefreshActive}) {
         flag->store(false, std::memory_order_relaxed);
     }
     RemoveLevelRefresh();
